@@ -1,0 +1,3 @@
+-- 已废弃：小时 SOC 下限改由 algorithm_config.min_soc_per_hour（JSON）存储
+-- 若曾创建旧表，可执行以下语句清理（可选，执行前请确认数据已迁移至 algorithm_config）
+-- DROP TABLE IF EXISTS `battery_min_soc_hour`;

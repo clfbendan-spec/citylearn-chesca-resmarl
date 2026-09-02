@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.citylearn.dao.PyTaskMapper">
+
+    <resultMap id="BaseResultMap" type="com.citylearn.entity.PyTask">
+        <id column="id" property="id" />
+        <result column="py_id" property="pyId" />
+        <result column="status" property="status" />
+        <result column="if_delete" property="ifDelete" />
+        <result column="if_show" property="ifShow" />
+        <result column="show_name" property="showName" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, py_id, status, if_delete, if_show, show_name, create_time, update_time
+    </sql>
+
+</mapper>

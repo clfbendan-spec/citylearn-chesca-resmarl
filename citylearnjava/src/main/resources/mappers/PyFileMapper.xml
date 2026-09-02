@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.citylearn.dao.PyFileMapper">
+
+    <resultMap id="BaseResultMap" type="com.citylearn.entity.PyFile">
+        <id column="id" property="id" />
+        <result column="file_name" property="fileName" />
+        <result column="description" property="description" />
+        <result column="if_system" property="ifSystem" />
+        <result column="if_show" property="ifShow" />
+        <result column="create_time" property="createTime" />
+        <result column="create_user" property="createUser" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, file_name, description, if_system, if_show,create_time, create_user
+    </sql>
+
+    <select id="getPyFileList" resultMap="BaseResultMap">
+        SELECT * FROM py_file
+        WHERE create_user = #{createUser} or if_system = 1
+    </select>
+</mapper>

@@ -1,0 +1,22 @@
+# rlassistant 实验记录配置
+experiment:
+  name: "NOCONTROL Baseline 实验"
+  description: "记录BaselineAgent在CityLearn环境中的表现"
+  
+  input_parameters:
+    env_config: "citylearn_challenge_2023_phase_2_local_evaluation"
+    central_agent: true
+    episodes: 1
+    
+  metrics_to_record:
+    - net_electric_consumption
+    - average_daily_peak
+    - peak_demand
+    - ramping
+    - load_factor
+    
+  output_files:
+    - path: "output_kpi.csv"
+      description: "关键性能指标输出"
+    - path: "nocontrol_log.txt"
+      description: "控制台输出日志"

@@ -1,0 +1,14 @@
+PROJECT_TYPE:
+  backup_code_by: 'source'
+
+BACKUP_CONFIG:
+  backup_code_dir:
+    - '.'
+  lib_dir: './build/lib/'
+
+LOG_USED:
+  - 'stdout'
+  - 'log'
+  - 'csv'
+
+DL_FRAMEWORK: 'torch'  # 即使不使用DL也需指定

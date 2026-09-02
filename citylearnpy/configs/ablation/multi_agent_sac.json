@@ -1,0 +1,21 @@
+{
+  "_comment": "CHESCA-ResMARL：CHESCA 基准 + Multi-Agent SAC 残差。marl_mode=multi_agent。",
+  "_ablation_name": "multi_agent_sac",
+  "_ablation_label": "CHESCA-ResMARL (Multi-Agent SAC)",
+  "marl_mode": "multi_agent",
+  "resmarl_enabled": true,
+  "multi_agent_train_epochs": 20,
+  "multi_agent_explore": false,
+  "residual_alpha": 0.15,
+  "residual_action_mask": {"dhw": false, "ele": true, "tmp": false},
+  "resmarl_after_safety": true,
+  "schema_split_enabled": true,
+  "train_schema": "citylearn_challenge_2023_phase_2_local_evaluation",
+  "eval_schema": "citylearn_challenge_2023_phase_2_online_evaluation_1",
+  "min_soc_per_hour": {
+    "0": 0.6, "1": 0.65, "2": 0.72, "3": 0.78, "4": 0.8, "5": 0.85,
+    "6": 0.8, "7": 0.75, "8": 0.7, "9": 0.6, "10": 0.5, "11": 0.6,
+    "12": 0.65, "13": 0.65, "14": 0.7, "15": 0.7, "16": 0.7, "17": 0.65,
+    "18": 0.7, "19": 0.6, "20": 0.6, "21": 0.6, "22": 0.6, "23": 0.55
+  }
+}
