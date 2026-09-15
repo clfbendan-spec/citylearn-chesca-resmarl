@@ -1,0 +1,103 @@
+% !TEX program = xelatex
+\documentclass{ustbthesis}
+
+
+\usepackage[backend=biber,
+style=gb7714-2015,%utf8,
+    sortcites=true,autocite=inline,autopunct=true,hyperref=true,  
+    natbib
+    ]{biblatex}
+
+\hypersetup{hidelinks,colorlinks=false,citecolor=black}
+\addbibresource{myrefs.bib}
+%\usepackage[numbers,super]{gbt7714}
+%\newcommand{\upcite}[1]{\textsuperscript{\textsuperscript{\cite{#1}}}}
+%\bibliography{myrefs}
+
+
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[labelfont=bf,textfont=bf,font=small]{subfig}
+\newcommand{\figref}[1]{~\ref{#1}~}
+\newcommand{\tabref}[1]{~\ref{#1}~}
+
+\newcolumntype{P}[1]{>{\centering\arraybackslash}p{#1}}
+%\addbibresource{myrefs.bib}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%封面信息%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\Author{程立夫}
+\EnglishAuthor{Lifu Cheng}
+\Title{基于多智能体强化学习的建筑群节能控制策略及可视化研发}
+\EnglishTitle{Energy-Saving Control Strategy and Visualization Development for Building Clusters Based on Multi-Agent Reinforcement Learning}
+\Date{2026年12月}
+\EnglishDate{Dec, 2026}
+\College{数理学院}
+\EnglishCollege{School of Mathematics and Physics}
+\Address{海淀区学院路30号}
+\EnglishAddress{30 Xueyuan Road, Haidian District}
+\Affiliation{北京科技大学}
+\EnglishAffiliation{University of Science and Technology Beijing}
+\Postcode{100083}
+\City{北京}
+\EnglishCity{Beijing}
+\Country{中国}
+\EnglishCountry{P.R.CHINA}
+\StudentCode{M202440085}
+\Major{软件工程}
+\EnglishMajor{Software Engineering}
+\Direction{人工智能方向}
+\EnglishDirection{Artificial Intelligence}
+\Supervisor{段世红}
+\EnglishSupervisor{Shihong Duan}
+\DegreeType{学术型}
+\EnglishDegreeType{Science}
+\CLCNumber{TP319}
+\UDCNumber{620}
+\UniversityCode{10008}
+\UniversityLogoFile{images/ustb.png}
+\SecurityLevel{公开}
+\SubmissionDate{2026年12月}
+\EnglishSubmissionDate{Dec, 2026}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%封面信息%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+
+\TitlePage
+
+\SecondPage
+
+\ThirdPage
+
+\pagestyle{fancy}
+
+%% 中英文摘要
+\include{contents/abstract}
+%% 目录
+\tableofcontents
+
+\mainmatter
+\pagenumbering{arabic}\setcounter{page}{1}
+\pagestyle{fancy}
+
+\include{contents/chap1}
+\include{contents/chap2}
+\include{contents/chap3}
+\include{contents/chap4}
+\include{contents/chap5}
+\include{contents/chap6}
+
+
+\chapter*{参考文献}\addcontentsline{toc}{chapter}{参考文献}
+
+\printbibliography[heading=none]
+
+
+%% 致谢
+\include{contents/thanks}
+%% 作者简历及在学研究成果
+\include{contents/mresume}
+%% 关于论文使用授权的说明
+\postDeclarations
+%% 学位论文数据集
+\include{contents/dataset}
+
+\end{document}

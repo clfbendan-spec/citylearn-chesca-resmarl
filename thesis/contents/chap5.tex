@@ -1,0 +1,92 @@
+\chapter{实验与结果分析}
+
+\section{系统测试与测试用例}
+\subsection{接口测试}
+本系统采用前后端分离设计模式，为确保测试过程的高效性与严谨性，采用契约测试方法验证接口数据交换的准确性和后端逻辑的正确性。测试重点覆盖数据集列表、算法脚本列表、任务创建、任务状态、KPI查询与决策轨迹查询接口。每个接口均验证正常请求、缺失参数、非法参数、资源不存在和任务失败等场景。
+
+前后端接口文档按照统一JSON协议维护，任务创建接口返回唯一\texttt{taskId}，状态查询接口返回0（执行中）、1（完成）、2（失败），KPI接口在任务完成后返回聚合指标，轨迹接口返回CSV/JSON文件索引。接口测试应使用Apifox或Postman保存请求参数与响应样例，确保后续论文结果可复现。
+
+\begin{table}[h!]
+    \centering\bicaption{接口测试用例}{API test cases}
+    \label{tab:api-cases}
+    \begin{tabular}{P{5em}P{8em}P{10em}P{8em}}
+        \toprule
+        编号 & 用例名称 & 操作步骤 & 预期结果 \\\midrule
+        1 & 数据集查询 & 请求已启用schema列表 & 返回名称、步数与兼容性 \\
+        2 & 任务创建 & 提交CHESCA有效参数 & 返回唯一taskId \\
+        3 & 参数校验 & ResMARL不填checkpoint & 拒绝提交并提示原因 \\
+        4 & 状态查询 & 按taskId轮询任务 & 状态正确更新 \\
+        5 & KPI查询 & 查询已完成任务 & 返回完整KPI记录 \\
+        6 & 非法任务 & 查询不存在taskId & 返回资源不存在 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{功能测试}
+功能测试遵循黑盒测试原则，重点覆盖登录、数据集管理、算法选择、任务提交、任务状态展示、KPI分析与决策轨迹展示。测试结果应以实际运行记录为准，本文不将尚未完成的功能描述为已通过。
+
+\begin{table}[h!]
+    \centering\bicaption{平台功能测试用例}{Platform functional test cases}
+    \label{tab:function-cases}
+    \begin{tabular}{P{5em}P{8em}P{10em}P{8em}}
+        \toprule
+        编号 & 用例名称 & 操作步骤 & 预期结果 \\\midrule
+        1 & 登录系统 & 输入正确账号密码 & 进入有权限页面 \\
+        2 & 选择数据集 & 选择schema并查看元数据 & 显示建筑数和步数 \\
+        3 & 提交CHESCA & 配置算法并提交任务 & 任务进入执行状态 \\
+        4 & 提交ResMARL & 配置checkpoint与残差参数 & 任务正常执行 \\
+        5 & 查看KPI & 打开已完成任务 & 显示表格和图表 \\
+        6 & 查看轨迹 & 定位指定时间步 & 显示动作与投影结果 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{非功能性测试}
+非功能性测试包括安全性、兼容性、稳定性与可维护性测试。安全性测试关注SQL注入、XSS、越权访问、恶意路径与非法文件上传；兼容性测试关注Chrome、Edge和Firefox浏览器中的页面布局与ECharts渲染；稳定性测试关注长时间仿真、任务失败重试和结果目录隔离；可维护性测试关注日志是否包含taskId、配置快照与错误堆栈。
+
+\begin{table}[h!]
+    \centering\bicaption{非功能性测试用例}{Non-functional test cases}
+    \label{tab:nonfunctional-cases}
+    \begin{tabular}{P{5em}P{8em}P{10em}P{8em}}
+        \toprule
+        编号 & 用例名称 & 操作步骤 & 预期结果 \\\midrule
+        1 & SQL注入防护 & 在筛选参数输入恶意字符串 & 返回校验错误 \\
+        2 & XSS防护 & 提交包含脚本的反馈内容 & 内容被转义 \\
+        3 & 路径安全 & 提交相对路径和绝对路径 & 禁止越权读取 \\
+        4 & 任务隔离 & 同时提交两个任务 & 结果目录互不覆盖 \\
+        5 & 浏览器兼容 & 使用Chrome、Edge、Firefox访问 & 页面正常渲染 \\
+        6 & 长任务稳定性 & 执行长周期schema & 状态持续可查询 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{算法测试}
+本文以CityLearn建筑群能源管理任务为实验环境，比较NOCONTROL、CHESCA与CHESCA-ResMARL的控制效果。实验数据由\texttt{citylearn\_challenge\_2023\_phase\_2\_local\_evaluation}及2026兼容schema构建，评价指标包括Total Cost、Carbon Emissions、Peak、Ramping、Discomfort、Electricity Consumption、Renewable Supplied Energy与Zero Net Energy。所有实验记录算法名称、数据集schema、步数、残差参数、checkpoint和输出目录。
+
+实验过程分为四步：首先运行NOCONTROL得到无控制参考；其次运行纯CHESCA验证基线链路；再次运行\texttt{residual\_alpha=0}的ResMARL配置验证混合入口能够退化为基线；最后在不同残差幅度、动作掩码和安全后处理开关下运行完整策略。每组正式实验至少使用5个随机种子，并报告均值、标准差和置信区间。
+
+\section{阶段性实验结果}
+当前项目的\texttt{ablation\_results/ablation\_summary.json}包含720步、单次运行的阶段性结果。纯CHESCA的社区KPI为：\texttt{all\_time\_peak\_average}=0.832，\texttt{carbon\_emissions\_total}=0.407，\texttt{cost\_total}=0.382，\texttt{ramping\_average}=0.891，\texttt{discomfort\_proportion}=0.978；\texttt{residual\_alpha=0}的入口结果与纯CHESCA一致，说明残差入口的退化逻辑有效；\texttt{residual\_alpha=0.15}时成本为0.383、碳排为0.408、爬坡为0.893、不适比例仍为0.978，当前阶段尚不能证明ResMARL带来总体性能提升。
+
+特别需要指出的是，阶段性结果中的过热不适比例达到0.978、过热温差均值达到8.304，说明舒适性指标存在严重问题，可能与HVAC设定值映射、动作裁剪或安全投影顺序有关。在修复该问题并完成多种子、跨月份和基线充分对比前，本文不宣称CHESCA-ResMARL已经优于CHESCA。该如实报告符合硕士论文实验规范，也为下一步工作明确了验证重点。
+
+\begin{table}[h!]
+    \centering\bicaption{阶段性消融实验结果}{Interim ablation results}
+    \label{tab:interim-results}
+    \begin{tabular}{P{7em}P{5em}P{5em}P{5em}P{5em}P{5em}}
+        \toprule
+        策略 & $\alpha$ & 峰值 & 碳排 & 成本 & 不适比例 \\\midrule
+        纯CHESCA & 0.00 & 0.832 & 0.407 & 0.382 & 0.978 \\
+        ResMARL & 0.00 & 0.832 & 0.407 & 0.382 & 0.978 \\
+        ResMARL & 0.15 & 0.832 & 0.408 & 0.383 & 0.978 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{实验可视化测试}
+平台将实验结果转化为直观图表。环境状态与动作选择图展示电价、碳强度、社区负荷、SOC及HVAC设定值的同步变化；KPI柱状图与雷达图展示不同控制器的指标差异；决策轨迹图展示基线动作、残差、动作掩码、安全投影和最终动作。对于残差策略，用户可在指定时间步查看残差是否被裁剪，从而解释峰值变化与舒适性变化背后的动作原因。
+
+正式论文应补充以下图表：多随机种子KPI箱线图、训练奖励与loss曲线、不同$\alpha$的敏感性曲线、舒适性修复前后对比图、跨schema泛化图，以及前端首页、模型配置页、能源分析页和决策轨迹页截图。当前工程的\texttt{thesis/images/pictures/}中已生成版式占位图，提交论文前必须替换为真实截图和实验图。
+
+\section{本章小结}
+本章节深入探索了系统测试、算法测试与实验可视化。我们首先按参考论文的结构设计了接口、功能与非功能测试用例；随后以CityLearn建筑群任务为例，说明NOCONTROL、CHESCA与CHESCA-ResMARL的实验设置、消融流程与评价指标；最后如实报告阶段性结果，明确当前舒适性异常、多种子统计缺失与跨场景验证不足等问题，为最终实验完善提供依据。

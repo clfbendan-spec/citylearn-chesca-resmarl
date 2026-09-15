@@ -1,0 +1,142 @@
+\chapter{系统构建与技术实现}
+
+\section{页面设计}
+
+针对页面设计的分析，我们将深入剖析系统设计的四个核心页面：展示社区概览的系统首页，承载算法与数据集配置的模型配置页面，洞悉能耗与KPI的能源分析页面，以及搭建用户与仿真任务之间桥梁的决策轨迹页面。通过全方位的探索，揭示每个页面背后的设计理念、功能布局与用户体验优化策略。
+
+\subsection{系统首页设计}
+用户登录系统后，首先映入眼帘的是精心布局的首页界面。该界面设计遵循简洁性与易用性的原则，通过清晰的结构划分，实现信息的有效传达与功能的快速访问。页面顶部设置上导航栏，内容划分为系统首页、模型配置、能源分析与决策轨迹四个功能区域及一个用户个性化菜单，构成系统核心功能的直接入口。中心页面以建筑群节能控制为主题，采用醒目的标题形式展示，明确系统的核心应用领域，并提供新建仿真任务的快捷按钮，引导用户进入任务创建流程。
+
+\subsection{算法与数据集配置页面设计}
+算法与数据集配置页面通过精心的布局设计，核心元素聚焦于一个直观的配置表单，辅以数据集选择与参数校验。表单以清晰的分组展示信息，具体包括：控制器类型、CityLearn schema、仿真步数、残差系数\texttt{residual\_alpha}、动作掩码、安全投影开关与多智能体checkpoint路径。选择纯CHESCA时隐藏残差相关字段；选择CHESCA-ResMARL时强制校验checkpoint存在性与schema兼容性。提交成功后新增任务即时反映在任务列表中，实现数据的实时更新与同步。
+
+\subsection{能源与KPI分析页面设计}
+能源与KPI分析页面的布局设计，以分块多图的形式展示一系列丰富的图表。这些图表依托Apache ECharts库构建，确保了可视化既美观又高效。页面中心根据展示内容划分为多个独立而相互关联的区域，每个区域承载特定形式的图表，如折线图直观呈现负荷与电价随时间步变化的趋势，柱状图对比不同算法的KPI，雷达图揭示成本、碳排、峰值、爬坡与舒适性之间的权衡。用户首次访问时系统自动加载默认任务的图示，并提供任务检索框，允许输入任务ID回溯仿真历程。
+
+\subsection{决策轨迹页面设计}
+决策轨迹页面按时间步读取\texttt{chesca\_trace.csv}与\texttt{decision\_trace.json}，同步展示基线动作、原始残差、动作掩码、投影后动作、电池SOC与舒适性状态。用户可定位峰值时段，查看残差是否被安全层抑制，从而解释策略决策而不只是观察最终KPI。该页面由\texttt{ChescaTracePanel.vue}、\texttt{DecisionTraceLog.vue}与\texttt{ResidualDeltaEle.vue}等组件实现，注重信息的专业性与清晰性传达，为用户提供高效直观的操作界面。
+
+\section{日志的自动化与规范化管理}
+算法运行日志由Python标准输出与结构化CSV/JSON共同组成。任务目录以\texttt{taskId}隔离，Python入口将配置、运行状态、KPI与轨迹写入对应目录；Java服务读取进程退出码与结果文件，更新\texttt{py\_task}表中的任务状态。对于解析失败的记录，系统保留原始行并标注错误原因，不以空值静默替代，保证实验数据可追溯。通过日志的自动化采集与规范化存储，研究人员能够清晰追踪每个实验的配置与进展，直观比较不同参数下的结果。
+
+\section{数据库设计与实现}
+本系统基于持久化存储的理念，利用MySQL数据库来实现数据的可靠持久化存储。在设计的数据库架构中，构建了与可视化页面数据紧密映射的持久化存储表，这些表不仅承载关键数据，还通过精妙的逻辑关联，在多个表之间架起桥梁，促进数据的流畅交换与共享。在实现实验数据可视化的过程中，最核心的环节莫过于构建算法脚本与仿真任务之间的紧密联系，以及确保KPI结果得以高效有序地存储并精确对应展示。本节设计正是围绕这一核心目标策划的，项目实际建表脚本位于\texttt{citylearnjava/src/main/resources/db/}，基础数据初始化脚本为\texttt{citylearnjava/citylearn.sql}，字符集统一为\texttt{utf8mb4}，引擎为InnoDB。
+
+本系统算法、任务与可视化数据主要由算法脚本表（py\_file）、仿真任务表（py\_task）、KPI结果表（kpis）、算法配置表（algorithm\_config）与数据集目录表（citylearn\_dataset），以及CityLearn基础时序表（building\_1--building\_3、weather、pricing、carbon\_intensity）组成。旧版\texttt{battery\_min\_soc\_hour}表已由\texttt{algorithm\_config}中的\texttt{min\_soc\_per\_hour}键值替代，不再纳入当前设计。数据库表之间的关系如图\ref{tab:database-overview}下方说明所示，具体联系为：算法脚本表与仿真任务表一对多，任务与KPI结果一对多，任务与数据集目录多对一，四类CityLearn时序表按时间步对齐。受篇幅所限，本节以表格形式逐表说明字段设计，正式提交前可在\texttt{images/pictures/}目录补充关系图并引用。
+
+(1)建筑时序表（building\_1--building\_3），如表\ref{tab:building-table}所示。三张建筑表结构完全相同，仅以表名区分建筑个体，存储建筑相关的基础时序信息。具体而言，该表涵盖时间步主键（id）、时间特征（month、hour、day\_type、夏令时状态）、室内环境（室内干球温度、未满足冷设定点差、室内相对湿度）、负荷需求（不可转移负荷、生活热水需求、制冷与制热需求）、分布式资源（太阳能发电量、占用人数）以及控制状态（制冷/制热设定点、HVAC模式）。时间步主键作为记录的唯一识别码，确保时序数据的精确索引；负荷与环境字段与CityLearn观测空间一一对应，为前端能源曲线与决策轨迹绘制提供数据源。
+
+\begin{table}[h!]
+    \centering\bicaption{建筑时序表设计}{Design of building time-series table}
+    \label{tab:building-table}
+    \begin{tabular}{P{8em}P{7em}P{4em}P{8em}}
+        \toprule
+        字段名 & 数据类型 & 非空 & 注释 \\\midrule
+        id & bigint & 是 & 时间步主键 \\
+        month & int & 否 & 月份 \\
+        hour & int & 否 & 小时 \\
+        day\_type & int & 否 & 日期类型 \\
+        daylight\_savings\_status & int & 否 & 夏令时状态 \\
+        indoor\_dry\_bulb\_temperature & decimal(14,9) & 否 & 室内干球温度 \\
+        average\_unmet\_cooling\_setpoint\_difference & decimal(14,9) & 否 & 未满足冷设定点差 \\
+        indoor\_relative\_humidity & decimal(14,9) & 否 & 室内相对湿度 \\
+        non\_shiftable\_load & decimal(14,9) & 否 & 不可转移电负荷 \\
+        dhw\_demand & decimal(14,9) & 否 & 生活热水需求 \\
+        cooling\_demand & decimal(14,9) & 否 & 制冷需求 \\
+        heating\_demand & decimal(14,9) & 否 & 制热需求 \\
+        solar\_generation & decimal(14,9) & 否 & 太阳能发电量 \\
+        occupant\_count & int & 否 & 占用人数 \\
+        cooling\_set\_point & decimal(14,9) & 否 & 制冷设定点 \\
+        heating\_set\_point & decimal(14,9) & 否 & 制热设定点 \\
+        hvac\_mode & int & 否 & HVAC模式 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+（2）环境时序表，包括天气表（weather）、电价表（pricing）与碳强度表（carbon\_intensity）。如表\ref{tab:env-table}所示，天气表保存室外干球温度、相对湿度、散射与直射太阳辐照，以及三类预测步长的对应变量；电价表保存实际电价与三个预测电价；碳强度表仅含时间步主键与碳排放因子。三类表均使用自增id与建筑表的时间步隐式对齐而不建立跨表外键，便于按数组方式直接映射CityLearn观测，但应用层必须校验各表记录数与时间顺序一致，防止错位读取。
+
+\begin{table}[h!]
+    \centering\bicaption{环境时序表设计}{Design of environment time-series tables}
+    \label{tab:env-table}
+    \begin{tabular}{P{8em}P{7em}P{4em}P{8em}}
+        \toprule
+        字段名 & 数据类型 & 非空 & 注释 \\\midrule
+        \multicolumn{4}{l}{weather（天气表）} \\
+        id & bigint & 是 & 时间步主键 \\
+        outdoor\_dry\_bulb\_temperature & decimal(12,2) & 否 & 室外干球温度 \\
+        outdoor\_relative\_humidity & decimal(12,2) & 否 & 室外相对湿度 \\
+        diffuse\_solar\_irradiance & decimal(12,2) & 否 & 散射辐照 \\
+        direct\_solar\_irradiance & decimal(12,2) & 否 & 直射辐照 \\
+        outdoor\_temperature\_predicted\_1--3 & decimal(12,6) & 否 & 温度预测值 \\
+        outdoor\_humidity\_predicted\_1--3 & decimal(12,6) & 否 & 湿度预测值 \\
+        solar\_irradiance\_predicted\_1--3 & decimal(12,6) & 否 & 辐照预测值 \\
+        \multicolumn{4}{l}{pricing（电价表）与carbon\_intensity（碳强度表）} \\
+        id & bigint & 是 & 时间步主键 \\
+        electricity\_pricing & decimal & 否 & 实际电价与预测电价 \\
+        carbon\_intensity & decimal & 否 & 碳排放因子 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+（3）算法脚本表（py\_file）与仿真任务表（py\_task）。如表\ref{tab:py-table}所示，算法脚本表存储算法相关的基础信息：id为脚本唯一标识，file\_name保存脚本文件名（如\texttt{CHESCA.py}、\texttt{CHESCA\_ResMARL.py}），desc记录算法说明，if\_system标识是否为系统内置脚本，create\_time与create\_user记录创建审计信息。脚本唯一ID作为系统中的唯一识别码，确保算法数据的精确索引与无重复管理。仿真任务表存储任务相关的基础信息：id为任务唯一标识，py\_id关联算法脚本，status记录执行状态（0执行中、1完成、2失败），if\_delete为逻辑删除标记，if\_show控制仪表盘是否展示，show\_name为仪表盘展示名称。任务结果文件按\texttt{taskId}落盘于\texttt{output/outkpis/\{taskId\}}，数据库仅保存索引，降低大字段查询开销并支持原始CSV/JSON下载。
+
+\begin{table}[h!]
+    \centering\bicaption{算法脚本与仿真任务表设计}{Design of algorithm script and task tables}
+    \label{tab:py-table}
+    \begin{tabular}{P{8em}P{7em}P{4em}P{8em}}
+        \toprule
+        字段名 & 数据类型 & 非空 & 注释 \\\midrule
+        \multicolumn{4}{l}{py\_file（算法脚本表）} \\
+        id & varchar(64) & 是 & 脚本标识 \\
+        file\_name & varchar(255) & 否 & 脚本文件名 \\
+        desc & varchar(500) & 否 & 算法说明 \\
+        if\_system & tinyint(1) & 否 & 是否系统脚本 \\
+        create\_time & datetime & 否 & 创建时间 \\
+        create\_user & varchar(64) & 否 & 创建人 \\
+        \multicolumn{4}{l}{py\_task（仿真任务表）} \\
+        id & varchar(64) & 是 & 任务标识 \\
+        py\_id & varchar(64) & 否 & 关联脚本标识 \\
+        status & int & 否 & 执行状态 \\
+        if\_delete & tinyint(1) & 否 & 逻辑删除标记 \\
+        if\_show & tinyint(1) & 否 & 是否展示 \\
+        show\_name & varchar(128) & 否 & 仪表盘展示名称 \\
+        create\_time & datetime & 否 & 创建时间 \\
+        update\_time & datetime & 否 & 更新时间 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+（4）KPI结果表（kpis），如表\ref{tab:kpi-table}所示，保存算法评估的聚合结果。name记录任务或算法名称，agent\_type区分控制器类型；其余\texttt{DECIMAL(8,5)}字段完整覆盖CityLearn核心KPI：全时段峰值、年度未满足能源、碳排放总量、总成本、日/月负荷率、日峰值、冷热不适（均值、最值与比例）、总用电量、热韧性、停电未满足能源、爬坡率与零净能耗。前端KPI表格、柱状图与雷达图直接读取本表；建筑级明细与逐时决策轨迹仍由任务目录中的CSV/JSON承载。当前表未设显式task\_id外键，应用层以name与agent\_type归类展示，后续应补充任务级唯一标识以避免同名实验混淆。
+
+\begin{table}[h!]
+    \centering\bicaption{KPI结果表设计}{Design of KPI result table}
+    \label{tab:kpi-table}
+    \begin{tabular}{P{8em}P{7em}P{4em}P{8em}}
+        \toprule
+        字段名 & 数据类型 & 非空 & 注释 \\\midrule
+        id & bigint & 是 & 结果主键 \\
+        name & varchar(64) & 否 & 任务或算法名称 \\
+        agent\_type & varchar(64) & 否 & 控制器类型 \\
+        all\_time\_peak\_average & decimal(8,5) & 否 & 全时段峰值均值 \\
+        carbon\_emissions\_total & decimal(8,5) & 否 & 碳排放总量 \\
+        cost\_total & decimal(8,5) & 否 & 总成本 \\
+        daily\_peak\_average & decimal(8,5) & 否 & 日峰值均值 \\
+        discomfort\_hot\_delta\_average & decimal(8,5) & 否 & 过热温差均值 \\
+        discomfort\_proportion & decimal(8,5) & 否 & 不适比例 \\
+        electricity\_consumption\_total & decimal(8,5) & 否 & 总用电量 \\
+        ramping\_average & decimal(8,5) & 否 & 爬坡均值 \\
+        zero\_net\_energy & decimal(8,5) & 否 & 零净能耗 \\
+        其余KPI字段 & decimal(8,5) & 否 & CityLearn扩展指标 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+（5）算法配置表（algorithm\_config）与数据集目录表（citylearn\_dataset）。算法配置表采用以\texttt{config\_key}为主键的键值模型，字段包括\texttt{config\_value}、\texttt{value\_type}、\texttt{description}与\texttt{update\_time}，保存\texttt{min\_soc\_per\_hour}、\texttt{max\_soc\_normal}、\texttt{residual\_alpha}、\texttt{residual\_action\_mask}、\texttt{resmarl\_after\_safety}、\texttt{train\_schema}与\texttt{eval\_schema}等参数；JSON参数以\texttt{value\_type=json}标记，初始化脚本通过\texttt{ON DUPLICATE KEY UPDATE}保证幂等更新。数据集目录表以\texttt{schema\_key}为唯一键，保存展示名称、相对路径、建筑数量、时间步数与\texttt{chesca\_compatible}兼容性标识，前端数据集列表与任务前校验均依赖该表。键值配置模型牺牲了部分类型约束，换取不修改表结构即可扩展算法参数的能力。
+
+物理实现上，各时序表均以自增主键聚簇索引组织数据，符合按时间步顺序读取的访问模式；数据集目录表对\texttt{schema\_key}建立唯一索引，KPI表按任务名称与控制器类型组合检索。由于初始化脚本以逻辑关联为主、外键约束为辅，数据一致性由服务层保证：任务提交前校验脚本与数据集存在；仿真结束后在事务内写入KPI并更新任务状态；删除任务时保留审计记录并归档结果目录。
+
+\section{CHESCA-ResMARL算法集成与任务调度}
+纯CHESCA入口为\texttt{CHESCA.py}，混合策略入口为\texttt{CHESCA\_ResMARL.py}。用户提交任务后，Spring Boot服务生成任务ID，写入算法配置与数据集配置，调用相应Python脚本；Redis缓存任务状态，前端定时请求任务详情。混合策略任务必须提供\texttt{multi\_agent\_checkpoint}，并支持\texttt{residual\_alpha}、\texttt{residual\_action\_mask}与\texttt{resmarl\_after\_safety}三类残差参数。任务成功后服务解析KPI并刷新分析页面；失败时展示标准错误信息与日志路径，保证实验可复现。
+
+\section{本章小结}
+本章节深入探讨了系统实现的多个核心环节，包括精心设计的页面以提升用户体验，对算法日志的自动化处理与规范化管理，高效安全的数据存储策略确保数据质量，以及CHESCA-ResMARL算法集成与任务调度。通过任务ID贯穿配置、Python仿真、MySQL聚合结果与CSV/JSON明细，系统形成了可追踪的建筑群能源控制实验闭环。

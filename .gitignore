@@ -123,6 +123,7 @@ thesis/**/*.toc
 thesis/**/*.xdv
 thesis/**/*.pdf
 thesis/pass1.txt
+thesis/**/*.tmp
 
 # ----- 杂项日志 -----
 *.log

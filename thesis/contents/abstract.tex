@@ -1,0 +1,21 @@
+\begin{ChineseAbstract}
+
+建筑群能源系统同时受到天气、负荷、能源价格、分布式能源和用户舒适性需求的影响，具有强耦合、强不确定性和多目标特征。传统固定规则控制适应性不足，模型预测控制依赖精确模型并具有较高计算成本，而纯多智能体强化学习又容易面临样本效率低、训练不稳定和安全约束难以满足等问题。CityLearn为建筑群需求侧管理提供了统一的仿真环境、数据接口和评价指标，为控制策略的公平比较与可复现研究提供了基础。
+
+本文面向CityLearn建筑群能源管理场景，研究基于社区分层协调控制与残差多智能体强化学习的混合节能控制方法，并实现配套的可视化管理平台。首先，分析建筑群能源协同控制问题，建立包含室外环境、负荷、价格、碳排放、电池状态和舒适性信息的标准化状态与动作模型。其次，以2023年CityLearn Challenge中表现优良的社区分层能源协调思想为基线，构建CHESCA-ResMARL控制框架：由规则和预测控制保证可行性与安全性，由轻量级多智能体策略学习基准动作的残差修正量，通过集中训练、分散执行实现建筑之间的协同。再次，设计融合成本、碳排放、峰值、爬坡和热舒适性的多目标奖励，并通过消融实验、不同随机种子和多场景测试评价方法的有效性。最后，依托Vue、Spring Boot、MySQL、Redis和Python算法组件，开发覆盖数据管理、算法配置、仿真任务、KPI分析和决策轨迹追踪的可视化平台。
+
+项目已经完成CityLearn数据集构建、CHESCA基线评估、残差多智能体训练入口、动作安全约束、KPI导出和前后端可视化原型。实验结果应在补充完整的多随机种子统计、基线对比和显著性分析后形成最终结论。本文的研究可为建筑群需求侧响应、低碳运行控制和智能能源管理系统的工程化应用提供参考。
+
+\ChineseKeywords{建筑群节能；CityLearn；多智能体强化学习；残差强化学习；CHESCA；可视化管理}
+\end{ChineseAbstract}
+
+\begin{EnglishAbstract}
+
+Building energy systems are affected by weather, demand, energy prices, distributed energy resources, and occupant comfort requirements. They therefore exhibit strong coupling, uncertainty, and multiple conflicting objectives. Fixed-rule control lacks adaptability, model predictive control relies on accurate models and high computational cost, while pure multi-agent reinforcement learning often suffers from low sample efficiency, training instability, and difficulty in satisfying safety constraints. CityLearn provides a standardized simulation environment, data interface, and evaluation metrics for building-community demand-side management, enabling reproducible and fair comparisons of control strategies.
+
+This thesis investigates a hybrid energy-saving control method based on community hierarchical coordination and residual multi-agent reinforcement learning for the CityLearn building-community scenario, and develops an accompanying visualization management platform. First, the building-community energy coordination problem is analyzed, and standardized state and action models are established using outdoor conditions, demand, price, carbon intensity, battery state, and comfort information. Second, inspired by the community-based hierarchical energy coordination approach that performed well in the 2023 CityLearn Challenge, a CHESCA-ResMARL framework is developed. Rule-based and predictive controllers maintain feasibility and safety, while lightweight multi-agent policies learn residual corrections to baseline actions. Centralized training and decentralized execution are used to coordinate heterogeneous buildings. Third, a multi-objective reward combining cost, carbon emissions, peak demand, ramping, and thermal comfort is designed. Ablation studies, multiple random seeds, and cross-scenario evaluations are planned to assess effectiveness. Finally, a visualization platform is developed with Vue, Spring Boot, MySQL, Redis, and Python algorithm services, covering data management, algorithm configuration, simulation tasks, KPI analysis, and decision-trace inspection.
+
+The current project has implemented CityLearn dataset construction, CHESCA baseline evaluation, a residual multi-agent training entry point, action safety constraints, KPI export, and a front-end/back-end visualization prototype. Complete conclusions require additional multi-seed statistics, baseline comparisons, and significance analysis. This work may provide a reference for building-community demand response, low-carbon operation control, and engineering-oriented intelligent energy management systems.
+
+\EnglishKeywords{building energy saving; CityLearn; multi-agent reinforcement learning; residual reinforcement learning; CHESCA; visualization management}
+\end{EnglishAbstract}
