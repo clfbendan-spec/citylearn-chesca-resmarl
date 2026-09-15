@@ -1,0 +1,130 @@
+# =============================================================================
+# citylearn-chesca-resmarl — root .gitignore
+# 覆盖 Java / Python / Vue / 论文；子目录已有 .gitignore 可继续保留作补充
+# =============================================================================
+
+# ----- OS / Editor -----
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.iml
+*.iws
+*.ipr
+
+# ----- Secrets / local overrides -----
+.env
+.env.*
+!.env.example
+**/application-local.yml
+**/application-*.local.yml
+
+# ----- Java (Spring / Maven) -----
+citylearnjava/target/
+**/HELP.md
+
+# ----- Node / Vue -----
+node_modules/
+citylearnvue/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# AI/调试临时笔记（勿入库）
+citylearnvue/_check_rebuild.txt
+citylearnvue/_titles.txt
+*_hot_analysis*.txt
+*_thesis_extract.txt
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Java 上传算法脚本：文件名 = yyyyMMddHHmmss.py（运行时产物，非源码）
+citylearnpy/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].py
+
+# AI 一次性分析 / 对比 / 探针脚本（下划线前缀实验稿）
+citylearnpy/_analyze_*.py
+citylearnpy/_cmp_*.py
+citylearnpy/_find_*.py
+citylearnpy/_step*_hot.py
+citylearnpy/*_tmp.py
+citylearnpy/*_tmp_*.py
+
+# 明显草稿 / 误拷贝（正式入口是 Multi-agent.py / output.py 等）
+citylearnpy/newpy.py
+citylearnpy/output copy.py
+
+# 注意：以下带 copy 的文件是正式依赖，不要忽略
+#   multi_agent_runner_copy.py
+#   local_evaluation_copy.py
+#   Multi-agent_copy.py
+#   _ray_win_shim/
+
+# ----- 训练 / 评估运行产物 -----
+# KPI / 导出 / 本地试跑
+citylearnpy/outputs/
+citylearnpy/_test_chesca_out/
+**/rla_logs/
+
+# 消融实验结果（体积大；需要时可本地重新跑 ablation_resmarl.py）
+citylearnpy/ablation_results/
+
+# 模型权重与训练 checkpoint（保留目录占位；schema 内 *.pth 是 CHESCA 预测模型，需入库）
+citylearnpy/checkpoints/**
+!citylearnpy/checkpoints/.gitkeep
+!citylearnpy/checkpoints/README.md
+*.pt
+
+# 根目录或 Java 侧运行时目录（与 application.yml 中 out-file-path / uploads 对应）
+/output/
+/outputs/
+/outkpis/
+/uploads/
+/rla_logs/
+
+# ----- 数据集：通常应入库以便离线复现；若仓库过大可取消下行注释 -----
+# citylearnpy/datasets/
+# citylearnvue/public/datasets/
+# citylearnpy/CHESCA-*/data/schemas/**/*.csv
+
+# ----- 论文 (LaTeX) -----
+thesis/**/*.aux
+thesis/**/*.bbl
+thesis/**/*.bcf
+thesis/**/*.blg
+thesis/**/*.fdb_latexmk
+thesis/**/*.fls
+thesis/**/*.log
+thesis/**/*.out
+thesis/**/*.run.xml
+thesis/**/*.synctex.gz
+thesis/**/*.toc
+thesis/**/*.xdv
+thesis/**/*.pdf
+thesis/pass1.txt
+
+# ----- 杂项日志 -----
+*.log
+!**/logback*.xml
+)
