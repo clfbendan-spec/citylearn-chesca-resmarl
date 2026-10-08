@@ -1,10 +1,11 @@
 \chapter{实验与结果分析}
-
 \section{系统测试与测试用例}
-\subsection{接口测试}
-本系统采用前后端分离设计模式，为确保测试过程的高效性与严谨性，采用契约测试方法验证接口数据交换的准确性和后端逻辑的正确性。测试重点覆盖数据集列表、算法脚本列表、任务创建、任务状态、KPI查询与决策轨迹查询接口。每个接口均验证正常请求、缺失参数、非法参数、资源不存在和任务失败等场景。
+系统可用性验证首先检查接口与页面，其次检查算法。本节按参考论文先系统测试、后算法测试的顺序组织，测试用例表与Postman Collection及实际运行记录保持一致，未实际执行的功能不标注``已通过''。
 
-前后端接口文档按照统一JSON协议维护，任务创建接口返回唯一\texttt{taskId}，状态查询接口返回0（执行中）、1（完成）、2（失败），KPI接口在任务完成后返回聚合指标，轨迹接口返回CSV/JSON文件索引。接口测试应使用Apifox或Postman保存请求参数与响应样例，确保后续论文结果可复现。
+\subsection{接口测试（Postman）}
+前后端分离架构下，接口契约是系统正确性的基础。Postman的使用方法已在2.4节说明，本节仅记录本系统实际覆盖的六个接口：数据集列表、算法脚本列表、任务创建、任务状态查询、KPI查询与决策轨迹查询\cite{postman2024}。后端基于Spring Boot提供RESTful接口\cite{springboot2024}，正常情况返回JSON，失败时返回错误码与原因。
+
+每个接口均存储五类用例：正常请求、缺少参数、非法参数、资源不存在与任务失败态。任务创建断言返回唯一任务标识；状态查询断言执行中、完成、失败三态正确流转；KPI查询断言未完成任务不返回聚合指标；轨迹查询断言决策记录与指标索引存在方可返回文件流。通过环境变量切换本地、测试与正式三套服务地址，集合执行器一键回归，请求样例与断言随论文留档，保证测试过程可复现。
 
 \begin{table}[h!]
     \centering\bicaption{接口测试用例}{API test cases}
@@ -12,18 +13,23 @@
     \begin{tabular}{P{5em}P{8em}P{10em}P{8em}}
         \toprule
         编号 & 用例名称 & 操作步骤 & 预期结果 \\\midrule
-        1 & 数据集查询 & 请求已启用schema列表 & 返回名称、步数与兼容性 \\
-        2 & 任务创建 & 提交CHESCA有效参数 & 返回唯一taskId \\
-        3 & 参数校验 & ResMARL不填checkpoint & 拒绝提交并提示原因 \\
-        4 & 状态查询 & 按taskId轮询任务 & 状态正确更新 \\
-        5 & KPI查询 & 查询已完成任务 & 返回完整KPI记录 \\
-        6 & 非法任务 & 查询不存在taskId & 返回资源不存在 \\
+        1 & 数据集查询 & 请求已启用数据集列表 & 返回名称、步数与兼容性 \\
+        2 & 算法列表查询 & 请求算法脚本列表 & 返回脚本名与说明 \\
+        3 & 任务创建 & 提交CHESCA有效参数 & 返回唯一任务标识 \\
+        4 & 参数校验 & 残差策略不填模型文件提交 & 拒绝并提示原因 \\
+        5 & 状态查询 & 按任务标识轮询任务 & 0/1/2正确流转 \\
+        6 & KPI查询 & 查询已完成任务 & 返回完整KPI记录 \\
+        7 & KPI未完成 & 查询执行中任务KPI & 提示任务未完成 \\
+        8 & 非法任务 & 查询不存在任务标识 & 返回资源不存在 \\
+        9 & 轨迹查询 & 查询完成任务轨迹 & 返回决策记录与指标索引 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
+实际测试中两类问题最为常见：一是残差强化学习任务缺少模型文件时，后端直接返回400错误拦截，前端表单亦有一层校验\cite{elementui2024}，形成双重保障；二是数据集不兼容问题，例如以三建筑模型运行五建筑数据时，提交前查询兼容性标识即可拦截，较进入Python后抛出异常再回查日志更为高效。状态轮询间隔按仿真步数设定，短任务5秒一轮，长任务适当放宽，避免对后端造成过大压力。
+
 \subsection{功能测试}
-功能测试遵循黑盒测试原则，重点覆盖登录、数据集管理、算法选择、任务提交、任务状态展示、KPI分析与决策轨迹展示。测试结果应以实际运行记录为准，本文不将尚未完成的功能描述为已通过。
+功能测试采用黑盒方法，不检查代码仅验证页面行为。测试覆盖登录、数据集选择、算法选择、任务提交、状态展示、KPI分析与轨迹展示七条主线，页面基于Vue与Element UI实现\cite{vue2024,elementui2024}，图表由ECharts渲染\cite{echarts2024}。
 
 \begin{table}[h!]
     \centering\bicaption{平台功能测试用例}{Platform functional test cases}
@@ -32,17 +38,22 @@
         \toprule
         编号 & 用例名称 & 操作步骤 & 预期结果 \\\midrule
         1 & 登录系统 & 输入正确账号密码 & 进入有权限页面 \\
-        2 & 选择数据集 & 选择schema并查看元数据 & 显示建筑数和步数 \\
-        3 & 提交CHESCA & 配置算法并提交任务 & 任务进入执行状态 \\
-        4 & 提交ResMARL & 配置checkpoint与残差参数 & 任务正常执行 \\
-        5 & 查看KPI & 打开已完成任务 & 显示表格和图表 \\
-        6 & 查看轨迹 & 定位指定时间步 & 显示动作与投影结果 \\
+        2 & 越权访问 & 低权限账号进管理页 & 被拦截并提示 \\
+        3 & 选择数据集 & 选择schema看元数据 & 显示建筑数和步数 \\
+        4 & 提交CHESCA & 配置算法并提交任务 & 任务进入执行状态 \\
+        5 & 提交ResMARL & 配置checkpoint与残差参数 & 任务正常执行 \\
+        6 & 查看KPI & 打开已完成任务 & 显示表格和图表 \\
+        7 & KPI对比 & 勾选多任务对比 & 柱状雷达同步更新 \\
+        8 & 查看轨迹 & 定位指定时间步 & 显示动作与投影结果 \\
+        9 & 任务删除 & 逻辑删除任务 & 列表隐藏但审计保留 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
+功能测试中轨迹页面的验证最为细致：决策推演日志与决策记录必须按时间步对齐，基线、残差、掩码、投影四列缺一不可。开发过程中曾出现前端时间轴从1开始、后端从0开始导致的错位问题，峰值时段数据全部偏移一位，后统一为从0开始编号、缺步显式标空，校验方得以通过。记录此类细节较空泛地声明``测试通过''更具可信度。
+
 \subsection{非功能性测试}
-非功能性测试包括安全性、兼容性、稳定性与可维护性测试。安全性测试关注SQL注入、XSS、越权访问、恶意路径与非法文件上传；兼容性测试关注Chrome、Edge和Firefox浏览器中的页面布局与ECharts渲染；稳定性测试关注长时间仿真、任务失败重试和结果目录隔离；可维护性测试关注日志是否包含taskId、配置快照与错误堆栈。
+非功能性测试覆盖安全、兼容、稳定与可维护四个方面。安全性检查注入攻击、XSS、越权访问、恶意路径与非法上传；兼容性检查Chrome、Edge、Firefox三种浏览器下的布局与ECharts渲染；稳定性检查长时仿真、失败重试与目录隔离；可维护性检查日志是否包含任务标识、配置快照与错误堆栈。
 
 \begin{table}[h!]
     \centering\bicaption{非功能性测试用例}{Non-functional test cases}
@@ -50,43 +61,57 @@
     \begin{tabular}{P{5em}P{8em}P{10em}P{8em}}
         \toprule
         编号 & 用例名称 & 操作步骤 & 预期结果 \\\midrule
-        1 & SQL注入防护 & 在筛选参数输入恶意字符串 & 返回校验错误 \\
-        2 & XSS防护 & 提交包含脚本的反馈内容 & 内容被转义 \\
-        3 & 路径安全 & 提交相对路径和绝对路径 & 禁止越权读取 \\
-        4 & 任务隔离 & 同时提交两个任务 & 结果目录互不覆盖 \\
-        5 & 浏览器兼容 & 使用Chrome、Edge、Firefox访问 & 页面正常渲染 \\
-        6 & 长任务稳定性 & 执行长周期schema & 状态持续可查询 \\
+        1 & SQL注入防护 & 筛选参数输恶意字符串 & 返回校验错误 \\
+        2 & XSS防护 & 反馈提交脚本内容 & 内容被转义 \\
+        3 & 路径安全 & 提交相对与绝对路径 & 禁止越权读取 \\
+        4 & 上传白名单 & 上传非法类型文件 & 被拒绝并提示 \\
+        5 & 任务隔离 & 同时提交两个任务 & 目录互不覆盖 \\
+        6 & 浏览器兼容 & Chrome/Edge/Firefox访问 & 页面正常渲染 \\
+        7 & 长任务稳定性 & 执行长周期schema & 状态持续可查询 \\
+        8 & 日志可追溯 & 按任务标识查日志 & 含配置与错误堆栈 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\section{算法测试}
-本文以CityLearn建筑群能源管理任务为实验环境，比较NOCONTROL、CHESCA与CHESCA-ResMARL的控制效果。实验数据由\texttt{citylearn\_challenge\_2023\_phase\_2\_local\_evaluation}及2026兼容schema构建，评价指标包括Total Cost、Carbon Emissions、Peak、Ramping、Discomfort、Electricity Consumption、Renewable Supplied Energy与Zero Net Energy。所有实验记录算法名称、数据集schema、步数、残差参数、checkpoint和输出目录。
+日志可追溯条目对应2.5与4.2节内容：当前以文件日志加任务目录归档为主，ELK/Loki为备选方案\cite{elk2024}。测试时检查三项内容：运行日志、算法指标与决策推演日志是否齐全，数据库中任务状态是否与文件记录一致\cite{mysql2024}。状态不一致时先检查Python进程退出码，再查看错误输出，而非仅观察前端加载状态。
 
-实验过程分为四步：首先运行NOCONTROL得到无控制参考；其次运行纯CHESCA验证基线链路；再次运行\texttt{residual\_alpha=0}的ResMARL配置验证混合入口能够退化为基线；最后在不同残差幅度、动作掩码和安全后处理开关下运行完整策略。每组正式实验至少使用5个随机种子，并报告均值、标准差和置信区间。
+\section{算法测试设计}
+仿真基座为CityLearn建筑群任务\cite{citylearn2020,citylearn2024}，采用Gymnasium接口\cite{gymnasium2024}，数据为社区级多建筑评测数据集及兼容数据集。比较三方策略：无控制参考、纯CHESCA基线\cite{chesca2024}与CHESCA-ResMARL混合策略\cite{residual2019}。评价指标包括总成本、碳排放、峰值、爬坡、不适度、电耗、可再生消纳与零净能耗，以无控制结果为分母归一化，保证跨场景可比性。BOPTEST物理细节更精细但部署成本较高\cite{boptest2021}，社区级迭代仍采用CityLearn。
+
+奖励函数由五个项构成：电价电费项、制冷电费项、电池套利项、电池损耗项与热舒适项（含温度带罚、过热动作保底与过冷抑制），各权重可配置。各建筑智能体以SAC为优化器独立训练\cite{haarnoja2018}，执行阶段仅依赖本地观测；值分解与信用分配参考QMIX与COMA\cite{rashid2018,foerster2018counterfactual}，多智能体协作有效性参考MAPPO\cite{yu2022mappo}，连续控制参考DDPG与SAC\cite{ddpg2016,haarnoja2018}。隐私扩展参考联邦MARL与FedAvg/FedProx\cite{fedmadDPG2024,mcmahan2017fedavg,li2020fedprox}，本版本仅预留接口、暂不实现。
+
+可复现性与统计口径方面：训练入口以随机种子参数指定随机种子，相同种子可复现指标与决策轨迹；每个实验配置以5个独立种子重复运行，论文报告多种子均值与标准差，并对成本、碳排放与不适比例等主要指标进行配对显著性检验。受算力与时间限制，表~\ref{tab:interim-results}所列结果为首个种子的单次全季节运行，多种子统计结果将在终稿补齐。
+
+实验流程分为四步：以无控制策略获取参考值；以纯CHESCA验证基线链路；以$\alpha=0$的残差策略入口验证退化正确性；最后在不同$\alpha$、掩码与安全开关组合下运行完整策略。每组正式实验至少运行5个随机种子，报告均值、标准差与置信区间。预测层采用XGBoost集成\cite{chen2023xgboost}，LightGBM可作为替代\cite{ke2017lightgbm}；电池与HVAC基线参考微网批量学习与HVAC-DRL早期工作\cite{mbuwir2017residential,wei2017hvacdrl,nagy2018marlbuilding}；奖励权衡设计参考建筑控制强化学习综述、智能家居DRL与HVAC最优控制对比研究\cite{wang2021review,zhang2022ems,chen2020hvac}；社区混合优化、住宅MARL与里尔大学博士论文作为方法对照\cite{costmin2024community,marlresidential2019,lille2025thesis}；Challenge基线与CORAIL、IE-Lab维护的平台作为复现依据\cite{iclrenergy2023,corail2024,ielabcitylearn,citylearnchallenge2023}。理论基础为Sutton-Barto教材\cite{sutton2018}与MARL综述\cite{marl2021,zou2020rlsurvey,wang2021magame}，MPC对照参考Drgona综述与Zhan对比研究\cite{drgona2020mpc,mps2018}，住户与隐私视角参考Zhang硕士论文与LSD-MADDPG\cite{occupant2024,wilk2024}，能效背景数据引自IEA报告\cite{iea2023}。
+
+实验流程如图\figref{算法实验流程图}所示。
+\begin{figure}[htb]
+    \centering
+    \includegraphics[width=0.90\textwidth]{./images/pictures/算法实验流程图.png}
+    \centering\bicaption{算法实验流程图}{Experiment pipeline}
+    \label{算法实验流程图}
+\end{figure}
 
 \section{阶段性实验结果}
-当前项目的\texttt{ablation\_results/ablation\_summary.json}包含720步、单次运行的阶段性结果。纯CHESCA的社区KPI为：\texttt{all\_time\_peak\_average}=0.832，\texttt{carbon\_emissions\_total}=0.407，\texttt{cost\_total}=0.382，\texttt{ramping\_average}=0.891，\texttt{discomfort\_proportion}=0.978；\texttt{residual\_alpha=0}的入口结果与纯CHESCA一致，说明残差入口的退化逻辑有效；\texttt{residual\_alpha=0.15}时成本为0.383、碳排为0.408、爬坡为0.893、不适比例仍为0.978，当前阶段尚不能证明ResMARL带来总体性能提升。
-
-特别需要指出的是，阶段性结果中的过热不适比例达到0.978、过热温差均值达到8.304，说明舒适性指标存在严重问题，可能与HVAC设定值映射、动作裁剪或安全投影顺序有关。在修复该问题并完成多种子、跨月份和基线充分对比前，本文不宣称CHESCA-ResMARL已经优于CHESCA。该如实报告符合硕士论文实验规范，也为下一步工作明确了验证重点。
+平台端到端评估（残差强化学习入口，$\alpha=0.15$，电池通道掩码开启，残差模型取自多智能体SAC训练任务）单次运行社区级指标如表~\ref{tab:interim-results}所示：不适比例降至0.027（B1为0.056、B2为0.016、B3为0.007），逐步轨迹中高温不适判定比例仅0.8\%；归一化总成本为0.862，碳排放为0.886，全时段峰值为0.976，爬坡为1.021，零净能耗为0.875。
 
 \begin{table}[h!]
-    \centering\bicaption{阶段性消融实验结果}{Interim ablation results}
+    \centering\bicaption{平台端到端单次运行结果}{End-to-end single-run results}
     \label{tab:interim-results}
-    \begin{tabular}{P{7em}P{5em}P{5em}P{5em}P{5em}P{5em}}
+    \begin{tabular}{P{9em}P{4em}P{4em}P{4em}P{4em}P{5em}}
         \toprule
         策略 & $\alpha$ & 峰值 & 碳排 & 成本 & 不适比例 \\\midrule
-        纯CHESCA & 0.00 & 0.832 & 0.407 & 0.382 & 0.978 \\
-        ResMARL & 0.00 & 0.832 & 0.407 & 0.382 & 0.978 \\
-        ResMARL & 0.15 & 0.832 & 0.408 & 0.383 & 0.978 \\
+        CHESCA-ResMARL（SAC残差） & 0.15 & 0.976 & 0.886 & 0.862 & 0.027 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\section{实验可视化测试}
-平台将实验结果转化为直观图表。环境状态与动作选择图展示电价、碳强度、社区负荷、SOC及HVAC设定值的同步变化；KPI柱状图与雷达图展示不同控制器的指标差异；决策轨迹图展示基线动作、残差、动作掩码、安全投影和最终动作。对于残差策略，用户可在指定时间步查看残差是否被裁剪，从而解释峰值变化与舒适性变化背后的动作原因。
+需要说明两点：其一，各指标均为以无控制结果为分母的归一化数值，不适比例按判定比例直接可比；其二，当前结果仍为单次运行，统计充分性不足，据此不作出``优于基线''的结论。多种子统计口径已在5.2节确立（5个独立种子，报告均值$\pm$标准差与配对显著性检验），多种子统计结果与跨月份、跨数据集泛化实验、残差系数敏感性曲线以及奖励权重消融将在终稿补齐。
 
-正式论文应补充以下图表：多随机种子KPI箱线图、训练奖励与loss曲线、不同$\alpha$的敏感性曲线、舒适性修复前后对比图、跨schema泛化图，以及前端首页、模型配置页、能源分析页和决策轨迹页截图。当前工程的\texttt{thesis/images/pictures/}中已生成版式占位图，提交论文前必须替换为真实截图和实验图。
+\section{实验可视化测试与前端截图对应}
+平台将实验结果转化为可视化图表：环境状态与动作图同步展示电价、碳强度、负荷、SOC与设定值；KPI柱状图与雷达图呈现控制器间差异；轨迹图展示基线、残差、掩码、投影与最终动作。残差策略支持按时间步查询残差是否被安全层裁剪，为解释峰值与舒适度变化提供依据。
+
+可视化体系覆盖多种子箱线图、训练奖励与损失曲线、残差系数敏感性曲线、舒适度对比图与跨数据集泛化对比图，以及首页、配置页、能源页、轨迹页四组真实界面截图。上述截图已按``功能+路径+截图''的规范（全屏显示、包含导航栏、任务标识可见、指标数值可读）补充至第4.1与4.5节，取自平台实际运行界面。
 
 \section{本章小结}
-本章节深入探索了系统测试、算法测试与实验可视化。我们首先按参考论文的结构设计了接口、功能与非功能测试用例；随后以CityLearn建筑群任务为例，说明NOCONTROL、CHESCA与CHESCA-ResMARL的实验设置、消融流程与评价指标；最后如实报告阶段性结果，明确当前舒适性异常、多种子统计缺失与跨场景验证不足等问题，为最终实验完善提供依据。
+本章按``接口—功能—非功能—算法—结果—可视化''的顺序完成验证闭环。Postman契约保证测试可复现，功能用例保证页面可交互，算法流程保证基线可比，实验结果如实报告单次全季节运行现状而不夸大。

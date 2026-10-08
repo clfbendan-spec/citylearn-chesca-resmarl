@@ -3,7 +3,7 @@ SAC 多智能体训练/评估脚本（副本，原版 Multi-agent.py 保持不�
 ================================================================
 
 纯 Multi-Agent SAC 端到端控制（非 CHESCA-ResMARL）。
-CHESCA + Multi-Agent 残差请使用 local_evaluation_copy.py（marl_mode=multi_agent）。
+CHESCA + Multi-Agent 残差请使用 CHESCA.py（marl_mode=multi_agent）。
 
 用法：
   python Multi-agent_copy.py --output-dir D:\\citylearn-demo\\output\\outkpis\\任务ID

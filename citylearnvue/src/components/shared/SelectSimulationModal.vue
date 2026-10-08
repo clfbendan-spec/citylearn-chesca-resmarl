@@ -1,5 +1,5 @@
 <template>
-  <el-dialog title="选择分组" :visible.sync="visible" width="640px" @close="handleClose">
+  <el-dialog title="选择比较模型KPI 指标" :visible.sync="visible" width="640px" @close="handleClose">
     <el-checkbox-group v-model="localSelected">
       <el-row :gutter="12">
         <el-col v-for="sim in simulationList" :key="sim" :span="24">

@@ -8,7 +8,7 @@ import lombok.Data;
 @Data
 public class ResMarlConfigVO {
 
-    /** 是否启用 CHESCA-ResMARL */
+    /** 是否启用 CHESCA-ResMARL（兼容字段；配置页已去掉开关，实际由入口脚本决定） */
     private Boolean resmarlEnabled;
 
     /** none | multi_agent */
@@ -20,6 +20,12 @@ public class ResMarlConfigVO {
     /** Multi-Agent 评估时是否 explore */
     private Boolean multiAgentExplore;
 
+    /**
+     * Multi-agent.py 保存的 RLlib checkpoint 路径。
+     * 非空时 CHESCA-ResMARL 加载该模型并跳过现场训练。
+     */
+    private String multiAgentCheckpoint;
+
     /** 残差强度 α */
     private Double residualAlpha;
 
@@ -29,12 +35,12 @@ public class ResMarlConfigVO {
     /** 是否在 Safety 之后应用残差 */
     private Boolean resmarlAfterSafety;
 
-    /** 是否启用训测 schema 分离（方案 A） */
-    private Boolean schemaSplitEnabled;
-
-    /** SAC 训练 schema */
+    /** Multi-agent.py 训练 schema */
     private String trainSchema;
 
-    /** CHESCA 仿真/KPI schema */
+    /** Multi-agent.py 评估 schema */
+    private String multiAgentEvalSchema;
+
+    /** CHESCA_ResMARL.py 仿真/KPI schema（resmarl_eval_schema，与 CHESCA.py 的 eval_schema 独立） */
     private String evalSchema;
 }

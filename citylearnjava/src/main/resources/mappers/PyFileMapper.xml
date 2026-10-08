@@ -10,14 +10,28 @@
         <result column="if_show" property="ifShow" />
         <result column="create_time" property="createTime" />
         <result column="create_user" property="createUser" />
+        <result column="script_type" property="scriptType" />
+        <result column="algorithm_config" property="algorithmConfig" />
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, file_name, description, if_system, if_show,create_time, create_user
+        id, file_name, description, if_system, if_show,create_time, create_user, script_type,
+        algorithm_config
     </sql>
 
+    <!--
+      代码编辑器「文件列表」。注意与 com.citylearn.dao.PyFileMapper#getPyFileList 上的
+      @Select 是同一个 statement id，MyBatis 只保留先加载的一份 —— 两处 SQL 必须逐字一致，
+      改动时同时改，否则会出现"改了这里却没生效"的隐蔽问题。
+      scriptType 为 null 时不筛选（由 Service 把空串归一化为 null）；
+      必须带 jdbcType，否则参数为 null 时 MyBatis 报
+      "JdbcType must be specified for all nullable parameters"。
+    -->
     <select id="getPyFileList" resultMap="BaseResultMap">
         SELECT * FROM py_file
-        WHERE create_user = #{createUser} or if_system = 1
+        WHERE if_show = 1
+          AND (create_user = #{createUser} OR if_system = 1)
+          AND (#{scriptType,jdbcType=VARCHAR} IS NULL
+               OR script_type = #{scriptType,jdbcType=VARCHAR})
     </select>
 </mapper>

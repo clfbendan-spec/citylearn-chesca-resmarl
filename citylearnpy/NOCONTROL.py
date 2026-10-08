@@ -9,6 +9,14 @@ import pandas as pd  # 导入pandas用于数据处理
 from RLA.easy_log import logger  # 导入RLAssistant日志工具
 from pathlib import Path
 
+# Java 会把本文件复制到 output/outkpis/{taskId}/ 再执行，需能 import citylearnpy 下模块
+CITYLEARNPY_DIR = Path(r'D:\citylearn-demo\citylearnpy')
+_CITYLEARNPY = str(CITYLEARNPY_DIR.resolve())
+if _CITYLEARNPY not in sys.path:
+    sys.path.insert(0, _CITYLEARNPY)
+
+from utils.report import collect_citylearn_step_rows, write_step_trace_csv
+
 # Windows 下管道输出强制 UTF-8，避免 Java 端控制台中文乱码
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -44,6 +52,11 @@ def parse_args():
         default=None,
         help=f'CityLearn 导出根目录（默认: {DEFAULT_OUTPUT_DIR}）',
     )
+    parser.add_argument(
+        '--no-step-trace',
+        action='store_true',
+        help='不写出 step_trace.csv（默认写出，便于与 Multi-agent 逐步对比）',
+    )
     return parser.parse_args()
 
 
@@ -58,10 +71,11 @@ pd.set_option('display.width', None)  # 不限制显示宽度
 # 初始化RLAssistant日志记录器
 logger.configure("./rla_logs")
 
-# 创建CityLearn环境实例
-env_config = 'citylearn_challenge_2023_phase_2_local_evaluation'
+# 创建CityLearn环境实例（2023 Challenge 线上评估集 1，完整约 2208 步）
+env_config = 'citylearn_challenge_2023_phase_2_online_evaluation_1'
+EPISODE_TIME_STEPS = 2208
 logger.info(f"初始化环境，配置: {env_config}，导出目录: {OUTPUT_DIR}")
-env = CityLearnEnv(env_config, central_agent=True, episode_time_steps=720,
+env = CityLearnEnv(env_config, central_agent=True, episode_time_steps=EPISODE_TIME_STEPS,
     render_mode='end',
     render_directory=OUTPUT_DIR,
     render_session_name="kpis")
@@ -71,16 +85,48 @@ logger.info("初始化BaselineAgent")
 model = Agent(env)
 
 observations, _ = env.reset()
-total_steps = getattr(env, 'episode_time_steps', None) or 720
+total_steps = getattr(env, 'episode_time_steps', None) or EPISODE_TIME_STEPS
+progress_every = max(1, total_steps // 20)
 log_console(f"开始仿真，共 {total_steps} 步...")
 
 step_count = 0
+step_trace_rows = []
+enable_step_trace = not args.no_step_trace
 while not env.terminated:
     actions = model.predict(observations)
     observations, reward, info, terminated, truncated = env.step(actions)
     step_count += 1
-    if step_count == 1 or step_count % 36 == 0 or env.terminated:
+    if enable_step_trace:
+        # central_agent：actions 多为 list[array]；按楼栋下标对齐最稳
+        action_list = None
+        reward_list = None
+        if isinstance(actions, (list, tuple)):
+            action_list = list(actions)
+        if isinstance(reward, (list, tuple)):
+            reward_list = [float(r) for r in reward]
+            # 若只返回 1 个社区奖励，广播到各楼便于对齐分析
+            if len(reward_list) == 1 and len(env.buildings) > 1:
+                reward_list = reward_list * len(env.buildings)
+        elif reward is not None:
+            try:
+                reward_list = [float(reward)] * len(env.buildings)
+            except (TypeError, ValueError):
+                reward_list = None
+        step_trace_rows.extend(
+            collect_citylearn_step_rows(
+                env,
+                step_count=step_count,
+                action_list=action_list,
+                reward_list=reward_list,
+            )
+        )
+    if step_count == 1 or step_count % progress_every == 0 or env.terminated:
         log_console(f"[进度] {step_count}/{total_steps} 步 ({100 * step_count / total_steps:.1f}%)")
+
+if enable_step_trace:
+    trace_dir = Path(env.new_folder_path) if env.new_folder_path else OUTPUT_DIR
+    trace_path = write_step_trace_csv(trace_dir / 'step_trace.csv', step_trace_rows)
+    log_console(f"逐步诊断已写入: {trace_path.resolve()} （共 {len(step_trace_rows)} 行）")
 
 log_console("仿真完成，正在计算 KPI...")
 logger.info("开始评估模型性能")
@@ -104,6 +150,3 @@ logger.dump_tabular()
 
 print_kpis_for_java(kpis)
 sys.stdout.flush()
-
-
-

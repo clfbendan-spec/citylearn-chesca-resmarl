@@ -1,0 +1,575 @@
+﻿This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+ restricted \write18 enabled.
+entering extended mode
+(./main.tex
+LaTeX2e <2025-11-01>
+L3 programming layer <2026-01-19>
+(./ustbthesis.cls
+Document Class: ustbthesis 2023/09/01 v0.1 北京科技大学博士学位论文模板
+(d:/texlive/texmf-dist/tex/latex/ctex/ctexbook.cls
+(d:/texlive/texmf-dist/tex/latex/ctex/config/ctexbackend.cfg)
+(d:/texlive/texmf-dist/tex/latex/l3kernel/expl3.sty
+(d:/texlive/texmf-dist/tex/latex/l3backend/l3backend-xetex.def))
+Document Class: ctexbook 2022/07/14 v2.5.10 Chinese adapter for class book (CTE
+X)
+(d:/texlive/texmf-dist/tex/latex/ctex/ctexhook.sty)
+(d:/texlive/texmf-dist/tex/latex/ctex/ctexpatch.sty)
+(d:/texlive/texmf-dist/tex/latex/base/fix-cm.sty
+(d:/texlive/texmf-dist/tex/latex/base/ts1enc.def))
+(d:/texlive/texmf-dist/tex/latex/ctex/config/ctexopts.cfg)
+(d:/texlive/texmf-dist/tex/latex/base/book.cls
+Document Class: book 2025/01/22 v1.4n Standard LaTeX document class
+(d:/texlive/texmf-dist/tex/latex/base/bk12.clo))
+(d:/texlive/texmf-dist/tex/latex/ctex/engine/ctex-engine-xetex.def
+(d:/texlive/texmf-dist/tex/xelatex/xecjk/xeCJK.sty
+(d:/texlive/texmf-dist/tex/latex/l3packages/xtemplate/xtemplate.sty)
+(d:/texlive/texmf-dist/tex/latex/fontspec/fontspec.sty
+(d:/texlive/texmf-dist/tex/latex/l3packages/xparse/xparse.sty)
+(d:/texlive/texmf-dist/tex/latex/fontspec/fontspec-xetex.sty
+(d:/texlive/texmf-dist/tex/latex/base/fontenc.sty)
+(d:/texlive/texmf-dist/tex/latex/fontspec/fontspec.cfg)))
+(d:/texlive/texmf-dist/tex/xelatex/xecjk/xeCJK.cfg)))
+(d:/texlive/texmf-dist/tex/latex/zhnumber/zhnumber.sty
+(d:/texlive/texmf-dist/tex/latex/zhnumber/zhnumber-utf8.cfg))
+(d:/texlive/texmf-dist/tex/latex/ctex/scheme/ctex-scheme-chinese-book.def
+(d:/texlive/texmf-dist/tex/latex/ctex/config/ctex-name-utf8.cfg))
+(d:/texlive/texmf-dist/tex/latex/ctex/ctex-cs4size.clo)
+(d:/texlive/texmf-dist/tex/latex/ctex/fontset/ctex-fontset-windows.def))
+(d:/texlive/texmf-dist/tex/latex/ctex/config/ctex.cfg)
+(d:/texlive/texmf-dist/tex/latex/tools/calc.sty)
+(d:/texlive/texmf-dist/tex/latex/etoolbox/etoolbox.sty)
+(d:/texlive/texmf-dist/tex/latex/xcolor/xcolor.sty
+(d:/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg)
+
+Package xcolor Warning: Package option `hyperref' is obsolete and ignored on in
+put line 265.
+
+(d:/texlive/texmf-dist/tex/latex/graphics-def/xetex.def)
+(d:/texlive/texmf-dist/tex/latex/graphics/mathcolor.ltx))
+(d:/texlive/texmf-dist/tex/latex/xcolor/x11nam.def)
+(d:/texlive/texmf-dist/tex/latex/xcolor/svgnam.def)
+(d:/texlive/texmf-dist/tex/latex/colortbl/colortbl.sty
+(d:/texlive/texmf-dist/tex/latex/tools/array.sty))
+(d:/texlive/texmf-dist/tex/latex/hyperref/hyperref.sty
+(d:/texlive/texmf-dist/tex/generic/iftex/iftex.sty)
+(d:/texlive/texmf-dist/tex/latex/graphics/keyval.sty)
+(d:/texlive/texmf-dist/tex/latex/kvsetkeys/kvsetkeys.sty)
+(d:/texlive/texmf-dist/tex/generic/kvdefinekeys/kvdefinekeys.sty)
+(d:/texlive/texmf-dist/tex/generic/pdfescape/pdfescape.sty
+(d:/texlive/texmf-dist/tex/generic/ltxcmds/ltxcmds.sty)
+(d:/texlive/texmf-dist/tex/generic/pdftexcmds/pdftexcmds.sty
+(d:/texlive/texmf-dist/tex/generic/infwarerr/infwarerr.sty)))
+(d:/texlive/texmf-dist/tex/latex/hycolor/hycolor.sty)
+(d:/texlive/texmf-dist/tex/latex/hyperref/nameref.sty
+(d:/texlive/texmf-dist/tex/latex/refcount/refcount.sty)
+(d:/texlive/texmf-dist/tex/generic/gettitlestring/gettitlestring.sty
+(d:/texlive/texmf-dist/tex/latex/kvoptions/kvoptions.sty)))
+(d:/texlive/texmf-dist/tex/generic/stringenc/stringenc.sty)
+(d:/texlive/texmf-dist/tex/latex/hyperref/pd1enc.def)
+(d:/texlive/texmf-dist/tex/generic/intcalc/intcalc.sty)
+(d:/texlive/texmf-dist/tex/latex/hyperref/puenc.def)
+(d:/texlive/texmf-dist/tex/latex/url/url.sty)
+(d:/texlive/texmf-dist/tex/generic/bitset/bitset.sty
+(d:/texlive/texmf-dist/tex/generic/bigintcalc/bigintcalc.sty)))
+(d:/texlive/texmf-dist/tex/latex/hyperref/hxetex.def
+(d:/texlive/texmf-dist/tex/latex/rerunfilecheck/rerunfilecheck.sty
+(d:/texlive/texmf-dist/tex/generic/uniquecounter/uniquecounter.sty)))
+(d:/texlive/texmf-dist/tex/latex/geometry/geometry.sty
+(d:/texlive/texmf-dist/tex/generic/iftex/ifvtex.sty))
+(d:/texlive/texmf-dist/tex/latex/graphics/graphicx.sty
+(d:/texlive/texmf-dist/tex/latex/graphics/graphics.sty
+(d:/texlive/texmf-dist/tex/latex/graphics/trig.sty)
+(d:/texlive/texmf-dist/tex/latex/graphics-cfg/graphics.cfg)))
+(d:/texlive/texmf-dist/tex/latex/grffile/grffile.sty)
+(d:/texlive/texmf-dist/tex/xelatex/xecjk/xeCJKfntef.sty
+(d:/texlive/texmf-dist/tex/generic/ulem/ulem.sty))
+(d:/texlive/texmf-dist/tex/latex/setspace/setspace.sty)
+(d:/texlive/texmf-dist/tex/latex/titlesec/titletoc.sty)
+(d:/texlive/texmf-dist/tex/latex/paralist/paralist.sty)
+(d:/texlive/texmf-dist/tex/latex/enumitem/enumitem.sty)
+(d:/texlive/texmf-dist/tex/latex/tabu/tabu.sty
+(d:/texlive/texmf-dist/tex/latex/varwidth/varwidth.sty)
+==> First Aid for varwidth.sty applied!
+) (d:/texlive/texmf-dist/tex/latex/booktabs/booktabs.sty)
+(d:/texlive/texmf-dist/tex/latex/makecell/makecell.sty)
+(d:/texlive/texmf-dist/tex/latex/multirow/multirow.sty)
+(d:/texlive/texmf-dist/tex/latex/tools/longtable.sty)
+(d:/texlive/texmf-dist/tex/latex/caption/caption.sty
+(d:/texlive/texmf-dist/tex/latex/caption/caption3.sty)
+(d:/texlive/texmf-dist/tex/latex/caption/ltcaption.sty))
+(d:/texlive/texmf-dist/tex/latex/caption/bicaption.sty)
+(d:/texlive/texmf-dist/tex/latex/newfloat/newfloat.sty)
+(d:/texlive/texmf-dist/tex/latex/fancyhdr/fancyhdr.sty)
+(d:/texlive/texmf-dist/tex/latex/amscls/amsthm.sty)
+(d:/texlive/texmf-dist/tex/latex/algorithms/algorithm.sty
+(d:/texlive/texmf-dist/tex/latex/float/float.sty)
+(d:/texlive/texmf-dist/tex/latex/base/ifthen.sty))
+(d:/texlive/texmf-dist/tex/latex/algorithms/algorithmic.sty)
+(d:/texlive/texmf-dist/tex/latex/titlesec/titlesec.sty))
+(d:/texlive/texmf-dist/tex/latex/biblatex/biblatex.sty
+(d:/texlive/texmf-dist/tex/latex/logreq/logreq.sty
+(d:/texlive/texmf-dist/tex/latex/logreq/logreq.def))
+(d:/texlive/texmf-dist/tex/latex/biblatex/blx-dm.def)
+(d:/texlive/texmf-dist/tex/latex/biblatex/blx-unicode.def)
+(d:/texlive/texmf-dist/tex/latex/biblatex/blx-compat.def)
+(d:/texlive/texmf-dist/tex/latex/biblatex/biblatex.def)
+(d:/texlive/texmf-dist/tex/latex/biblatex/blx-natbib.def) (./gb7714-2015.bbx
+(d:/texlive/texmf-dist/tex/latex/biblatex/bbx/numeric-comp.bbx
+(d:/texlive/texmf-dist/tex/latex/biblatex/bbx/numeric.bbx
+(d:/texlive/texmf-dist/tex/latex/biblatex/bbx/standard.bbx)))
+(d:/texlive/texmf-dist/tex/generic/xstring/xstring.sty
+(d:/texlive/texmf-dist/tex/generic/xstring/xstring.tex))) (./gb7714-2015.cbx
+(d:/texlive/texmf-dist/tex/latex/biblatex/cbx/numeric-comp.cbx)
+
+Package biblatex Warning: Redefining '\citet'.
+
+
+Package biblatex Warning: Redefining '\citep'.
+
+) (d:/texlive/texmf-dist/tex/latex/biblatex/biblatex.cfg)
+(d:/texlive/texmf-dist/tex/latex/biblatex/blx-case-expl3.sty))
+(d:/texlive/texmf-dist/tex/latex/tools/tabularx.sty)
+(d:/texlive/texmf-dist/tex/latex/amsmath/amsmath.sty
+For additional information on amsmath, use the `?' option.
+(d:/texlive/texmf-dist/tex/latex/amsmath/amstext.sty
+(d:/texlive/texmf-dist/tex/latex/amsmath/amsgen.sty))
+(d:/texlive/texmf-dist/tex/latex/amsmath/amsbsy.sty)
+(d:/texlive/texmf-dist/tex/latex/amsmath/amsopn.sty))
+(d:/texlive/texmf-dist/tex/latex/amsfonts/amssymb.sty
+(d:/texlive/texmf-dist/tex/latex/amsfonts/amsfonts.sty))
+(d:/texlive/texmf-dist/tex/latex/subfig/subfig.sty) (./main.aux
+(./contents/abstract.aux) (./contents/chap1.aux) (./contents/chap2.aux)
+(./contents/chap3.aux) (./contents/chap4.aux) (./contents/chap5.aux)
+(./contents/chap6.aux) (./contents/thanks.aux) (./contents/mresume.aux)
+(./contents/dataset.aux)) (./main.out) (./main.out)
+*geometry* driver: auto-detecting
+*geometry* detected driver: xetex
+(d:/texlive/texmf-dist/tex/latex/biblatex/lbx/english.lbx) (./main.bbl)
+(d:/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd)
+(d:/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd) [1] [2]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[3] [4]
+Overfull \hbox (21.07875pt too wide) in paragraph at lines 68--68
+[][] 
+[5] [6] (./contents/abstract.tex
+
+LaTeX Font Warning: Font shape `TU/SimHei(0)/b/n' undefined
+(Font)              using `TU/SimHei(0)/m/n' instead on input line 1.
+
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[1]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[2]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[3]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[4]) (./main.toc
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[5])
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[6] (./contents/chap1.tex
+\bfseries 1
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[1]
+Underfull \vbox (badness 10000) has occurred while \output is active
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[2]
+Underfull \vbox (badness 10000) has occurred while \output is active
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[3]
+Underfull \vbox (badness 10000) has occurred while \output is active
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[4]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[5]
+Overfull \hbox (6.56665pt too wide) in paragraph at lines 77--78
+[]\TU/SimSun(0)/m/n/12.045 本 文 的 潜 在 贡 献 包 括：|  提 出 面 向 \TU/TimesNewRoman(0)/m/
+n/12.045 CityLearn \TU/SimSun(0)/m/n/12.045 建 筑 社 区 的 \TU/TimesNewRoman(0)/m/n/
+12.045 CHESCA-ResMARL
+
+Overfull \hbox (16.81487pt too wide) in paragraph at lines 83--84
+[]\TU/SimSun(0)/m/n/12.045 第 一 章 为 引 言。|  阐 述 建 筑 群 节 能 控 制 的 现 实 需 求 与 理 论 难 点
+，|  综 述 \TU/TimesNewRoman(0)/m/n/12.045 CityLearn\TU/SimSun(0)/m/n/12.045 、|
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[6]
+Overfull \hbox (3.03688pt too wide) in paragraph at lines 85--86
+\TU/SimSun(0)/m/n/12.045 残 差 控 制、|  多 目 标 \TU/TimesNewRoman(0)/m/n/12.045 KPI\T
+U/SimSun(0)/m/n/12.045 ，|  以 及 \TU/TimesNewRoman(0)/m/n/12.045 CityLearn \TU/Si
+mSun(0)/m/n/12.045 环 境、| \TU/TimesNewRoman(0)/m/n/12.045 Python \TU/SimSun(0)/m
+/n/12.045 算 法 组 件 和 \TU/TimesNewRoman(0)/m/n/12.045 Spring Boot/Vue
+)
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[7] (./contents/chap2.tex
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[8]
+\bfseries 2
+
+Overfull \hbox (12.67819pt too wide) in paragraph at lines 17--18
+[]\TU/SimSun(0)/m/n/12.045 集 中 训 练 分 散 执 行  |（\TU/TimesNewRoman(0)/m/n/12.045 C
+entralized Training with Decentralized Execution, CTDE\TU/SimSun(0)/m/n/12.045 
+）|
+
+Underfull \vbox (badness 10000) has occurred while \output is active
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[9]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[10])
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[11] (./contents/chap3.tex
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[12]
+\bfseries 3
+
+LaTeX Warning: Reference `eq:final' on page 13 undefined on input line 12.
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[13]
+Overfull \hbox (23.95253pt too wide) detected at line 33
+[][][]\OML/cmm/m/it/12.045 r[] \OT1/cmr/m/n/12.045 = \OMS/cmsy/m/n/12.045 ^^@ [
+] \OML/cmm/m/it/12.045 ;
+
+Overfull \hbox (17.16533pt too wide) in paragraph at lines 33--35
+\TU/SimSun(0)/m/n/12.045 为 纯 基 线；| $\OML/cmm/m/it/12.045 ^^K$ \TU/SimSun(0)/m/n
+/12.045 过 大 则 退 化 为 纯 \TU/TimesNewRoman(0)/m/n/12.045 RL \TU/SimSun(0)/m/n/12.0
+45 并 增 加 违 约 风 险，|  需 通 过 \TU/lmtt/m/n/12.045 ablation_resmarl.py
+
+Overfull \hbox (119.52669pt too wide) in paragraph at lines 37--38
+[]\TU/SimSun(0)/m/n/12.045 训 练 入 口 为 \TU/lmtt/m/n/12.045 train_chesca_resmarl.p
+y\TU/SimSun(0)/m/n/12.045 ，|  支 持 分 阶 段 测 试  |（\TU/lmtt/m/n/12.045 tests/test_r
+esidual_phase*.py\TU/SimSun(0)/m/n/12.045 ） ：|
+
+Overfull \hbox (58.34187pt too wide) in paragraph at lines 37--38
+\TU/SimSun(0)/m/n/12.045 阶 段 \TU/TimesNewRoman(0)/m/n/12.045 3 \TU/SimSun(0)/m/
+n/12.045 做 短 周 期 闭 环。|  评 估 入 口 \TU/lmtt/m/n/12.045 CHESCA_ResMARL.py \TU/SimSu
+n(0)/m/n/12.045 读 取 \TU/lmtt/m/n/12.045 chesca_agent_config.json\TU/SimSun(0)/m
+/n/12.045 ，|
+)
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[14]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[15] (./contents/chap4.tex
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[16]
+\bfseries 4
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[17]
+Overfull \hbox (17.20192pt too wide) in paragraph at lines 17--18
+[]\TU/SimSun(0)/m/n/12.045 决 策 轨 迹 页 面 按 时 间 步 读 取 \TU/lmtt/m/n/12.045 chesca_t
+race.csv \TU/SimSun(0)/m/n/12.045 与 \TU/lmtt/m/n/12.045 decision_trace.json\TU/
+SimSun(0)/m/n/12.045 ，|
+
+Overfull \hbox (21.42892pt too wide) in paragraph at lines 17--18
+\TU/SimSun(0)/m/n/12.045 不 只 是 观 察 最 终 \TU/TimesNewRoman(0)/m/n/12.045 KPI\TU/S
+imSun(0)/m/n/12.045 。|  该 页 面 由 \TU/lmtt/m/n/12.045 ChescaTracePanel.vue\TU/Sim
+Sun(0)/m/n/12.045 、| \TU/lmtt/m/n/12.045 DecisionTraceLog.vue
+
+Overfull \hbox (25.83542pt too wide) in paragraph at lines 23--24
+\TU/SimSun(0)/m/n/12.045 基 础 数 据 初 始 化 脚 本 为 \TU/lmtt/m/n/12.045 citylearnjava/
+citylearn.sql\TU/SimSun(0)/m/n/12.045 ，|  字 符 集 统 一 为 \TU/lmtt/m/n/12.045 utf8m
+b4\TU/SimSun(0)/m/n/12.045 ，|
+
+LaTeX Warning: Reference `数据库表之间的关系' on page 18 undefined on input line 25.
+
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[18]
+
+LaTeX Warning: File `./images/pictures/数据库表之间的关系.png' not found on input line 2
+9.
+
+! Unable to load picture or PDF file './images/pictures/数据库表之间的关系.png'.
+<to be read again> 
+                   }
+l.29 ...extwidth]{./images/pictures/数据库表之间的关系.png}
+                                                  
+
+! Package graphics Error: Division by 0.
+
+See the graphics package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.29 ...extwidth]{./images/pictures/数据库表之间的关系.png}
+                                                  
+
+Overfull \hbox (18.7321pt too wide) in paragraph at lines 46--46
+ []|\TU/TimesNewRoman(0)/m/n/12.045 daylight_savings_status| 
+
+Overfull \hbox (48.13882pt too wide) in paragraph at lines 47--47
+ []|\TU/TimesNewRoman(0)/m/n/12.045 indoor_dry_bulb_temperature| 
+
+Overfull \hbox (118.13863pt too wide) in paragraph at lines 48--48
+ []|\TU/TimesNewRoman(0)/m/n/12.045 average_unmet_cooling_setpoint_difference| 
+
+
+Overfull \hbox (26.74248pt too wide) in paragraph at lines 49--49
+ []|\TU/TimesNewRoman(0)/m/n/12.045 indoor_relative_humidity| 
+
+LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+
+LaTeX Warning: Reference `tab:env-table' on page 19 undefined on input line 63.
+
+
+
+Overfull \hbox (54.16133pt too wide) in paragraph at lines 73--73
+ []|\TU/TimesNewRoman(0)/m/n/12.045 outdoor_dry_bulb_temperature| 
+
+Overfull \hbox (32.76498pt too wide) in paragraph at lines 74--74
+ []|\TU/TimesNewRoman(0)/m/n/12.045 outdoor_relative_humidity| 
+
+Overfull \hbox (20.47298pt too wide) in paragraph at lines 75--75
+ []|\TU/TimesNewRoman(0)/m/n/12.045 diffuse_solar_irradiance| 
+
+Overfull \hbox (14.6622pt too wide) in paragraph at lines 76--76
+ []|\TU/TimesNewRoman(0)/m/n/12.045 direct_solar_irradiance| 
+
+Overfull \hbox (73.54626pt too wide) in paragraph at lines 77--77
+ []|\TU/TimesNewRoman(0)/m/n/12.045 outdoor_temperature_predicted_1– 
+
+Overfull \hbox (59.531pt too wide) in paragraph at lines 78--78
+ []|\TU/TimesNewRoman(0)/m/n/12.045 outdoor_humidity_predicted_1– 
+
+Overfull \hbox (50.12085pt too wide) in paragraph at lines 79--79
+ []|\TU/TimesNewRoman(0)/m/n/12.045 solar_irradiance_predicted_1– 
+
+LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+
+LaTeX Warning: Reference `tab:py-table' on page 19 undefined on input line 88.
+
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+[19]
+
+LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+
+LaTeX Warning: Reference `tab:kpi-table' on page 20 undefined on input line 116
+.
+
+
+Overfull \hbox (15.33267pt too wide) in paragraph at lines 127--127
+ []|\TU/TimesNewRoman(0)/m/n/12.045 all_time_peak_average| 
+
+Overfull \hbox (17.37938pt too wide) in paragraph at lines 128--128
+ []|\TU/TimesNewRoman(0)/m/n/12.045 carbon_emissions_total| 
+
+Overfull \hbox (50.13261pt too wide) in paragraph at lines 131--131
+ []|\TU/TimesNewRoman(0)/m/n/12.045 discomfort_hot_delta_average| 
+
+Overfull \hbox (12.69783pt too wide) in paragraph at lines 132--132
+ []|\TU/TimesNewRoman(0)/m/n/12.045 discomfort_proportion| 
+
+Overfull \hbox (47.47424pt too wide) in paragraph at lines 133--133
+ []|\TU/TimesNewRoman(0)/m/n/12.045 electricity_consumption_total| 
+
+LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+
+Overfull \hbox (56.89842pt too wide) in paragraph at lines 141--142
+\TU/lmtt/m/n/12.045 value_type\TU/SimSun(0)/m/n/12.045 、| \TU/lmtt/m/n/12.045 d
+escription \TU/SimSun(0)/m/n/12.045 与 \TU/lmtt/m/n/12.045 update_time\TU/SimSun
+(0)/m/n/12.045 ，|  保 存 \TU/lmtt/m/n/12.045 min_soc_per_hour\TU/SimSun(0)/m/n/12
+.045 、| \TU/lmtt/m/n/12.045 max_soc_normal\TU/SimSun(0)/m/n/12.045 、|
+
+Overfull \hbox (27.86804pt too wide) in paragraph at lines 141--142
+\TU/lmtt/m/n/12.045 residual_alpha\TU/SimSun(0)/m/n/12.045 、| \TU/lmtt/m/n/12.0
+45 residual_action_mask\TU/SimSun(0)/m/n/12.045 、| \TU/lmtt/m/n/12.045 resmarl_
+after_safety\TU/SimSun(0)/m/n/12.045 、| \TU/lmtt/m/n/12.045 train_schema
+
+Overfull \hbox (7.38333pt too wide) in paragraph at lines 141--142
+\TU/SimSun(0)/m/n/12.045 通 过 \TU/lmtt/m/n/12.045 ON DUPLICATE KEY UPDATE \TU/Si
+mSun(0)/m/n/12.045 保 证 幂 等 更 新。|  数 据 集 目 录 表 以 \TU/lmtt/m/n/12.045 schema_key
+
+Overfull \hbox (11.9498pt too wide) in paragraph at lines 141--142
+\TU/SimSun(0)/m/n/12.045 为 唯 一 键，|  保 存 展 示 名 称、|  相 对 路 径、|  建 筑 数 量、|  时 间 步 
+数 与 \TU/lmtt/m/n/12.045 chesca_compatible
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+xelatex : 
+所在位置 C:\Users\clfbe\AppData\Local\Temp\ps-script-dfe62914-83e4-42e7-a11e-8f3905b42ccb.ps1:121 字符: 1
++ xelatex -interaction=nonstopmode main.tex 2>&1 | Out-File -Encoding U ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+xdvipdfmx:fatal: Image inclusion failed. Could not find file: ./images/pictures/数据库表之间的关系.png
+
+No output PDF file written.
+[20]
+Underfull \vbox (badness 10000) has occurred while \output is active
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 12.64723pt, for example:
+(fancyhdr)                \setlength{\headheight}{12.64723pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-0.64723pt}.
+
+xelatex.exe: fwrite: Broken pipe
+[21
+INFO - This is Biber 2.21
+INFO - Logfile is 'main.blg'
+ERROR - main.bcf is malformed, last biblatex run probably failed. Deleted main.bbl
+INFO - ERRORS: 1

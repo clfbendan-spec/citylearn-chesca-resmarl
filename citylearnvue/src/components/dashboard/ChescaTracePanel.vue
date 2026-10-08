@@ -64,7 +64,7 @@
 
     <el-empty
       v-if="!hasData"
-      description="暂无 Decision Trace 数据。请使用 local_evaluation_copy.py 运行 CHESCA 任务后重试。"
+      description="暂无 Decision Trace 数据。请使用 CHESCA.py 或 Multi-agent.py 运行任务后重试。"
       class="empty-block"
     />
 
@@ -162,7 +162,7 @@ export default {
   computed: {
     activeResmarlHint() {
       const label = formatResmarlLabel(this.resmarlBySim[this.activeSim])
-      return label && label !== '未标注' ? label : ''
+      return label || ''
     },
     allRows() {
       if (!this.activeSim) return []
@@ -176,11 +176,28 @@ export default {
       if (!this.activeSim) return null
       return this.decisionTraceBySim[this.activeSim] || null
     },
+    /** 无 chesca_trace.csv 时（如 Multi-agent），从 decision_trace.steps 推导步数/建筑 */
+    decisionSteps() {
+      const steps = this.decisionTrace && this.decisionTrace.steps
+      return Array.isArray(steps) ? steps : []
+    },
     episodes() {
-      return listTraceEpisodes(this.allRows)
+      const fromCsv = listTraceEpisodes(this.allRows)
+      if (fromCsv.length) return fromCsv
+      const eps = [...new Set(this.decisionSteps.map((s) => s.episode).filter((e) => e != null))]
+      return eps.length ? eps.sort((a, b) => a - b) : []
     },
     buildings() {
-      return listTraceBuildings(this.allRows)
+      const fromCsv = listTraceBuildings(this.allRows)
+      if (fromCsv.length) return fromCsv
+      const set = new Set()
+      this.decisionSteps.forEach((s) => {
+        const buildings = s.buildings || []
+        buildings.forEach((b) => {
+          if (b && b.building != null) set.add(b.building)
+        })
+      })
+      return [...set].sort((a, b) => a - b)
     },
     metricConfig() {
       return this.metrics.find((m) => m.key === this.selectedMetric) || this.metrics[0]
@@ -203,6 +220,10 @@ export default {
         rows = filterTraceRows(rows, { building: this.actionBuildingScope })
       }
       rows = [...rows].sort((a, b) => (a.step ?? 0) - (b.step ?? 0))
+      // Multi-agent：无 CSV 时用 decision_trace 的动作终稿合成图数据
+      if (!rows.length && this.decisionSteps.length) {
+        rows = this.decisionStepsToActionRows()
+      }
       const [minStep, maxStep] = this.stepRange
       if (maxStep > minStep) {
         rows = rows.filter((r) => r.step >= minStep && r.step <= maxStep)
@@ -224,8 +245,16 @@ export default {
       })
       const actionRows = filterTraceRows(this.allRows, { episode: this.selectedEpisode })
       const source = actionRows.length ? actionRows : rows
-      if (!source.length) return 0
-      return Math.max(...source.map((r) => r.step ?? 0))
+      if (source.length) {
+        return Math.max(...source.map((r) => r.step ?? 0))
+      }
+      // Multi-agent 等仅有 decision_trace.json 的任务
+      let steps = this.decisionSteps
+      if (this.selectedEpisode != null) {
+        steps = steps.filter((s) => s.episode === this.selectedEpisode)
+      }
+      if (!steps.length) return 0
+      return Math.max(...steps.map((s) => s.step ?? 0))
     }
   },
   watch: {
@@ -237,6 +266,15 @@ export default {
       immediate: true,
       handler() {
         this.resetFilters()
+      }
+    },
+    decisionTrace: {
+      immediate: true,
+      handler() {
+        // 仅有 JSON、无 CSV 时也要刷新步数范围
+        if (!this.allRows.length && this.decisionSteps.length) {
+          this.resetFilters()
+        }
       }
     },
     filteredRows() {
@@ -285,6 +323,50 @@ export default {
   },
   methods: {
     buildingLabel,
+    /** 把 decision_trace.steps 展平为「每步动作」图可用的伪 CSV 行 */
+    decisionStepsToActionRows() {
+      const out = []
+      let steps = this.decisionSteps
+      if (this.selectedEpisode != null) {
+        steps = steps.filter((s) => s.episode === this.selectedEpisode)
+      }
+      if (this.actionBuildingScope !== 'all') {
+        const bid = this.actionBuildingScope
+        steps.forEach((s) => {
+          const buildings = s.buildings || []
+          buildings.forEach((b) => {
+            if (b.building !== bid) return
+            const fin = (b.actions && b.actions.final) || {}
+            out.push({
+              episode: s.episode,
+              step: s.step,
+              hour: s.hour,
+              building: b.building,
+              action_dhw_final: fin.dhw,
+              action_ele_final: fin.ele,
+              action_tmp_final: fin.tmp
+            })
+          })
+        })
+        return out
+      }
+      steps.forEach((s) => {
+        const buildings = s.buildings || []
+        buildings.forEach((b) => {
+          const fin = (b.actions && b.actions.final) || {}
+          out.push({
+            episode: s.episode,
+            step: s.step,
+            hour: s.hour,
+            building: b.building,
+            action_dhw_final: fin.dhw,
+            action_ele_final: fin.ele,
+            action_tmp_final: fin.tmp
+          })
+        })
+      })
+      return out
+    },
     formatStepTooltip(val) {
       return `Step ${val}`
     },
@@ -531,30 +613,31 @@ export default {
 
 <style scoped>
 .chesca-trace-panel {
-  margin-top: 16px;
-  margin-bottom: 24px;
-  padding: 12px 16px 16px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  background: #fafafa;
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--divider-color);
+  border-radius: var(--ha-card-border-radius);
+  background: var(--card-background-color);
+  box-shadow: var(--ha-card-box-shadow);
 }
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 12px;
-  gap: 12px;
+  margin-bottom: var(--space-3);
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 .title {
   margin: 0 0 4px;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--primary-text-color);
 }
 .hint {
   margin: 0;
   font-size: 13px;
-  color: #909399;
+  color: var(--secondary-text-color);
 }
 .controls {
   display: flex;
@@ -571,7 +654,7 @@ export default {
   margin: 0 0 8px;
   padding: 0 4px;
   font-size: 12px;
-  color: #909399;
+  color: var(--secondary-text-color);
 }
 .chart-box-tall {
   height: 480px;
@@ -586,15 +669,15 @@ export default {
 .slider-label {
   flex-shrink: 0;
   font-size: 13px;
-  color: #606266;
+  color: var(--secondary-text-color);
   width: 72px;
 }
 .step-slider :deep(.el-slider) {
   flex: 1;
 }
 .chart-tabs {
-  background: #fff;
-  border-radius: 4px;
+  background: var(--card-background-color);
+  border-radius: var(--ha-card-border-radius);
 }
 .chart-box {
   width: 100%;

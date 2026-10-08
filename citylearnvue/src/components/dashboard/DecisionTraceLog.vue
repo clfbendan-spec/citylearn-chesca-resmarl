@@ -26,7 +26,7 @@
 
     <div v-if="currentNarratives.length" class="narrative-panel">
       <h5 class="sub-title">推演剧本（分层解释）</h5>
-      <p class="narrative-hint">悬停任意一行可查看对应 Python 源码片段</p>
+      <p class="narrative-hint">悬停任意一行可查看对应 Python 源码 / REWARD_KWARGS（Multi-agent）</p>
       <div
         v-for="item in currentNarratives"
         :key="item.building"
@@ -210,13 +210,20 @@ export default {
       if (!this.steps.length) return 0
       const [rangeMin] = this.stepRange
       const min = this.steps[0].step
-      return rangeMin != null && rangeMin >= min ? rangeMin : min
+      // [0,0] 表示父组件尚未给出有效范围（Multi-agent 无 CSV 时曾出现），勿把 0 当成上限/下限
+      if (rangeMin == null || (rangeMin === 0 && this.stepRange[1] === 0)) {
+        return min
+      }
+      return rangeMin >= min ? rangeMin : min
     },
     stepMax() {
       if (!this.steps.length) return 0
       const [, rangeMax] = this.stepRange
       const max = this.steps[this.steps.length - 1].step
-      return rangeMax != null && rangeMax <= max ? rangeMax : max
+      if (rangeMax == null || (this.stepRange[0] === 0 && rangeMax === 0)) {
+        return max
+      }
+      return rangeMax <= max ? rangeMax : max
     },
     currentStepData() {
       return getDecisionStep(this.decisionTrace, this.currentStep, this.selectedEpisode)
@@ -247,7 +254,7 @@ export default {
         return []
       }
       return this.filteredBuildings.map((b) => {
-        const entries = resolveNarrativeEntries(b)
+        const entries = resolveNarrativeEntries(b, this.decisionTrace)
         const text = entries.length
           ? entries.map((e) => e.text).join('\n')
           : (b.decision_summary || '暂无详细推演文案（请重新运行仿真以生成新版 trace）')

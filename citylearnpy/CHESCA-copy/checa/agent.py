@@ -34,8 +34,8 @@ CHESCA（Community-based Hierarchical Energy Systems Coordination Algorithm）
   └───────────────────────────────────────────────────────────────────┘
        │
        ▼
-  ┌─ 阶段5: ResMARL 残差修正（默认关闭）──────────────────────────────┐
-  │  a_final = clip(a_base + α · mask · Δa_RL)                         │
+  ┌─ 阶段5: ResMARL 修正（默认关闭）──────────────────────────────────┐
+  │  Multi-Agent：a_final = clip((1−α)·a_base + α·a_rl)  （blend）     │
   │  阶段0：无策略网络，enabled=False 或 α=0 时严格恒等（基线冻结）    │
   └───────────────────────────────────────────────────────────────────┘
        │
@@ -64,7 +64,14 @@ from checa.cooling_device_controller.cooling_device_controller import CoolingDev
 from checa.forecast_agent.forecasting_agent import ForecastAgent
 from checa.battery_control_search.battery_controller import BatteryController
 from checa.residual import ResidualCorrector, parse_residual_config
-from checa.utils import get_observation_names_with_building, observation_value
+from checa.utils import (
+    assert_chesca_schema_compatible,
+    building_net_electricity_consumption,
+    building_storage_soc,
+    compute_step_hot_discomfort,
+    get_observation_names_with_building,
+    observation_value,
+)
 
 
 class Checa(Agent):
@@ -84,6 +91,8 @@ class Checa(Agent):
         super().__init__(env, **kwargs)
         self.env = env
         self.n_buildings = len(self.env.buildings_metadata)
+        # 2022 等「仅电池」数据集缺少 CHESCA 所需观测/动作，尽早失败并提示改用 2023
+        assert_chesca_schema_compatible(env)
         self.observation_names = env.observation_names
         # 将重名观测（如多栋 solar_generation）展开为 solar_generation_0, _1, ...
         self.observation_names_b = get_observation_names_with_building(env.observation_names[0])
@@ -116,6 +125,45 @@ class Checa(Agent):
             'residual_action_mask': {'dhw': False, 'ele': True, 'tmp': False},
             'resmarl_policy_path': None,
             'resmarl_after_safety': True,
+            # 冷机开环保底 / 决策室温（网页可调）
+            'min_cool_per_c_overheat': 0.12,
+            'min_cool_per_c_outdoor_gap': 0.03,
+            'outdoor_gap_deadband_c': 5.0,
+            'outdoor_floor_max_overheat_c': 0.5,
+            'cooling_demand_feedforward_frac': 0.10,
+            'demand_feedforward_only_when_overheat': False,
+            'outdoor_floor_allow_when_under_setpoint': True,
+            'clear_open_loop_floor_when_under_setpoint': False,
+            'use_lagged_dynamics_indoor': True,
+            'lagged_indoor_only_when_hotter': False,
+            'lagged_indoor_hotter_margin_c': 0.3,
+            # 复电缓充：抑制停电刚恢复时 min_soc 硬约束导致的强充尖峰（网页可调）
+            'post_outage_soft_charge_enabled': True,
+            'post_outage_relax_steps': 4,
+            'post_outage_waive_min_soc': True,
+            'post_outage_max_ele_charge': 0.15,
+            'post_outage_forbid_charge_when_overheat': True,
+            'post_outage_overheat_c': 0.5,
+            # 复电 TMP 斜坡/功率帽：抑制复电瞬间三栋同时满功率制冷尖峰（网页可调）
+            'post_outage_tmp_cap_enabled': True,
+            'post_outage_tmp_cap_steps': 4,
+            'post_outage_tmp_max_start': 0.40,
+            'post_outage_tmp_ramp': True,
+            'post_outage_tmp_stagger': True,
+            # 电价感知电池：高价高 SOC 禁充/强放，低价补 SOC；全局韧性地板（网页可调）
+            'price_aware_battery_enabled': True,
+            'price_high_quantile': 0.75,
+            'price_low_quantile': 0.25,
+            'price_history_min_steps': 48,
+            'price_high_soc_threshold': 0.70,
+            'price_high_forbid_charge': True,
+            'price_high_force_discharge': True,
+            'price_high_discharge_ele': 0.15,
+            'price_min_reserve_soc': 0.55,
+            'price_global_reserve_enabled': True,
+            'price_low_target_soc': 0.80,
+            'price_low_charge_ele': 0.25,
+            'price_low_search_boost': True,
         }
         if params is not None:
             self.params = {**default_params, **params}
@@ -147,6 +195,8 @@ class Checa(Agent):
             CoolingDeviceController(self.env.buildings_metadata[b], b, self.observation_names_b)
             for b in range(self.n_buildings)
         ]
+        for ctrl in self.cooling_device_controller:
+            ctrl.apply_comfort_floor_params(self.params)
 
         # ---------- 电池物理参数（来自 schema 元数据）----------
         self.battery_capacities = np.array([
@@ -207,6 +257,8 @@ class Checa(Agent):
         self.trace_recorder = None
         self._trace_refine_meta = {}
         self._trace_initial_meta = {}
+        self._trace_step_pricing = None
+        self.price_history = []
 
     def predict(self, observations: List[List[float]], deterministic: bool = None) -> List[List[float]]:
         """
@@ -221,7 +273,7 @@ class Checa(Agent):
         阶段4  电池树搜索 refine → 得到 a_base（纯 CHESCA 基准动作）
         阶段5  apply_residual_correction：
                  SAC 各 agent 输出 Δa
-                 a_final = clip(a_base + α·mask·Δa)   ← 环境实际执行的是 a_final
+                 a_final = clip((1−α)·a_base + α·a_rl)  ← 环境实际执行的是 a_final
         随后   更新净负荷历史、seen_steps += 1
 
         【纯 CHESCA（resmarl_enabled=False 或 α=0）】
@@ -266,9 +318,9 @@ class Checa(Agent):
         if refine_applied:
             action_proposals = self.refine_actions_with_battery_controller(hour, action_proposals)
 
-        # --- 阶段 5：CHESCA-ResMARL 残差（local_evaluation_copy 启用 multi_agent 时）---
+        # --- 阶段 5：CHESCA-ResMARL 残差（CHESCA 启用 multi_agent 时）---
         # 输入 action_proposals = a_base（阶段4 refine 之后）
-        # 输出 action_proposals = a_final = clip(a_base + α·mask·Δa)
+        # 输出 action_proposals = a_final = clip((1−α)·a_base + α·a_rl)
         # residual_corrector 在 setup 时被替换为 MultiAgentResidualCorrector（SAC）
         # α=0 或未启用时原样返回 a_base
         action_proposals = self.apply_residual_correction(action_proposals, observations)
@@ -298,14 +350,16 @@ class Checa(Agent):
 
     def apply_residual_correction(self, action_proposals, observations):
         """
-        阶段 5：对 CHESCA 基准动作 a_base 施加残差，得到 a_final。
+        阶段 5：对 CHESCA 基准动作 a_base 施加 ResMARL 修正，得到 a_final。
 
-        公式：a_final = clip(a_base + α · mask · Δa)
+        CHESCA-ResMARL（Multi-Agent SAC）使用 blend：
+          a_final = clip( (1−α)·a_base + α·a_rl_masked )
+        （SAC 输出绝对动作 a_rl；mask 关闭维保持 a_base）
 
         行为保证：
           - resmarl_enabled=False 或 residual_alpha=0 → 原样返回 a_base
-          - residual_corrector 无有效策略 / Δa 全 0 → 数值上等于 a_base
-          - CHESCA-ResMARL 下 Δa 来自 Multi-Agent SAC（见 multi_agent_runner_copy）
+          - residual_corrector 无有效策略 → 数值上等于 a_base
+          - 详见 multi_agent_runner_copy.MultiAgentResidualCorrector
         """
         a_base = list(action_proposals)
         low = self.env.action_space[0].low
@@ -368,21 +422,41 @@ class Checa(Agent):
         except ValueError:
             electricity_pricing = None
         self._trace_step_pricing = electricity_pricing
+        if electricity_pricing is not None:
+            try:
+                self.price_history.append(float(electricity_pricing))
+            except (TypeError, ValueError):
+                pass
 
         for b in range(self.n_buildings):
             # ---------- 读取建筑 b 的当前状态，写入历史（供 refine 算均值/标准差）----------
             self.cooling_device_controller[b].get_cop(predicted_outdoor_temp)  # 更新制冷 COP（能效比）
             # 停电标志：观测中 power_outage_b==1 表示该楼当前停电
             self.outage_details[b]['outage_flag'] = observations[self.observation_names_b.index('power_outage_' + str(b))] == 1
-            self.cur_battery_soc[b] = observations[self.observation_names_b.index('electrical_storage_soc_' + str(b))]
-            self.cur_dhw_soc[b] = observations[self.observation_names_b.index('dhw_storage_soc_' + str(b))]
-            net_electricity_consumption = observations[self.observation_names_b.index(f'net_electricity_consumption_{b}')]
+            # CityLearn 2.x 观测里的 *_storage_soc / net_electricity_consumption 在 t>0
+            # 会读到尚未写入的 series[time_step]=0；改从建筑真实时序取「上一已完成步」。
+            obs_bat = observations[self.observation_names_b.index('electrical_storage_soc_' + str(b))]
+            obs_dhw = observations[self.observation_names_b.index('dhw_storage_soc_' + str(b))]
+            obs_net = observations[self.observation_names_b.index(f'net_electricity_consumption_{b}')]
+            self.cur_battery_soc[b] = building_storage_soc(
+                self.env, b, 'electrical_storage', default=obs_bat
+            )
+            self.cur_dhw_soc[b] = building_storage_soc(
+                self.env, b, 'dhw_storage', default=obs_dhw
+            )
+            net_electricity_consumption = building_net_electricity_consumption(
+                self.env, b, default=obs_net
+            )
             self.elec_consumption_history[b].append(net_electricity_consumption)
             self.elec_consumption_history_per_hour[b][hour - 1].append(net_electricity_consumption)
             # 前 13 步冷机 PID 需要预热，冷却需求暂置 0
             last_step_cooling_demand = (
                 observations[self.observation_names_b.index(f'cooling_demand_{b}')]
                 if self.seen_steps > 13 else 0.0
+            )
+            # 按 CityLearn KPI 口径记录本步是否高温不适（写入推演剧本）
+            hot_discomfort_meta = compute_step_hot_discomfort(
+                observations, self.observation_names_b, b, env=self.env
             )
 
             if self.outage_details[b]['outage_flag']:
@@ -397,6 +471,7 @@ class Checa(Agent):
                     'indoor_temp': float(indoor_temp),
                     'setpoint_temp': float(setpoint_temp),
                     'dhw_strategy': 'outage_priority',
+                    **hot_discomfort_meta,
                 }
                 # ===== 停电模式：在有限电力下尽量保舒适 =====
                 self.outage_details[b]['outage_previously'] = True
@@ -411,7 +486,7 @@ class Checa(Agent):
                 expected_available_elec = max_elec_in_battery + self.forecasts[b]['solar_generation'][0]
                 TMP_action = self.cooling_device_controller[b].find_best_action(
                     observations, predicted_outdoor_temp, last_step_cooling_demand,
-                    self.outage_details[b], expected_available_elec
+                    self.outage_details[b], expected_available_elec, env=self.env
                 )
                 cooling_elec_demand, cooling_energy_demand = self.cooling_device_controller[b].compute_pred_cooling_consumption(
                     TMP_action, predicted_outdoor_temp
@@ -475,6 +550,7 @@ class Checa(Agent):
                     'control_mode': 'normal',
                     'indoor_temp': float(indoor_temp),
                     'setpoint_temp': float(setpoint_temp),
+                    **hot_discomfort_meta,
                 }
                 # ===== 正常模式：舒适优先，电池留给阶段4 优化 =====
                 if self.outage_details[b]['outage_previously']:
@@ -487,9 +563,10 @@ class Checa(Agent):
                 # 冷机：PID 根据室内温 vs 设定温 + 室外温，输出 TMP_action
                 TMP_action = self.cooling_device_controller[b].find_best_action(
                     observations, predicted_outdoor_temp, last_step_cooling_demand,
-                    self.outage_details[b], expected_available_elec=np.inf
+                    self.outage_details[b], expected_available_elec=np.inf, env=self.env
                 )
                 TMP_action = np.clip(TMP_action, self.env.action_space[0].low[3 * b + 2], self.env.action_space[0].high[3 * b + 2])
+                TMP_action, tmp_cap_meta = self._apply_post_outage_tmp_cap(b, TMP_action)
                 self.predicted_cooling_demand[b], _ = self.cooling_device_controller[b].compute_pred_cooling_consumption(
                     TMP_action, predicted_outdoor_temp
                 )
@@ -525,6 +602,7 @@ class Checa(Agent):
                 self.predicted_battery_demand[b], _ = self.compute_pred_battery_consumption(b, ELE_action)
                 pid_trace = getattr(self.cooling_device_controller[b], '_trace_last', {})
                 self._trace_initial_meta[b].update(pid_trace)
+                self._trace_initial_meta[b].update(tmp_cap_meta)
                 self._trace_initial_meta[b].update({
                     'min_battery_soc': float(self.min_battery_soc[b]),
                     'actual_net_load': float(net_electricity_consumption),
@@ -632,11 +710,375 @@ class Checa(Agent):
 
         return consumption_forecasts_per_b
 
+    def _post_outage_soft_charge_active(self, b):
+        """复电后 N 步内是否启用缓充策略（依赖 outage_previously / time_since_last_outage）。"""
+        if not bool(self.params.get('post_outage_soft_charge_enabled', True)):
+            return False
+        details = self.outage_details[b]
+        if details.get('outage_flag'):
+            return False
+        if not details.get('outage_previously'):
+            return False
+        try:
+            relax_steps = int(self.params.get('post_outage_relax_steps', 4))
+        except (TypeError, ValueError):
+            relax_steps = 4
+        relax_steps = max(0, relax_steps)
+        return int(details.get('time_since_last_outage', 0)) < relax_steps
+
+    def _post_outage_tmp_cap_active(self, b):
+        """复电后是否处于 TMP 帽/斜坡窗口（错峰时窗口略加长）。"""
+        if not bool(self.params.get('post_outage_tmp_cap_enabled', True)):
+            return False
+        details = self.outage_details[b]
+        if details.get('outage_flag') or not details.get('outage_previously'):
+            return False
+        try:
+            steps = int(self.params.get('post_outage_tmp_cap_steps', 4))
+        except (TypeError, ValueError):
+            steps = 4
+        steps = max(0, steps)
+        stagger = bool(self.params.get('post_outage_tmp_stagger', True))
+        extra = (self.n_buildings - 1) if stagger else 0
+        return int(details.get('time_since_last_outage', 0)) < (steps + extra)
+
+    def _post_outage_tmp_cap_value(self, b):
+        """
+        计算复电窗口内 TMP 上限。
+
+        - 起始帽 post_outage_tmp_max_start（如 0.40）
+        - ramp=True：在 cap_steps 内从起始帽线性升到 1.0
+        - stagger=True：建筑 b 的斜坡起点延后 b 步（B0 先开、B1/B2 错峰）
+        """
+        try:
+            steps = int(self.params.get('post_outage_tmp_cap_steps', 4))
+        except (TypeError, ValueError):
+            steps = 4
+        steps = max(1, steps)
+        try:
+            max_start = float(self.params.get('post_outage_tmp_max_start', 0.40))
+        except (TypeError, ValueError):
+            max_start = 0.40
+        max_start = float(np.clip(max_start, 0.0, 1.0))
+        ramp = bool(self.params.get('post_outage_tmp_ramp', True))
+        stagger = bool(self.params.get('post_outage_tmp_stagger', True))
+
+        t = int(self.outage_details[b].get('time_since_last_outage', 0))
+        t_eff = t - b if stagger else t
+
+        if t_eff < 0:
+            # 尚未轮到该栋全力爬坡：仅允许起始帽的一半，避免完全关掉舒适
+            cap = 0.5 * max_start
+            phase = 'stagger_wait'
+        elif not ramp:
+            cap = max_start
+            phase = 'flat_cap'
+        else:
+            # t_eff=0 → max_start；t_eff=steps-1 → 1.0
+            frac = min(1.0, float(t_eff) / float(max(steps - 1, 1)))
+            cap = max_start + (1.0 - max_start) * frac
+            phase = 'ramp'
+        return float(np.clip(cap, 0.0, 1.0)), phase, t_eff
+
+    def _apply_post_outage_tmp_cap(self, b, tmp_action):
+        """复电窗口内限制 TMP，削平三栋同时满功率制冷尖峰。"""
+        tmp = float(tmp_action)
+        if not self._post_outage_tmp_cap_active(b):
+            return tmp, {
+                'post_outage_tmp_cap_active': False,
+                'tmp_after_post_outage_cap': tmp,
+            }
+        cap, phase, t_eff = self._post_outage_tmp_cap_value(b)
+        applied = False
+        if tmp > cap:
+            tmp = cap
+            applied = True
+        return tmp, {
+            'post_outage_tmp_cap_active': True,
+            'post_outage_tmp_cap': cap,
+            'post_outage_tmp_cap_phase': phase,
+            'post_outage_tmp_t_eff': int(t_eff),
+            'post_outage_tmp_cap_applied': applied,
+            'tmp_after_post_outage_cap': tmp,
+        }
+
+    def _building_overheat_c(self, b):
+        """从初稿 trace 读取过热 °C；缺省按 0。"""
+        meta = getattr(self, '_trace_initial_meta', {}).get(b) or {}
+        try:
+            return float(meta.get('overheat_c', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _apply_post_outage_ele_limits(self, b, ele_action):
+        """
+        复电窗口内限制 ELE 充电：
+        1) 上限 cap（post_outage_max_ele_charge）
+        2) 过热时禁止充电（post_outage_forbid_charge_when_overheat）
+        """
+        ele = float(ele_action)
+        if not self._post_outage_soft_charge_active(b):
+            return ele, {
+                'post_outage_soft_charge_active': False,
+                'ele_after_post_outage_limit': ele,
+            }
+
+        try:
+            max_ele = float(self.params.get('post_outage_max_ele_charge', 0.15))
+        except (TypeError, ValueError):
+            max_ele = 0.15
+        max_ele = float(np.clip(max_ele, 0.0, 1.0))
+
+        overheat_c = self._building_overheat_c(b)
+        try:
+            overheat_thr = float(self.params.get('post_outage_overheat_c', 0.5))
+        except (TypeError, ValueError):
+            overheat_thr = 0.5
+
+        forbid = bool(self.params.get('post_outage_forbid_charge_when_overheat', True))
+        forbid_applied = False
+        if forbid and overheat_c > overheat_thr and ele > 0.0:
+            ele = 0.0
+            forbid_applied = True
+        elif ele > max_ele:
+            ele = max_ele
+
+        return ele, {
+            'post_outage_soft_charge_active': True,
+            'post_outage_time_since': int(self.outage_details[b].get('time_since_last_outage', 0)),
+            'post_outage_max_ele_charge': max_ele,
+            'post_outage_overheat_c': overheat_c,
+            'post_outage_overheat_thr': overheat_thr,
+            'post_outage_forbid_charge_applied': forbid_applied,
+            'ele_after_post_outage_limit': ele,
+        }
+
+    def _price_band(self):
+        """
+        根据滚动电价分位数判定 high / mid / low。
+        历史不足时返回 mid（不干预电价分支，但仍可应用全局韧性地板）。
+        """
+        if not bool(self.params.get('price_aware_battery_enabled', True)):
+            return 'mid', None, None, None
+        price = getattr(self, '_trace_step_pricing', None)
+        if price is None:
+            return 'mid', None, None, None
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            return 'mid', None, None, None
+        try:
+            min_steps = int(self.params.get('price_history_min_steps', 48))
+        except (TypeError, ValueError):
+            min_steps = 48
+        min_steps = max(8, min_steps)
+        hist = getattr(self, 'price_history', None) or []
+        if len(hist) < min_steps:
+            return 'mid', price, None, None
+        try:
+            high_q = float(self.params.get('price_high_quantile', 0.75))
+            low_q = float(self.params.get('price_low_quantile', 0.25))
+        except (TypeError, ValueError):
+            high_q, low_q = 0.75, 0.25
+        high_q = float(np.clip(high_q, 0.5, 0.99))
+        low_q = float(np.clip(low_q, 0.01, 0.5))
+        if low_q >= high_q:
+            low_q, high_q = 0.25, 0.75
+        hi = float(np.quantile(hist, high_q))
+        lo = float(np.quantile(hist, low_q))
+        if price >= hi:
+            return 'high', price, lo, hi
+        if price <= lo:
+            return 'low', price, lo, hi
+        return 'mid', price, lo, hi
+
+    def _reserve_discharge_floor(self, b):
+        """非停电放电地板 = max(硬件 DoD 下限, price_min_reserve_soc)。"""
+        min_soc = float(self.min_battery_soc[b])
+        try:
+            reserve = float(self.params.get('price_min_reserve_soc', 0.55))
+        except (TypeError, ValueError):
+            reserve = 0.55
+        reserve = float(np.clip(reserve, 0.0, 1.0))
+        return max(min_soc, reserve), reserve
+
+    def _clip_ele_to_reserve_floor(self, b, ele_action, floor):
+        """将放电幅度裁到不会击穿 floor。"""
+        ele = float(ele_action)
+        if ele >= 0.0:
+            return ele, False
+        soc = float(self.cur_battery_soc[b])
+        max_discharge = max(0.0, soc - float(floor))
+        if -ele > max_discharge + 1e-9:
+            return (-max_discharge if max_discharge > 1e-6 else 0.0), True
+        return ele, False
+
+    def _build_battery_search_min_soc(self, b, hour, soft_active, band):
+        """
+        构造树搜索用的小时 SOC 下限：
+          - 复电缓充：豁免抬升（≈当前 SOC）
+          - 否则若全局韧性地板：下限至少为 reserve
+          - 低价且 search_boost：下限抬到 min(目标, 当前+补电步长)，促使搜索充电
+        """
+        base = {
+            str(h): float(self.params['min_soc_per_hour'][str(h)])
+            for h in range(24)
+        }
+
+        floor, reserve = self._reserve_discharge_floor(b)
+        cur = float(self.cur_battery_soc[b])
+        meta = {
+            'search_min_soc_mode': 'table',
+            'price_discharge_floor': floor,
+            'price_min_reserve_soc': reserve,
+        }
+
+        if soft_active and bool(self.params.get('post_outage_waive_min_soc', True)):
+            floor_soc = max(float(self.min_battery_soc[b]), cur)
+            meta['search_min_soc_mode'] = 'post_outage_waive'
+            return {str(h): floor_soc for h in range(24)}, meta
+
+        if bool(self.params.get('price_global_reserve_enabled', True)):
+            try:
+                step_cap = abs(float(self.params.get('price_low_charge_ele', 0.25)))
+            except (TypeError, ValueError):
+                step_cap = 0.25
+            step_cap = float(np.clip(step_cap, 0.05, 1.0))
+            for h in range(24):
+                key = str(h)
+                if cur + 1e-9 < floor:
+                    # 已低于地板：逐步回充，避免一步拉满造成尖峰
+                    raised = min(floor, cur + step_cap)
+                    base[key] = max(base[key], raised)
+                else:
+                    base[key] = max(base[key], floor)
+            meta['search_min_soc_mode'] = 'global_reserve'
+
+        if (
+            band == 'low'
+            and bool(self.params.get('price_aware_battery_enabled', True))
+            and bool(self.params.get('price_low_search_boost', True))
+        ):
+            try:
+                target = float(self.params.get('price_low_target_soc', 0.80))
+            except (TypeError, ValueError):
+                target = 0.80
+            target = float(np.clip(target, 0.0, 1.0))
+            try:
+                charge = abs(float(self.params.get('price_low_charge_ele', 0.25)))
+            except (TypeError, ValueError):
+                charge = 0.25
+            charge = float(np.clip(charge, 0.0, 1.0))
+            boost = min(target, max(cur + charge, floor))
+            for h in range(24):
+                key = str(h)
+                base[key] = max(base[key], boost)
+            meta['search_min_soc_mode'] = 'low_price_boost'
+            meta['price_low_search_boost_to'] = boost
+
+        return base, meta
+
+    def _apply_price_aware_ele(self, b, ele_action):
+        """
+        电价感知调整 ELE：
+          - 高价：禁充；SOC≥阈值时强放（受韧性地板约束）
+          - 低价：SOC<目标时补电（默认更积极）
+          - 任意价位（全局地板开启）：非停电放电不得击穿韧性地板
+        复电缓充限制在其后施加，过热禁充仍优先。
+        """
+        ele = float(ele_action)
+        band, price, lo, hi = self._price_band()
+        floor, reserve = self._reserve_discharge_floor(b)
+        global_reserve = bool(self.params.get('price_global_reserve_enabled', True))
+        price_on = bool(self.params.get('price_aware_battery_enabled', True))
+
+        meta = {
+            'price_aware_active': False,
+            'price_band': band,
+            'electricity_pricing': price,
+            'price_low_threshold': lo,
+            'price_high_threshold': hi,
+            'price_min_reserve_soc': reserve,
+            'price_discharge_floor': floor,
+            'price_global_reserve_enabled': global_reserve,
+            'price_forbid_charge_applied': False,
+            'price_force_discharge_applied': False,
+            'price_low_charge_applied': False,
+            'price_reserve_clip_applied': False,
+            'ele_after_price_aware': ele,
+        }
+
+        soc = float(self.cur_battery_soc[b])
+
+        if price_on and band == 'high':
+            meta['price_aware_active'] = True
+            try:
+                soc_thr = float(self.params.get('price_high_soc_threshold', 0.70))
+            except (TypeError, ValueError):
+                soc_thr = 0.70
+            soc_thr = float(np.clip(soc_thr, 0.0, 1.0))
+            soc_thr = max(soc_thr, floor)
+            meta['price_high_soc_threshold'] = soc_thr
+            above = soc >= soc_thr
+
+            if bool(self.params.get('price_high_forbid_charge', True)) and ele > 0.0:
+                ele = 0.0
+                meta['price_forbid_charge_applied'] = True
+
+            if above and bool(self.params.get('price_high_force_discharge', True)):
+                try:
+                    discharge = abs(float(self.params.get('price_high_discharge_ele', 0.15)))
+                except (TypeError, ValueError):
+                    discharge = 0.15
+                discharge = float(np.clip(discharge, 0.0, 1.0))
+                max_discharge = max(0.0, soc - floor)
+                discharge = min(discharge, max_discharge)
+                if discharge > 1e-6 and ele > -discharge:
+                    ele = -discharge
+                    meta['price_force_discharge_applied'] = True
+                    meta['price_high_discharge_ele'] = discharge
+
+        elif price_on and band == 'low':
+            meta['price_aware_active'] = True
+            try:
+                target = float(self.params.get('price_low_target_soc', 0.80))
+            except (TypeError, ValueError):
+                target = 0.80
+            target = float(np.clip(target, 0.0, 1.0))
+            try:
+                charge = abs(float(self.params.get('price_low_charge_ele', 0.25)))
+            except (TypeError, ValueError):
+                charge = 0.25
+            charge = float(np.clip(charge, 0.0, 1.0))
+            meta['price_low_target_soc'] = target
+            # 低于韧性地板时优先补到地板，再朝目标补
+            aim = target
+            if soc < floor:
+                aim = max(aim, floor)
+            if soc < aim and charge > 0.0:
+                need = min(charge, max(0.0, aim - soc))
+                if ele < need:
+                    ele = need
+                    meta['price_low_charge_applied'] = True
+                    meta['price_low_charge_ele'] = need
+
+        # 全局韧性地板：非停电任何放电不得击穿（复电窗口同样适用，避免越放越空）
+        if global_reserve:
+            ele, clipped = self._clip_ele_to_reserve_floor(b, ele, floor)
+            if clipped:
+                meta['price_reserve_clip_applied'] = True
+                meta['price_aware_active'] = True
+
+        meta['ele_after_price_aware'] = ele
+        return ele, meta
+
     def refine_actions_with_battery_controller(self, hour, action_proposals):
         """
         对非停电建筑用电池树搜索优化 ELE 动作，并按 B_high/B_low 微调 DHW/TMP。
 
         目标：使社区净负荷接近历史均值，降低 ramping，必要时牺牲部分舒适/ DHW。
+        复电窗口内可临时豁免 min_soc_per_hour 硬充约束，并对 ELE 充电加帽。
+        正常时段可抬高搜索下限到韧性地板；低价可 boost 促使补 SOC。
         """
         normal_building_idx = [b for b in range(self.n_buildings) if not self.outage_details[b]['outage_flag']]
         consumption_forecast = self.get_consumption_forecast(hour)  # 每楼 (tau+1) 步净负荷预测
@@ -651,15 +1093,38 @@ class Checa(Agent):
             # 树搜索状态向量：
             #   [历史均值, 当前SOC, 当前净负荷, 未来第1步净负荷, ..., 未来第tau步净负荷]
             state = np.array([avg_balance, self.cur_battery_soc[b], *consumption_forecast[b, :]])
-            action, cost = self.battery_controller[b].search(state, hour=hour)
+            ctrl = self.battery_controller[b]
+            soft_active = self._post_outage_soft_charge_active(b)
+            band, _, _, _ = self._price_band()
+            orig_min_soc = ctrl.min_soc_per_hour
+            search_min, search_meta = self._build_battery_search_min_soc(b, hour, soft_active, band)
+            ctrl.min_soc_per_hour = search_min
+            try:
+                action, cost = ctrl.search(state, hour=hour)
+            finally:
+                ctrl.min_soc_per_hour = orig_min_soc
+
             ele_after_search = float(action[0])
-            final_actions[3 * b + 1] = ele_after_search
-            self.predicted_battery_demand[b], _ = self.compute_pred_battery_consumption(b, ele_after_search)
+            ele_price, price_meta = self._apply_price_aware_ele(b, ele_after_search)
+            ele_limited, post_meta = self._apply_post_outage_ele_limits(b, ele_price)
+            # 复电限制之后再裁一次地板，防止缓充窗口外的残余放电
+            if bool(self.params.get('price_global_reserve_enabled', True)):
+                floor, _ = self._reserve_discharge_floor(b)
+                ele_limited, clipped = self._clip_ele_to_reserve_floor(b, ele_limited, floor)
+                if clipped:
+                    post_meta = {
+                        **post_meta,
+                        'price_reserve_clip_after_post_outage': True,
+                        'ele_after_post_outage_limit': ele_limited,
+                    }
+            final_actions[3 * b + 1] = ele_limited
+            self.predicted_battery_demand[b], _ = self.compute_pred_battery_consumption(b, ele_limited)
 
             # 加上电池用电后的下一步总净负荷
             next_step_total_consumption = consumption_forecast[b, 1] + self.predicted_battery_demand[b]
             b_high_threshold = avg_balance + self.params['B_high'] * std_balance
             b_low_threshold = avg_balance - self.params['B_low'] * std_balance
+            waive_min_soc = soft_active and bool(self.params.get('post_outage_waive_min_soc', True))
             trace_meta = {
                 'net_load_mean': avg_balance,
                 'net_load_std': std_balance,
@@ -670,6 +1135,8 @@ class Checa(Agent):
                 'b_high_threshold': b_high_threshold,
                 'b_low_threshold': b_low_threshold,
                 'ele_after_search': ele_after_search,
+                'ele_after_price_aware': float(ele_price),
+                'post_outage_waive_min_soc': bool(waive_min_soc),
                 'predicted_net_load_step1': float(consumption_forecast[b, 1]),
                 'min_battery_soc': float(self.min_battery_soc[b]),
                 'battery_soc': float(self.cur_battery_soc[b]),
@@ -682,6 +1149,9 @@ class Checa(Agent):
                 'pred_battery_kwh': float(self.predicted_battery_demand[b]),
                 'dhw_before_safety': float(final_actions[3 * b]),
                 'tmp_before_safety': float(final_actions[3 * b + 2]),
+                **search_meta,
+                **price_meta,
+                **post_meta,
             }
 
             # 净负荷过高（超过 均值 + B_high×标准差）：削减 DHW 加热或略降冷机

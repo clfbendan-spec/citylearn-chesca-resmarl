@@ -23,7 +23,11 @@ ForecastAgent — CHESCA 阶段1：时序预测模块
 import numpy as np
 from checa.forecast_agent.ts_forecast_ensemble import TimeSeriesEnsemble
 from checa.forecast_agent.utils import fast_closest_hour
-from checa.utils import observation_value
+from checa.utils import (
+    building_net_electricity_consumption,
+    observation_value,
+    observation_value_optional,
+)
 
 
 class ForecastAgent:
@@ -280,12 +284,22 @@ class ForecastAgent:
         electricity_consumption = []
         for b in range(self.n_buildings):
             cur_solar_generation.append(observations[self.observation_names_b.index("solar_generation_" + str(b))])
-            cur_occupancy.append(observations[self.observation_names_b.index("occupant_count_" + str(b))])
-            cur_dhw_demand.append(observations[self.observation_names_b.index("dhw_demand_" + str(b))])
+            # 2023 有 occupant_count；部分数据集缺失时默认 1（视为有人）
+            cur_occupancy.append(float(observation_value_optional(
+                observations, self.observation_names_b, "occupant_count_" + str(b), default=1.0
+            )))
+            cur_dhw_demand.append(float(observation_value_optional(
+                observations, self.observation_names_b, "dhw_demand_" + str(b), default=0.0
+            )))
             cur_non_shiftable_load.append(observations[self.observation_names_b.index("non_shiftable_load_" + str(b))])
-            cur_cooling_demand.append(observations[self.observation_names_b.index("cooling_demand_" + str(b))])
-            cur_dhw_usage_bool.append(observations[self.observation_names_b.index("dhw_demand_" + str(b))] > 0.001)
-            electricity_consumption.append(observations[self.observation_names_b.index("net_electricity_consumption_" + str(b))])
+            cur_cooling_demand.append(float(observation_value_optional(
+                observations, self.observation_names_b, "cooling_demand_" + str(b), default=0.0
+            )))
+            cur_dhw_usage_bool.append(cur_dhw_demand[b] > 0.001)
+            obs_net = observations[self.observation_names_b.index("net_electricity_consumption_" + str(b))]
+            electricity_consumption.append(building_net_electricity_consumption(
+                self.env, b, default=obs_net
+            ))
             self.hourly_expected_values['solar_generation'][b][hour - 1].append(cur_solar_generation[b])
             self.hourly_expected_values['occupancy'][b][hour - 1].append(cur_occupancy[b])
             self.hourly_expected_values['dhw_demand'][b][hour - 1].append(cur_dhw_demand[b])
@@ -308,8 +322,10 @@ class ForecastAgent:
         dhw_usage_bool_X = []
         net_electricity_consumption_X = []
         for b in range(self.n_buildings):
-            occupancy = observations[self.observation_names_b.index("occupant_count_" + str(b))]
-            temp_in = observations[self.observation_names_b.index("indoor_dry_bulb_temperature_" + str(b))]
+            occupancy = cur_occupancy[b]
+            temp_in = float(observation_value_optional(
+                observations, self.observation_names_b, "indoor_dry_bulb_temperature_" + str(b), default=temp_out
+            ))
             annual_dhw_demand_estimate = self.env.buildings_metadata[b]['annual_dhw_demand_estimate']
             annual_non_shiftable_load_estimate = self.env.buildings_metadata[b]['annual_non_shiftable_load_estimate']
 

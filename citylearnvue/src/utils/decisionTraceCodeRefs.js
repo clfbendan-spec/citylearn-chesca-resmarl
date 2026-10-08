@@ -57,26 +57,50 @@ const CODE_REF_META = {
   },
   pid_normal: {
     source_file: 'checa/cooling_device_controller/cooling_device_controller.py',
-    source_line_start: 141,
-    source_line_end: 196,
-    source_label: 'find_best_action() 正常 PID',
+    source_line_start: 113,
+    source_line_end: 250,
+    source_label: 'find_best_action() 正常 PID→TMP',
     code_snippet: [
-      '144 | if not outage_details[\'outage_flag\']:',
-      '154 |     demand_action = self.pid_controller.get_actions(...)',
-      '189 | action = self.compute_cooling_action_given_elec_demand(demand_action)',
-      '191 | action = np.clip(action, 0.0, 1.0)'
+      '121 | indoor_temp / temp_setpoint = observation_value(...)',
+      '163 | demand_action = self.pid_controller.get_actions(...)',
+      '195 | if demand_action > expected_available_elec:  # 可用电封顶',
+      '216 | action = demand_action / cooling_nominal_powers  # → TMP'
     ].join('\n')
   },
   pid_outage: {
     source_file: 'checa/cooling_device_controller/cooling_device_controller.py',
-    source_line_start: 156,
-    source_line_end: 196,
-    source_label: 'find_best_action() 停电 PID',
+    source_line_start: 113,
+    source_line_end: 250,
+    source_label: 'find_best_action() 停电 PID→TMP',
     code_snippet: [
-      '157 | elif saturated_perc < self.saturation_perc_limit:',
-      '186 | if demand_action > expected_available_elec:',
-      '187 |     demand_action = expected_available_elec',
-      '191 | action = np.clip(action, 0.0, 1.0)'
+      '166 | demand_action = get_actions(... outage / saturation ...)',
+      '195 | if demand_action > expected_available_elec:',
+      '196 |     demand_action = expected_available_elec',
+      '216 | action = demand_action / cooling_nominal_powers'
+    ].join('\n')
+  },
+  pid_get_actions: {
+    source_file: 'checa/cooling_device_controller/pid_controller.py',
+    source_line_start: 35,
+    source_line_end: 140,
+    source_label: 'PIDController.get_actions() 入参与 P/I/D',
+    code_snippet: [
+      '71 | error = setpoint_value - cur_value',
+      '90 | P = Kp * error;  I += Ki*error*dt;  D = ...',
+      '106 | pid_output = P + I + D   # 正→要制冷',
+      '121 | self._trace_last = {pid_error, pid_P, pid_I, pid_D, ...}'
+    ].join('\n')
+  },
+  hot_discomfort: {
+    source_file: 'checa/utils.py',
+    source_line_start: 61,
+    source_line_end: 150,
+    source_label: 'compute_step_hot_discomfort() 对齐 CityLearn KPI',
+    code_snippet: [
+      'cooling_delta = indoor - cooling_set_point',
+      'band = comfort_band  # 默认 2.0°C',
+      'occupied = occupant_count > 0',
+      'is_hot = occupied and (cooling_delta > band)'
     ].join('\n')
   },
   outage_constraint: {
@@ -300,19 +324,88 @@ const CODE_REF_META = {
       '303 | # a_final = clip(a_base + α · mask · Δa)',
       '324 | a_final = self.residual_corrector.correct(...)'
     ].join('\n')
+  },
+  // ---- Multi-agent SAC（SymmetricComfortReward）----
+  marl_obs: {
+    source_file: 'Multi-agent.py',
+    source_line_start: 102,
+    source_line_end: 126,
+    source_label: 'REWARD_KWARGS（悬停显示本任务实际超参）',
+    code_snippet: [
+      'REWARD_KWARGS = { ... }  # 见 decision_trace.json → reward_kwargs',
+      '# 本行字段：T coolSP dT band occ out act_cool act_bat cool_kWh cool_dem net price SOC R'
+    ].join('\n')
+  },
+  marl_kappa: {
+    source_file: 'Multi-agent.py',
+    source_line_start: 277,
+    source_line_end: 360,
+    source_label: 'κ-EMA 跨楼能力估计（每步 O(1)）',
+    code_snippet: [
+      '# 路径 A（有 act）：sample = cool_elec / act；上修 α↑、下修 α↓，且 κ ≥ κ_floor',
+      '# 路径 B（无 act）：只在 cool_elec > κ 时上修下界，禁止把弱制冷写成 κ',
+      '# E_ref = max(κ, κ_floor) · a_ref（不再与 weak_cool_elec=0.15 混合）',
+      '# cold_tol = max(cool_when_cold_elec, cold_tol_frac · E_ref)',
+      '# 不存历史轨迹；每栋仅 κ / cool_cap / updates 三个标量'
+    ].join('\n')
+  },
+  marl_reward: {
+    source_file: 'Multi-agent.py',
+    source_line_start: 400,
+    source_line_end: 480,
+    source_label: 'SymmetricComfortReward 计算过程',
+    code_snippet: [
+      'κ_b ← 非对称 EMA(cool_elec / act)，且 κ ≥ κ_floor',
+      'E_ref = max(κ_b, κ_floor) · a_ref',
+      'δ = |T − SP|；R_temp = −δ^exponent（带外，band 不变）',
+      '过热：deficit=(E_ref−E)/E_ref → R_act_hot，|R_act_hot| ≤ act_penalty_cap',
+      '过冷：E>cold_tol → R_act_cold；带内 T<SP 仍制冷 → R_below',
+      '冷侧合计用 cold_penalty_cap，不跟热侧共用 cap',
+      'R = R_temp + R_act_hot + R_act_cold + R_below'
+    ].join('\n')
   }
+}
+
+function formatRewardKwargsSnippet(rewardKwargs) {
+  if (!rewardKwargs || typeof rewardKwargs !== 'object') {
+    return null
+  }
+  const lines = ['REWARD_KWARGS = {']
+  Object.keys(rewardKwargs).forEach((k) => {
+    const v = rewardKwargs[k]
+    let vv
+    if (typeof v === 'number') {
+      vv = String(v)
+    } else if (Array.isArray(v)) {
+      vv = JSON.stringify(v)
+    } else {
+      vv = JSON.stringify(v)
+    }
+    lines.push(`    '${k}': ${vv},`)
+  })
+  lines.push('}')
+  lines.push('')
+  lines.push('# R = R_temp + R_act；E_ref=max(κ,κ_floor)·a_ref')
+  lines.push('# 热侧只受 act_penalty_cap；冷侧用 cold_penalty_cap')
+  lines.push('# 悬停来源：decision_trace.json → reward_kwargs')
+  return lines.join('\n')
 }
 
 export function classifyNarrativeLine(text) {
   const line = String(text || '')
+  if (line.includes('[观测动作]')) return 'marl_obs'
+  if (line.includes('[κ-EMA]') || line.includes('[k-EMA]')) return 'marl_kappa'
+  if (line.includes('[奖励计算]')) return 'marl_reward'
   if (/^\[\d{2}:\d{2}\]/.test(line) && line.includes('开始计算')) return 'step_start'
   if (line.includes('[本步实况]')) return 'actual'
   if (line.includes('[社区负荷]')) return 'community'
   if (line.includes('[预测层]')) return 'forecast'
-  if (line.includes('[PID层]') || line.includes('[制冷(TMP)]')) {
+  if (line.includes('[冷机PID推演]')) return 'pid_get_actions'
+  if (line.includes('[高温不适判定]')) return 'hot_discomfort'
+  if (line.includes('[空调控制]') || line.includes('[PID层]') || line.includes('[制冷(TMP)]')) {
     return line.includes('停电') ? 'pid_outage' : 'pid_normal'
   }
-  if (line.includes('[停电约束]')) return 'outage_constraint'
+  if (line.includes('[停电约束]') || line.includes('[停电供电盘点]')) return 'outage_constraint'
   if (line.includes('[RBC层]') || line.includes('[供热(DHW)]')) {
     return line.includes('停电') ? 'rbc_outage' : 'rbc_normal'
   }
@@ -337,16 +430,27 @@ export function classifyNarrativeLine(text) {
   return 'step_start'
 }
 
-export function buildCodeRefForLine(text) {
+export function buildCodeRefForLine(text, options = {}) {
   const tag = classifyNarrativeLine(text)
-  const meta = CODE_REF_META[tag] || CODE_REF_META.step_start
+  const meta = { ...(CODE_REF_META[tag] || CODE_REF_META.step_start) }
+  // Multi-agent：[观测动作] 悬停展示本任务实际 REWARD_KWARGS
+  if (tag === 'marl_obs') {
+    const snip = formatRewardKwargsSnippet(options.reward_kwargs)
+    if (snip) {
+      meta.source_label = 'REWARD_KWARGS（本任务实际超参）'
+      meta.code_snippet = snip
+      meta.source_file = 'Multi-agent.py · REWARD_KWARGS'
+      meta.source_line_start = '—'
+      meta.source_line_end = '—'
+    }
+  }
   return { code_tag: tag, ...meta }
 }
 
-export function buildNarrativeEntriesFromLines(lines) {
+export function buildNarrativeEntriesFromLines(lines, options = {}) {
   if (!lines || !lines.length) return []
   return lines.map((text) => ({
     text,
-    ...buildCodeRefForLine(text)
+    ...buildCodeRefForLine(text, options)
   }))
 }

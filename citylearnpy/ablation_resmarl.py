@@ -63,7 +63,8 @@ DEFAULT_CHART_KPIS = [
 
 
 def _import_eval():
-    from local_evaluation_copy import DEFAULT_SCHEMA, evaluate, load_agent_config
+    from CHESCA import DEFAULT_SCHEMA, evaluate
+    from utils.ches_config import load_agent_config
 
     return DEFAULT_SCHEMA, evaluate, load_agent_config
 
@@ -425,6 +426,9 @@ def run_variant(
 
     class Config:
         SCHEMA = DEFAULT_SCHEMA
+        # 数据集判定只看入参（CHESCA.resolve_schema_plan ✓）⇒ 本脚本没有命令行 ✓
+        #   ⇒ 把它自己 JSON 里的 eval_schema 显式抬成入参 ✓（原先靠 CHESCA 兜 agent_config ✓）
+        EVAL_SCHEMA = agent_config.get('eval_schema')
         num_episodes = 1
         episode_time_steps = int(steps)
         RENDER_DIR = out_dir

@@ -3,7 +3,7 @@
  */
 
 import { buildingLabel, filterTraceRows, listTraceEpisodes, parseChescaTraceCsv } from './chescaTraceParse'
-import { buildNarrativeEntriesFromLines, buildCodeRefForLine } from './decisionTraceCodeRefs'
+import { buildNarrativeEntriesFromLines, buildCodeRefForLine, classifyNarrativeLine } from './decisionTraceCodeRefs'
 
 export const DECISION_PHASES = [
   { id: 1, name: '时序预测', icon: 'el-icon-data-analysis' },
@@ -221,6 +221,13 @@ function actionTripletText(dhw, ele, tmp) {
 export function ensureActionCompareLines(building) {
   if (!building) return building
   const lines = Array.isArray(building.narrative_lines) ? [...building.narrative_lines] : []
+  // Multi-agent 剧本已有 [观测动作]/[奖励计算]，勿注入 CHESCA 三行动作对照
+  const isMultiAgent = lines.some(
+    (ln) => String(ln).includes('[观测动作]') || String(ln).includes('[奖励计算]')
+  )
+  if (isMultiAgent) {
+    return building
+  }
   const hasChesca = lines.some((ln) => String(ln).includes('[CHESCA动作]'))
   const hasMarl = lines.some((ln) => String(ln).includes('[MARL动作]'))
   const hasFinal = lines.some((ln) => String(ln).includes('[CHESCA-RESMARL动作]'))
@@ -280,18 +287,34 @@ export function ensureActionCompareLines(building) {
   return { ...building, narrative_lines: lines }
 }
 
-export function resolveNarrativeEntries(building) {
+export function resolveNarrativeEntries(building, traceData = null) {
   if (!building) return []
   const enriched = ensureActionCompareLines(building)
   const lines = enriched.narrative_lines || []
+  const refOpts = {
+    reward_kwargs: (traceData && traceData.reward_kwargs) || null,
+    agent: (traceData && traceData.agent) || null
+  }
   if (lines.length) {
-    return buildNarrativeEntriesFromLines(lines)
+    return buildNarrativeEntriesFromLines(lines, refOpts)
   }
   const entries = building.narrative_entries || []
   if (!entries.length) return []
   return entries.map((e) => {
     const text = e && e.text != null ? String(e.text) : ''
-    return { text, ...buildCodeRefForLine(text) }
+    // 若 JSON 已嵌入完整 snippet，优先使用
+    if (e && e.code_snippet) {
+      return {
+        text,
+        code_tag: e.code_tag || classifyNarrativeLine(text),
+        source_file: e.source_file || 'Multi-agent.py',
+        source_line_start: e.source_line_start != null ? e.source_line_start : '—',
+        source_line_end: e.source_line_end != null ? e.source_line_end : '—',
+        source_label: e.source_label || '',
+        code_snippet: e.code_snippet
+      }
+    }
+    return { text, ...buildCodeRefForLine(text, refOpts) }
   })
 }
 

@@ -23,7 +23,7 @@ sys.path.insert(0, str(CHESCA))
 sys.path.insert(0, str(ROOT))
 
 from checa.residual import ResidualCorrector, parse_residual_config  # noqa: E402
-from local_evaluation_copy import load_agent_config  # noqa: E402
+from utils.ches_config import load_agent_config  # noqa: E402
 
 
 BASELINE_PATH = ROOT / 'configs' / 'chesca_baseline_v1.json'

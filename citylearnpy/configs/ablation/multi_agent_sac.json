@@ -1,11 +1,12 @@
 {
-  "_comment": "CHESCA-ResMARL：CHESCA 基准 + Multi-Agent SAC 残差。marl_mode=multi_agent。",
+  "_comment": "CHESCA-ResMARL：CHESCA 基准 + Multi-Agent SAC 残差。marl_mode=multi_agent。若填写 multi_agent_checkpoint 则跳过现场训练。",
   "_ablation_name": "multi_agent_sac",
   "_ablation_label": "CHESCA-ResMARL (Multi-Agent SAC)",
   "marl_mode": "multi_agent",
   "resmarl_enabled": true,
   "multi_agent_train_epochs": 20,
   "multi_agent_explore": false,
+  "multi_agent_checkpoint": "",
   "residual_alpha": 0.15,
   "residual_action_mask": {"dhw": false, "ele": true, "tmp": false},
   "resmarl_after_safety": true,

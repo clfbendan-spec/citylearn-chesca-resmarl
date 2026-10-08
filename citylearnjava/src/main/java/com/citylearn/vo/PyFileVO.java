@@ -63,4 +63,17 @@ public class PyFileVO implements Serializable {
      * 是否展示此文件对应结果
      */
     private Boolean ifShow;
+
+    /**
+     * 脚本类型，前端按此筛选文件列表：
+     * train=只训练 / eval=只评估 / both=训练+评估一体
+     */
+    private String scriptType;
+
+    /**
+     * 该脚本的算法配置（JSON 字符串），供「配置」弹窗回填：
+     * [{"id":1,"param_name":"train-schema","value":"1"}]
+     * 前端自行 JSON.parse；为空表示尚未配置过。
+     */
+    private String algorithmConfig;
 }

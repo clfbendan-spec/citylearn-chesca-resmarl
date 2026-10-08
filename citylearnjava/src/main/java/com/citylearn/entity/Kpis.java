@@ -157,7 +157,7 @@ public class Kpis implements Serializable {
     private BigDecimal rampingAverage;
 
     /**
-     * 零净能耗达标率
+     * 零净能耗（CityLearn 归一化指标：控制净取电量 ÷ 无控制基准，越低越好）
      */
     @TableField("zero_net_energy")
     private BigDecimal zeroNetEnergy;

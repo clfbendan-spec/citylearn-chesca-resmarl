@@ -12,10 +12,15 @@ public class ResMarlConfigParam {
     private String marlMode;
     private Integer multiAgentTrainEpochs;
     private Boolean multiAgentExplore;
+    /** Multi-agent.py 的 RLlib checkpoint；非空则跳过现场训练 */
+    private String multiAgentCheckpoint;
     private Double residualAlpha;
     private Object residualActionMask;
     private Boolean resmarlAfterSafety;
-    private Boolean schemaSplitEnabled;
+    /** Multi-agent.py 训练 schema */
     private String trainSchema;
+    /** Multi-agent.py 评估 schema */
+    private String multiAgentEvalSchema;
+    /** CHESCA_ResMARL.py 仿真/KPI schema（resmarl_eval_schema） */
     private String evalSchema;
 }

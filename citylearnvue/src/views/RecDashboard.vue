@@ -1,37 +1,35 @@
 <template>
-  <div class="rec-dashboard">
-    <div class="toolbar">
-      <el-button
-        type="primary"
-        icon="el-icon-refresh"
-        :loading="loadingList"
-        @click="loadShowSimulations"
-      >
-        加载展示数据
-      </el-button>
-      <el-button
-        v-if="simulationFolders.length"
-        type="success"
-        :disabled="loadingList"
-        @click="showSelect = true"
-      >
-        选择分组
-      </el-button>
-      <el-button
-        v-if="selectedSimulations.length"
-        :type="configSidebarCollapsed ? 'default' : 'warning'"
-        icon="el-icon-notebook-2"
-        @click="configSidebarCollapsed = !configSidebarCollapsed"
-      >
-        {{ configSidebarCollapsed ? '展开任务配置' : '收起任务配置' }}
-      </el-button>
-      <span v-if="simulationFolders.length" class="hint" />
+  <div class="rec-dashboard ha-page" :class="{ 'has-energy-bar': showEnergyBar }">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">模型优选</h1>
+        <p class="ha-muted">能源流向 · KPI · 决策轨迹</p>
+      </div>
+      <div class="ha-toolbar toolbar">
+        <el-button
+          type="primary"
+          icon="el-icon-refresh"
+          :loading="loadingList"
+          @click="loadShowSimulations"
+        >
+          加载展示模型
+        </el-button>
+        <el-button
+          v-if="selectedSimulations.length"
+          :type="configSidebarCollapsed ? 'default' : 'warning'"
+          icon="el-icon-notebook-2"
+          @click="configSidebarCollapsed = !configSidebarCollapsed"
+        >
+          {{ configSidebarCollapsed ? '展开任务配置' : '收起任务配置' }}
+        </el-button>
+      </div>
     </div>
 
-    <select-simulation-modal
+    <select-compare-model-modal
       v-model="showSelect"
       :simulation-list="simulationFolders"
       @confirm="onSimulationsSelected"
+      @cancel="goHome"
     />
 
     <div class="dashboard-body" :class="{ 'with-sidebar': selectedSimulations.length }">
@@ -44,7 +42,7 @@
             :name="sim"
           >
             <el-row :gutter="16">
-              <el-col :span="6">
+              <el-col :span="6" v-if="false">
                 <simulation-data-tree
                   v-if="filteredData(sim)"
                   :folder-data="filteredData(sim)"
@@ -53,8 +51,24 @@
                   @equipment="(p) => setEquipment(sim, p)"
                 />
               </el-col>
-              <el-col :span="18">
-                <el-card v-if="graphBySim[sim]" shadow="never">
+              <el-col :span="24">
+                <energy-distribution-panel
+                  v-if="filteredData(sim)"
+                  :folder-data="filteredData(sim)"
+                  :sim-name="sim"
+                  :external-days="energyDays"
+                  :external-buildings="energyBuildings"
+                  :external-scope="energyScope"
+                  :external-selected-day="energyExternalSelectedDay"
+                  :external-aggregate-mode="energyAggregateMode"
+                  :external-period-key="energyPeriodKey"
+                  hide-scope-select
+                  hide-day-controls
+                  prefer-latest-day
+                  class="energy-dist-above"
+                  @node-click="(p) => openEnergyNodeMoreInfo(sim, p)"
+                />
+                <el-card v-if="graphBySim[sim]" shadow="never" class="mt-12">
                   <simulation-chart-card
                     :title="graphBySim[sim].title"
                     :data="graphBySim[sim].data"
@@ -68,10 +82,10 @@
                     :chart-type="equipmentBySim[sim].chartType"
                   />
                 </el-card>
-                <el-empty
+                <!--<el-empty
                   v-if="!graphBySim[sim] && !equipmentBySim[sim]"
                   description="Select an item from the tree"
-                />
+                />-->
               </el-col>
             </el-row>
           </el-tab-pane>
@@ -101,18 +115,52 @@
         :collapsed.sync="configSidebarCollapsed"
       />
     </div>
+
+    <energy-home-more-info-dialog
+      :visible.sync="energyDialogVisible"
+      :focus="energyDialogFocus"
+      :day="energyDialogDay"
+      :scope="energyDialogScope"
+      :period-label="energyDialogPeriodLabel"
+      :grain="energyDialogGrain"
+      :local-points="energyDialogPoints"
+      :pricing-points="energyDialogPricingPoints"
+    />
+
+    <ha-energy-period-selector
+      v-if="showEnergyBar"
+      v-model="energySelectedDay"
+      :days="energyDays"
+      :scope-options="energyScopeOptions"
+      :scope.sync="energyScope"
+      show-aggregate-mode
+      :aggregate-mode.sync="energyAggregateMode"
+      :periods="energyPeriods"
+      :period-key.sync="energyPeriodKey"
+      @change="onEnergyDayChange"
+      @aggregate-change="onEnergyAggregateChange"
+    />
   </div>
 </template>
 
 <script>
 import axios from 'axios'
 import Papa from 'papaparse'
-import SelectSimulationModal from '@/components/shared/SelectSimulationModal.vue'
+import SelectCompareModelModal from '@/components/shared/SelectCompareModelModal.vue'
 import SimulationDataTree from '@/components/dashboard/SimulationDataTree.vue'
 import SimulationChartCard from '@/components/charts/SimulationChartCard.vue'
+import EnergyDistributionPanel from '@/components/dashboard/EnergyDistributionPanel.vue'
+import EnergyHomeMoreInfoDialog from '@/components/home/EnergyHomeMoreInfoDialog.vue'
+import HaEnergyPeriodSelector from '@/components/home/HaEnergyPeriodSelector.vue'
 import KpiAnalysisPanel from '@/components/dashboard/KpiAnalysisPanel.vue'
 import ChescaTracePanel from '@/components/dashboard/ChescaTracePanel.vue'
 import TaskConfigSidebar from '@/components/dashboard/TaskConfigSidebar.vue'
+import {
+  buildEnergyFlowSeriesPoints,
+  listEnergyFlowMeta,
+  listEnergyFlowPeriods
+} from '@/utils/energyFlowAggregate'
+import { buildPricingSeriesPoints } from '@/utils/homePricing'
 import { normalizeKpiRows, parseKpiCsvText } from '@/utils/kpiCsvParse'
 import { parseChescaTraceCsv } from '@/utils/chescaTraceParse'
 import { resolveDecisionTrace } from '@/utils/decisionTrace'
@@ -121,9 +169,12 @@ import { buildResmarlSummaryFromConfig, formatResmarlLabel, parseAgentConfigJson
 export default {
   name: 'RecDashboard',
   components: {
-    SelectSimulationModal,
+    SelectCompareModelModal,
     SimulationDataTree,
     SimulationChartCard,
+    EnergyDistributionPanel,
+    EnergyHomeMoreInfoDialog,
+    HaEnergyPeriodSelector,
     KpiAnalysisPanel,
     ChescaTracePanel,
     TaskConfigSidebar
@@ -143,22 +194,97 @@ export default {
       decisionTraceBySim: {},
       resmarlBySim: {},
       agentConfigBySim: {},
-      configSidebarCollapsed: false,
+      configSidebarCollapsed: true,
       episodesBySim: {},
       episodeBySim: {},
       activeTab: '',
       graphBySim: {},
-      equipmentBySim: {}
+      equipmentBySim: {},
+      energyDialogVisible: false,
+      energyDialogFocus: 'home',
+      energyDialogDay: '',
+      energyDialogScope: 'community',
+      energyDialogPeriodLabel: '',
+      energyDialogGrain: 'hour',
+      energyDialogPoints: [],
+      energyDialogPricingPoints: [],
+      energyScope: 'community',
+      energyAggregateMode: 'day',
+      energySelectedDay: '',
+      energyPeriodKey: ''
     }
   },
   computed: {
     selectedSimulationsSorted() {
-      return [...this.selectedSimulations].sort()
+      // 保持选择顺序：评估模型 → 对照组
+      return [...this.selectedSimulations]
+    },
+    simsWithEnergy() {
+      return this.selectedSimulations.filter((sim) => !!this.filteredData(sim))
+    },
+    showEnergyBar() {
+      return this.simsWithEnergy.length > 0
+    },
+    energyDays() {
+      const set = new Set()
+      this.simsWithEnergy.forEach((sim) => {
+        listEnergyFlowMeta(this.filteredData(sim)).days.forEach((d) => set.add(d))
+      })
+      return [...set].sort()
+    },
+    energyBuildings() {
+      const set = new Set()
+      this.simsWithEnergy.forEach((sim) => {
+        listEnergyFlowMeta(this.filteredData(sim)).buildings.forEach((b) => set.add(b))
+      })
+      return [...set].sort((a, b) => {
+        const na = parseInt((a.match(/\d+/) || ['0'])[0], 10)
+        const nb = parseInt((b.match(/\d+/) || ['0'])[0], 10)
+        return na - nb
+      })
+    },
+    energyScopeOptions() {
+      return [
+        { value: 'community', label: '社区合计' },
+        ...this.energyBuildings.map((b) => {
+          const n = (b.match(/\d+/) || [])[0]
+          return { value: b, label: n ? `建筑${n}` : b }
+        })
+      ]
+    },
+    energyPeriods() {
+      return listEnergyFlowPeriods(this.energyDays, this.energyAggregateMode)
+    },
+    energyExternalSelectedDay() {
+      return this.energyAggregateMode === 'day' ? this.energySelectedDay : null
     },
     tabLabel() {
       return (sim) => {
+        const role =
+          this.selectedSimulations[0] === sim
+            ? '评估模型'
+            : this.selectedSimulations[1] === sim
+              ? '对照组'
+              : ''
         const tag = formatResmarlLabel(this.resmarlBySim[sim])
-        return tag && tag !== '未标注' ? `${sim} · ${tag}` : sim
+        const name = tag ? `${sim} · ${tag}` : sim
+        return role ? `${role} · ${name}` : name
+      }
+    }
+  },
+  watch: {
+    energyDays: {
+      immediate: true,
+      handler(days) {
+        this.syncEnergySelection(days)
+      }
+    },
+    energyAggregateMode() {
+      this.syncEnergyPeriod()
+    },
+    energyBuildings(list) {
+      if (this.energyScope !== 'community' && !(list || []).includes(this.energyScope)) {
+        this.energyScope = 'community'
       }
     }
   },
@@ -166,6 +292,57 @@ export default {
     this.loadShowSimulations()
   },
   methods: {
+    goHome() {
+      this.$emit('navigate-home')
+    },
+
+    syncEnergySelection(days) {
+      const list = days || this.energyDays || []
+      if (!list.length) {
+        this.energySelectedDay = ''
+        this.energyPeriodKey = ''
+        return
+      }
+      if (!list.includes(this.energySelectedDay)) {
+        this.energySelectedDay = list[list.length - 1]
+      }
+      this.syncEnergyPeriod()
+    },
+
+    syncEnergyPeriod() {
+      const periods = this.energyPeriods || []
+      if (!periods.length) {
+        this.energyPeriodKey = ''
+        return
+      }
+      if (this.energyAggregateMode === 'day') {
+        const day = periods.some((p) => p.key === this.energySelectedDay)
+          ? this.energySelectedDay
+          : periods[periods.length - 1].key
+        this.energySelectedDay = day
+        this.energyPeriodKey = day
+        return
+      }
+      if (periods.some((p) => p.key === this.energyPeriodKey)) return
+      const containing = this.energySelectedDay
+        ? periods.find((p) => (p.days || []).includes(this.energySelectedDay))
+        : null
+      this.energyPeriodKey = containing
+        ? containing.key
+        : periods[periods.length - 1].key
+    },
+
+    onEnergyDayChange(day) {
+      this.energySelectedDay = day
+      if (this.energyAggregateMode === 'day') {
+        this.energyPeriodKey = day
+      }
+    },
+
+    onEnergyAggregateChange() {
+      this.$nextTick(() => this.syncEnergyPeriod())
+    },
+
     isApiSuccess(response) {
       return response && response.data && Number(response.data.code) === 0
     },
@@ -183,7 +360,7 @@ export default {
       try {
         const response = await axios.get('/api/web/basedata/getDashboardSimulations')
         if (!this.isApiSuccess(response)) {
-          this.$message.error(response.data.message || '加载展示数据失败')
+          this.$message.error(response.data.message || '加载展示模型失败')
           return
         }
         const list = response.data.data || []
@@ -211,12 +388,12 @@ export default {
         if (!this.simulationFolders.length) {
           this.$message.warning('暂无展示数据：请先在代码编辑器「记录」页将执行完成的记录设为【展示】')
         } else {
-          this.$message.success(`已加载 ${this.simulationFolders.length} 个展示分组`)
+          this.$message.success(`已加载 ${this.simulationFolders.length} 个展示模型`)
           this.showSelect = true
         }
       } catch (error) {
-        console.error('加载展示数据失败:', error)
-        this.$message.error('加载展示数据失败')
+        console.error('加载展示模型失败:', error)
+        this.$message.error('加载展示模型失败')
       } finally {
         this.loadingList = false
       }
@@ -401,6 +578,42 @@ export default {
     setEquipment(sim, payload) {
       this.$set(this.equipmentBySim, sim, payload)
       this.$set(this.graphBySim, sim, null)
+    },
+
+    async openEnergyNodeMoreInfo(sim, payload) {
+      const folderData = this.filteredData(sim)
+      if (!folderData || !payload) return
+      const focus = ['home', 'solar', 'grid', 'battery', 'load'].includes(payload.focus)
+        ? payload.focus
+        : 'home'
+      const periodDays = payload.periodDays || (payload.day ? [payload.day] : [])
+      if (!periodDays.length) return
+      const mode = payload.aggregateMode || 'day'
+      const scope = payload.scope || 'community'
+      const { points, grain } = buildEnergyFlowSeriesPoints(
+        folderData,
+        periodDays,
+        mode,
+        scope
+      )
+      this.energyDialogFocus = focus
+      this.energyDialogDay = payload.day || periodDays[0]
+      this.energyDialogScope = scope
+      this.energyDialogPeriodLabel = payload.periodLabel || ''
+      this.energyDialogGrain = grain
+      this.energyDialogPoints = points
+      this.energyDialogPricingPoints = []
+      if (focus === 'grid') {
+        try {
+          const pricing = await buildPricingSeriesPoints(folderData, periodDays, mode)
+          this.energyDialogPricingPoints = pricing.points || []
+        } catch (e) {
+          console.warn('加载电价曲线失败', e)
+          this.energyDialogPricingPoints = []
+        }
+      }
+      // 先准备好电价数据再打开，避免第二次打开时先空数组触发 dispose
+      this.energyDialogVisible = true
     }
   }
 }
@@ -408,9 +621,30 @@ export default {
 
 <style scoped>
 .rec-dashboard {
-  padding: 8px 8px 32px;
   min-height: 100%;
   box-sizing: border-box;
+  padding-bottom: 0;
+}
+.rec-dashboard.has-energy-bar {
+  padding-bottom: 72px;
+}
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.page-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--primary-text-color);
+}
+.toolbar {
+  margin-bottom: 0;
 }
 .rec-dashboard :deep(.el-tabs__content) {
   overflow: visible;
@@ -418,28 +652,25 @@ export default {
 .rec-dashboard :deep(.el-tab-pane) {
   overflow: visible;
 }
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.hint {
-  color: #909399;
-  font-size: 13px;
-}
 .dashboard-body {
   display: block;
 }
 .dashboard-body.with-sidebar {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-4);
 }
 .dashboard-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
-.mt-16 { margin-top: 16px; }
-.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 0; }
+.mt-12 { margin-top: var(--space-3); }
+.energy-dist-above + .el-card,
+.energy-dist-above + .el-empty {
+  margin-top: var(--space-3);
+}
 </style>

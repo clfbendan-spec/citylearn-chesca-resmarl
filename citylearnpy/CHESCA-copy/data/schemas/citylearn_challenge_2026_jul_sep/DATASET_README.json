@@ -1,0 +1,15 @@
+{
+  "name": "citylearn_challenge_2026_jul_sep",
+  "based_on": "citylearn_challenge_2023_phase_2_online_evaluation_1",
+  "calendar": "2026-07-01 .. 2026-09-30 (92 days, 2208 hours)",
+  "construction": {
+    "row_order": "source month7 + month8 + month6",
+    "month_mapping": {
+      "July 2026 (31d)": "source July profiles",
+      "August 2026 (31d)": "source August profiles",
+      "September 2026 (30d)": "source June profiles (late-summer proxy)"
+    },
+    "day_type": "ISO weekday Mon=1 .. Sun=7 aligned to 2026 calendar",
+    "note": "Physical time series adapted from 2023 online_evaluation_1; not real 2026 weather."
+  }
+}

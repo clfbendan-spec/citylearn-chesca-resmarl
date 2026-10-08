@@ -85,9 +85,9 @@
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
+                <filtering>false</filtering>
                 <includes>
-                    <include>**/*.xml</include>
-                    <include>**/*.yml</include>
+                    <include>**/*</include>
                 </includes>
             </resource>
         </resources>

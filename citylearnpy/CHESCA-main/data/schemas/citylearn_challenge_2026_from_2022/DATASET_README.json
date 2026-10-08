@@ -1,0 +1,61 @@
+{
+  "name": "citylearn_challenge_2026_from_2022",
+  "calendar": "2026-01-01 .. 2026-12-31 (365 days, 8760 hours)",
+  "buildings": [
+    "Building_1",
+    "Building_2",
+    "Building_3"
+  ],
+  "baseline": "citylearn_challenge_2022_phase_1 (Building_1..3)",
+  "reference_for_missing": "citylearn_challenge_2023_phase_2_online_evaluation_1",
+  "construction": {
+    "calendar_alignment": "Feature reconstruction with week blocks: extract contiguous Mon-Sun weeks from 2022 source load curves and place them into 2026 weeks that contain a complete weekend; regenerate day_type/month/hour from the real 2026 calendar so XGBoost time features match the transplanted weekday load logic (e.g. first source Mon-Sun week -> 2026-01-05..01-11). Leading/trailing partial weeks filled by same-month/same-weekday days.",
+    "kept_from_2022_aligned": [
+      "non_shiftable_load (after end-use split deduction)",
+      "solar_generation",
+      "indoor_relative_humidity",
+      "weather.csv",
+      "pricing.csv",
+      "carbon_intensity.csv",
+      "electrical_storage",
+      "pv"
+    ],
+    "synthesized_from_2023_patterns": [
+      "cooling_demand (temp+hour model + summer floor)",
+      "heating_demand (HDD@16C + hour profile; mutually exclusive with cooling)",
+      "dhw_demand (day_type×hour profile)",
+      "occupant_count (day_type×hour profile)",
+      "cooling/heating set points",
+      "hvac_mode (1=cool, 2=heat)",
+      "cooling_device / heating_device / dhw_device / dhw_storage",
+      "LSTM dynamics .pth (CityLearn 2.3 single-layer format)",
+      "power_outage model (new seeds)"
+    ],
+    "note": "Synthetic research dataset. Not measured 2026 weather. Source physical year is CityLearn 2022 challenge series (Fontana / Sierra Crest), not calendar-year 2022.",
+    "feature_reconstruction_meta": {
+      "method": "feature_reconstruction_week_blocks",
+      "source_complete_weeks": 52,
+      "target_complete_weeks": 51,
+      "first_target_week": "2026-01-05 .. 2026-01-11",
+      "first_source_week_month_mode": 1,
+      "edge_days_filled": 8,
+      "week_assignment": [
+        {
+          "target": "2026-01-05..2026-01-11",
+          "source_week_index": 22,
+          "source_month_mode": 1
+        },
+        {
+          "target": "2026-01-12..2026-01-18",
+          "source_week_index": 23,
+          "source_month_mode": 1
+        },
+        {
+          "target": "2026-01-19..2026-01-25",
+          "source_week_index": 24,
+          "source_month_mode": 1
+        }
+      ]
+    }
+  }
+}

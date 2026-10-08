@@ -23,12 +23,16 @@
         description="无 chesca_agent_config.json"
         :image-size="64"
       >
-        <p class="empty-hint">请使用带配置快照的 local_evaluation_copy.py 重跑任务</p>
+        <p class="empty-hint">请使用带配置快照的 CHESCA.py 重跑任务</p>
       </el-empty>
 
       <template v-else>
         <div class="resmarl-banner" :class="view.resmarl.enabled ? 'is-on' : 'is-off'">
-          <el-tag :type="view.resmarl.enabled ? 'warning' : 'info'" size="mini">
+          <el-tag
+            v-if="view.resmarl.label"
+            :type="view.resmarl.enabled ? 'warning' : 'info'"
+            size="mini"
+          >
             {{ view.resmarl.label }}
           </el-tag>
           <span class="banner-hint">本次仿真参数快照</span>
@@ -208,16 +212,17 @@ export default {
 .task-config-sidebar {
   flex-shrink: 0;
   width: 320px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
+  background: var(--card-background-color);
+  border: 1px solid var(--divider-color);
+  border-radius: var(--ha-card-border-radius);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 24px);
   position: sticky;
-  top: 8px;
+  top: var(--space-2);
   overflow: hidden;
   transition: width 0.2s ease;
+  box-shadow: var(--ha-card-box-shadow);
 }
 
 .task-config-sidebar.collapsed {
@@ -229,13 +234,13 @@ export default {
   align-items: flex-start;
   gap: 4px;
   padding: 10px 8px 8px;
-  border-bottom: 1px solid #ebeef5;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--divider-color);
+  background: var(--primary-background-color);
 }
 
 .collapse-btn {
   padding: 4px 6px;
-  color: #606266;
+  color: var(--secondary-text-color);
   font-size: 16px;
 }
 
@@ -247,15 +252,15 @@ export default {
 
 .sidebar-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--primary-text-color);
 }
 
 .sidebar-sub {
   margin: 2px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--secondary-text-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -264,13 +269,13 @@ export default {
 .sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--space-3);
 }
 
 .empty-hint {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--secondary-text-color);
   line-height: 1.5;
 }
 
@@ -279,18 +284,18 @@ export default {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   margin-bottom: 12px;
-  background: #f4f4f5;
+  background: var(--input-fill-color);
 }
 
 .resmarl-banner.is-on {
-  background: #fdf6ec;
+  background: rgba(255, 152, 0, 0.12);
 }
 
 .banner-hint {
   font-size: 11px;
-  color: #909399;
+  color: var(--secondary-text-color);
 }
 
 .config-group {
@@ -299,11 +304,11 @@ export default {
 
 .group-title {
   font-size: 12px;
-  font-weight: 600;
-  color: #606266;
+  font-weight: 500;
+  color: var(--secondary-text-color);
   margin-bottom: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--divider-color);
 }
 
 .config-row {
@@ -316,12 +321,12 @@ export default {
 }
 
 .config-label {
-  color: #909399;
+  color: var(--secondary-text-color);
   flex-shrink: 0;
 }
 
 .config-value {
-  color: #303133;
+  color: var(--primary-text-color);
   text-align: right;
   word-break: break-all;
   font-variant-numeric: tabular-nums;

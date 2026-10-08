@@ -2,6 +2,7 @@ package com.citylearn.vo;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -35,8 +36,14 @@ public class BuildingDataVO implements Serializable {
     private String buildingId;
 
     /**
-     *  月份
+     * 推算日历日期 YYYY-MM-DD（由时序与 month/hour/dayType 还原）
      */
+    private String date;
+
+    /**
+     * 月份（仅服务端推算日期用，不对外返回）
+     */
+    @JsonIgnore
     private Integer month;
 
     /**

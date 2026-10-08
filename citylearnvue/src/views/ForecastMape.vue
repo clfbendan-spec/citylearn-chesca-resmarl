@@ -58,7 +58,7 @@
           :closable="false"
           show-icon
           title="当前分组无 chesca_trace.csv"
-          description="请使用 local_evaluation_copy.py 重新运行 CHESCA 任务后再加载。"
+          description="请使用 CHESCA.py 重新运行 CHESCA 任务后再加载。"
           class="mb-16"
         />
 

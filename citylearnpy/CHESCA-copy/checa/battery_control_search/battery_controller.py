@@ -16,6 +16,7 @@ BatteryController — CHESCA 阶段4：电池充放电树搜索
 【约束】
   · SOC 不能超过 max_soc_normal（0.99）
   · SOC 不能低于 min_soc_per_hour[当前小时]（24 小时不同的下限表）
+    （复电缓充窗口内可由 agent 临时豁免该硬下限）
   · 动作离散化步长 dt=0.05（如 0, 0.05, 0.10, ...）
 
 【适应度 balance_type='C'】

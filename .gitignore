@@ -1,131 +1,104 @@
-# =============================================================================
-# citylearn-chesca-resmarl — root .gitignore
-# 覆盖 Java / Python / Vue / 论文；子目录已有 .gitignore 可继续保留作补充
-# =============================================================================
+# ============================================================
+#  citylearn-demo  统一 .gitignore
+#  规则：只提交源码/文档/配置模板；构建产物、依赖、实验数据、日志一律不入库
+# ============================================================
 
-# ----- OS / Editor -----
+# ---------- 操作系统 / 编辑器 ----------
 .DS_Store
 Thumbs.db
-Desktop.ini
+desktop.ini
 .idea/
-.vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 *.iml
-*.iws
 *.ipr
+*.iws
+.vs/
+*.swp
+*.swo
 
-# ----- Secrets / local overrides -----
-.env
-.env.*
-!.env.example
-**/application-local.yml
-**/application-*.local.yml
+# 本地 AI / IDE 工作目录（保留在磁盘，不进仓库）
+.codebuddy/
+.workbuddy/
 
-# ----- Java (Spring / Maven) -----
-citylearnjava/target/
-**/HELP.md
+# ---------- Java / Maven ----------
+target/
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
 
-# ----- Node / Vue -----
+# ---------- Node / 前端 ----------
 node_modules/
-citylearnvue/dist/
+dist/
+.output/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.eslintcache
 
-# AI/调试临时笔记（勿入库）
-citylearnvue/_check_rebuild.txt
-citylearnvue/_titles.txt
-*_hot_analysis*.txt
-*_thesis_extract.txt
-
-# ----- Python -----
+# ---------- Python ----------
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
 *.egg-info/
 .eggs/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
 .venv/
 venv/
 env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 
-# Java 上传算法脚本：文件名 = yyyyMMddHHmmss.py（运行时产物，非源码）
-citylearnpy/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].py
+# ---------- LaTeX 编译产物 ----------
+*.aux
+*.bbl
+*.blg
+*.bcf
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
+*.out
+*.xdv
+*.run.xml
+*.nav
+*.snm
+*.vrb
+*.idx
+*.ilg
+*.ind
+*.lof
+*.lot
+*.los
 
-# AI 一次性分析 / 对比 / 探针脚本（下划线前缀实验稿）
-citylearnpy/_analyze_*.py
-citylearnpy/_cmp_*.py
-citylearnpy/_find_*.py
-citylearnpy/_step*_hot.py
-citylearnpy/*_tmp.py
-citylearnpy/*_tmp_*.py
-
-# 明显草稿 / 误拷贝（正式入口是 Multi-agent.py / output.py 等）
-citylearnpy/newpy.py
-citylearnpy/output copy.py
-
-# 注意：以下带 copy 的文件是正式依赖，不要忽略
-#   multi_agent_runner_copy.py
-#   local_evaluation_copy.py
-#   Multi-agent_copy.py
-#   _ray_win_shim/
-
-# ----- 训练 / 评估运行产物 -----
-# KPI / 导出 / 本地试跑
+# ---------- 实验数据 / 运行产物（体积大）----------
+output/
+outkpis/
+rla_logs/
+uploads/
 citylearnpy/outputs/
-citylearnpy/_test_chesca_out/
-**/rla_logs/
-
-# 消融实验结果（体积大；需要时可本地重新跑 ablation_resmarl.py）
+citylearnpy/rla_logs/
 citylearnpy/ablation_results/
-
-# 模型权重与训练 checkpoint（保留目录占位；schema 内 *.pth 是 CHESCA 预测模型，需入库）
-citylearnpy/checkpoints/**
-!citylearnpy/checkpoints/.gitkeep
-!citylearnpy/checkpoints/README.md
-*.pt
-
-# 根目录或 Java 侧运行时目录（与 application.yml 中 out-file-path / uploads 对应）
-/output/
-/outputs/
-/outkpis/
-/uploads/
-/rla_logs/
-
-# ----- 数据集：通常应入库以便离线复现；若仓库过大可取消下行注释 -----
-# citylearnpy/datasets/
-# citylearnvue/public/datasets/
-# citylearnpy/CHESCA-*/data/schemas/**/*.csv
-
-# ----- 论文 (LaTeX) -----
-thesis/**/*.aux
-thesis/**/*.bbl
-thesis/**/*.bcf
-thesis/**/*.blg
-thesis/**/*.fdb_latexmk
-thesis/**/*.fls
-thesis/**/*.log
-thesis/**/*.out
-thesis/**/*.run.xml
-thesis/**/*.synctex.gz
-thesis/**/*.toc
-thesis/**/*.xdv
-thesis/**/*.pdf
-thesis/pass1.txt
-thesis/**/*.tmp
-
-# ----- 杂项日志 -----
+citylearnpy/checkpoints/
+citylearnpy/datasets/
+citylearnpy/_archive/
+citylearnpy/_tmp_bak*/
+citylearnpy/_test_chesca_out/
+lightning_logs/
+*.ckpt
 *.log
-!**/logback*.xml
-)
+
+# 注意：CityLearn 的场景/数据集以 *.pth / *.pkl 形式存放
+# （如 CHESCA-copy/data/schemas/、citylearnpy/datasets/），是运行必需数据，
+# 因此这里【不做】 *.pth / *.pkl 的全局忽略，避免误伤数据集。
+
+# ---------- 临时 / 草稿文件 ----------
+$null
+*.tmp
+*.bak
+*.bak_*
+*_bak_*
+~$*

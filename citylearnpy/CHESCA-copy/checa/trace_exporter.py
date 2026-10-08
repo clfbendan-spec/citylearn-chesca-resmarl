@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from checa.narrative_code_refs import build_narrative_entries
+from checa.utils import building_net_electricity_consumption
 
 TRACE_COLUMNS = [
     'episode',
@@ -60,6 +61,38 @@ TRACE_COLUMNS = [
     'B_low',
     'B_high',
     'TMP_max_reduction_percent',
+    # 冷机 PID 推演（观测「供电不足 / 需求过小」）
+    'pid_error',
+    'pid_P',
+    'pid_I',
+    'pid_D',
+    'pid_raw_output',
+    'pid_raw_demand',
+    'pid_electrical_demand',
+    'pid_saturated_perc',
+    'pid_anti_windup_frozen',
+    'pid_outage_flag',
+    'overheat_c',
+    'min_cool_kwh',
+    'min_cool_applied',
+    'capped_by_available_elec',
+    'expected_available_elec',
+    'cooling_nominal_power',
+    # 本步高温不适判定（对齐 CityLearn discomfort_hot_proportion）
+    'kpi_indoor_temp',
+    'kpi_indoor_temp_obs',
+    'kpi_indoor_source',
+    'kpi_cooling_set_point',
+    'kpi_heating_set_point',
+    'kpi_comfort_band',
+    'kpi_occupant_count',
+    'kpi_setpoint_source',
+    'kpi_dynamics_note',
+    'kpi_cooling_delta',
+    'kpi_hot_threshold',
+    'kpi_is_occupied',
+    'kpi_is_hot_discomfort',
+    'kpi_hot_discomfort_skip_reason',
     'decision_summary',
     'decision_narrative',
     'resmarl_enabled',
@@ -121,6 +154,210 @@ def _fmt_num(value: Any, digits: int = 3) -> str:
         return f'{n:.{digits}f}'
     except (TypeError, ValueError):
         return str(value)
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if value in (None, ''):
+        return False
+    if isinstance(value, (int, float, np.floating, np.integer)):
+        try:
+            return bool(float(value))
+        except (TypeError, ValueError):
+            return False
+    return str(value).strip().lower() in ('1', 'true', 'yes')
+
+
+def _cooling_pid_narrative_lines(row: Dict[str, Any], mode: str = 'normal') -> List[str]:
+    """
+    冷机 PID 推演剧本行：先列入参与中间量，再写供电/需求结论。
+    便于排查「冷机出力小」是 PID 需求本身小，还是可用电量封顶。
+    """
+    # 无 PID 埋点时跳过（旧 trace / 未跑过 find_best_action）
+    has_pid = any(
+        row.get(k) not in (None, '')
+        for k in ('pid_error', 'pid_raw_output', 'pid_raw_demand', 'pid_electrical_demand')
+    )
+    if not has_pid:
+        return []
+
+    lines: List[str] = []
+    indoor = row.get('pid_indoor_temp', row.get('indoor_temp'))
+    setpoint = row.get('pid_setpoint_temp', row.get('setpoint_temp'))
+    outdoor = row.get('pid_outdoor_temp', row.get('forecast_outdoor_next'))
+    error = row.get('pid_error')
+    sat = row.get('pid_saturated_perc', row.get('saturation_perc'))
+    p_term = row.get('pid_P')
+    i_term = row.get('pid_I')
+    d_term = row.get('pid_D')
+    outdoor_term = row.get('pid_outdoor_term')
+    raw_out = row.get('pid_raw_output')
+    raw_demand = row.get('pid_raw_demand', raw_out)
+    final_demand = row.get('pid_electrical_demand')
+    overheat = row.get('overheat_c')
+    min_cool = row.get('min_cool_kwh')
+    nominal = row.get('cooling_nominal_power')
+    avail = row.get('expected_available_elec')
+    tmp = row.get('tmp_action', row.get('action_tmp_init'))
+    capped = _truthy(row.get('capped_by_available_elec'))
+    min_cool_on = _truthy(row.get('min_cool_applied'))
+    anti_wu = _truthy(row.get('pid_anti_windup_frozen'))
+    # 以实际 get_actions 的 outage_flag 为准；旧数据缺失时再回退 control_mode
+    if row.get('pid_outage_flag') not in (None, ''):
+        outage_pid = _truthy(row.get('pid_outage_flag'))
+    else:
+        outage_pid = mode == 'outage'
+
+    # 1) 入参
+    indoor_obs = row.get('indoor_temp_obs')
+    indoor_src = row.get('indoor_temp_source') or ''
+    src_note = ''
+    if indoor_src:
+        src_note = f'（来源 {indoor_src}'
+        if indoor_obs not in (None, '') and indoor not in (None, ''):
+            try:
+                if abs(float(indoor_obs) - float(indoor)) > 0.05:
+                    src_note += f'；观测室温 {_fmt_num(indoor_obs, 2)}°C'
+            except (TypeError, ValueError):
+                pass
+        src_note += '）'
+    lines.append(
+        f'> [冷机PID推演] 入参：室内 {_fmt_num(indoor, 2)}°C{src_note}，设定 {_fmt_num(setpoint, 2)}°C，'
+        f'室外 {_fmt_num(outdoor, 1)}°C，error=设定-室内={_fmt_num(error, 3)}°C，'
+        f'饱和度 saturated_perc={_fmt_num(sat, 3)}，'
+        f'PID分支={"停电简化" if outage_pid else "正常PID"}。'
+    )
+
+    # 2) 中间量 P/I/D（或停电项）
+    if outage_pid:
+        lines.append(
+            f'> [冷机PID推演] 计算：P={_fmt_num(p_term)}，'
+            f'室外项 OutTempScaler*(室外-室内)={_fmt_num(outdoor_term)}，'
+            f'PID原始输出={_fmt_num(raw_out)}（电功率需求粗值）。'
+        )
+    else:
+        aw = '是（积分已冻结、未继续负向累积）' if anti_wu else '否'
+        lines.append(
+            f'> [冷机PID推演] 计算：P={_fmt_num(p_term)}，I={_fmt_num(i_term)}，'
+            f'D={_fmt_num(d_term)}，PID原始输出={_fmt_num(raw_out)}；'
+            f'负向anti-windup冻结积分={aw}。'
+        )
+
+    # 3) 封顶 / 舒适保底 → 最终电需求 → TMP
+    avail_txt = (
+        '无上限（正常工况）' if avail in (None, '') else _fmt_num(avail)
+    )
+    lines.append(
+        f'> [冷机PID推演] 封顶与换算：PID需求 {_fmt_num(raw_demand)}，'
+        f'过热 overheat={_fmt_num(overheat, 3)}°C，'
+        f'最小制冷保底 min_cool={_fmt_num(min_cool)}'
+        f'{"（已应用）" if min_cool_on else "（未触发）"}，'
+        f'可用电量上限={avail_txt}'
+        f'{"（已封顶↓）" if capped else "（未封顶）"}，'
+        f'最终电需求={_fmt_num(final_demand)}，'
+        f'额定功率={_fmt_num(nominal)}，'
+        f'TMP=需求/额定={_fmt_num(tmp, 3)}。'
+    )
+
+    # 4) 结论：方便判断「供电不足」还是「需求本身就小」
+    reason_bits: List[str] = []
+    try:
+        rd = float(raw_demand) if raw_demand not in (None, '') else None
+        av = float(avail) if avail not in (None, '') else None
+        fd = float(final_demand) if final_demand not in (None, '') else None
+        oh = float(overheat) if overheat not in (None, '') else None
+    except (TypeError, ValueError):
+        rd = av = fd = oh = None
+
+    if capped and rd is not None and av is not None and np.isfinite(av) and rd > av + 1e-9:
+        reason_bits.append(
+            f'可用电量不足：PID想要 {_fmt_num(rd)}，但只允许 {_fmt_num(av)}，出力被电力上限压低'
+        )
+    elif rd is not None and rd <= 1e-6:
+        reason_bits.append(
+            f'PID原始需求≈0（error={_fmt_num(error, 3)}），控制认为几乎不需要制冷，并非电力封顶'
+        )
+    elif rd is not None and fd is not None and abs(rd) < 0.15 and not capped:
+        reason_bits.append(
+            f'PID需求本身偏小（{_fmt_num(rd)}），未触达可用电量上限，冷机供电不足更可能来自控制需求过低'
+        )
+    if oh is not None and oh <= 1e-6 and not min_cool_on:
+        reason_bits.append('观测过热≤0，舒适最小制冷保底未生效')
+    if anti_wu:
+        reason_bits.append('本拍触发负向anti-windup，积分未继续往负需求累积')
+    if not reason_bits:
+        reason_bits.append('见上方数值：对照「PID需求 vs 可用电量 vs TMP」判断瓶颈')
+
+    lines.append(f'> [冷机PID推演] 结论：{"；".join(reason_bits)}。')
+    return lines
+
+
+def _hot_discomfort_narrative_lines(row: Dict[str, Any]) -> List[str]:
+    """
+    本步高温不适判定剧本（对齐 CityLearn discomfort_hot_proportion 单步逻辑）。
+
+    公式：cooling_delta = indoor - cooling_set_point
+          有人且 cooling_delta > comfort_band → 本步高温不适
+    """
+    indoor = row.get('kpi_indoor_temp')
+    cooling_sp = row.get('kpi_cooling_set_point')
+    # 无 KPI 埋点时跳过（旧 trace）
+    if indoor in (None, '') and cooling_sp in (None, ''):
+        return []
+
+    lines: List[str] = []
+    band = row.get('kpi_comfort_band')
+    occupant = row.get('kpi_occupant_count')
+    delta = row.get('kpi_cooling_delta')
+    threshold = row.get('kpi_hot_threshold')
+    occupied = _truthy(row.get('kpi_is_occupied'))
+    is_hot = _truthy(row.get('kpi_is_hot_discomfort'))
+    source = row.get('kpi_setpoint_source') or '-'
+    skip = row.get('kpi_hot_discomfort_skip_reason') or ''
+
+    lines.append(
+        f'> [高温不适判定] 入参：室内 {_fmt_num(indoor, 2)}°C'
+        f'（来源 {row.get("kpi_indoor_source") or "-"}），'
+        f'制冷设定 cooling_set_point={_fmt_num(cooling_sp, 2)}°C'
+        f'（来源 {source}），'
+        f'舒适带宽 band={_fmt_num(band, 1)}°C，'
+        f'占用人数 occupant={_fmt_num(occupant, 0)}。'
+    )
+    note = row.get('kpi_dynamics_note') or ''
+    if note:
+        lines.append(f'> [高温不适判定] 说明：{note}。')
+    lines.append(
+        f'> [高温不适判定] 计算：cooling_delta=室内-制冷设定='
+        f'{_fmt_num(delta, 3)}°C；'
+        f'过热阈值=制冷设定+band={_fmt_num(threshold, 2)}°C；'
+        f'占用={("是" if occupied else "否")}；'
+        f'判定条件为「占用且 cooling_delta > band」。'
+    )
+
+    if skip and not is_hot:
+        lines.append(f'> [高温不适判定] 结论：本步不计为高温不适（{skip}）。')
+    elif is_hot:
+        lines.append(
+            f'> [高温不适判定] 结论：是高温不适'
+            f'（cooling_delta {_fmt_num(delta, 3)}°C > band {_fmt_num(band, 1)}°C），'
+            f'本步会计入 discomfort_hot_proportion。'
+        )
+    else:
+        try:
+            d = float(delta) if delta not in (None, '') else None
+            bd = float(band) if band not in (None, '') else None
+            margin = (bd - d) if (d is not None and bd is not None) else None
+        except (TypeError, ValueError):
+            margin = None
+        margin_txt = (
+            f'距过热阈值还差 {_fmt_num(margin, 3)}°C'
+            if margin is not None else '未超过带宽'
+        )
+        lines.append(
+            f'> [高温不适判定] 结论：否（未达高温不适），{margin_txt}。'
+        )
+    return lines
 
 
 def _build_decision_summary(
@@ -317,6 +554,12 @@ def _build_decision_narrative_lines(
             f'{pid_hint}实际下发空调控制指令为 {_fmt_num(tmp_init, 2)}，'
             f'预计耗电 {_fmt_num(pred_cool)} 度。'
         )
+
+    # --- 本步高温不适判定（对齐 CityLearn discomfort_hot_proportion 单步）---
+    lines.extend(_hot_discomfort_narrative_lines(row))
+
+    # --- 冷机 PID 推演：入参 → 中间量 → 封顶/保底 → TMP（便于排查「供电不足」）---
+    lines.extend(_cooling_pid_narrative_lines(row, mode=mode))
 
     # --- 供热(DHW) 剧本行：对应 agent 初稿里的规则控制（原 RBC）---
     # 规则（正常工况，见 agent.py）：
@@ -977,9 +1220,10 @@ class ChescaTraceRecorder:
         community_actual_net = 0.0
         community_pred_net = 0.0
         for b in range(self.n_buildings):
-            community_actual_net += float(
-                observations[obs_names.index(f'net_electricity_consumption_{b}')]
-            )
+            obs_net = float(observations[obs_names.index(f'net_electricity_consumption_{b}')])
+            community_actual_net += float(building_net_electricity_consumption(
+                agent.env, b, default=obs_net
+            ))
             community_pred_net += float(
                 agent.forecasts[b]['non_shiftable_load'][0]
                 + agent.predicted_cooling_demand[b]
@@ -1010,6 +1254,99 @@ class ChescaTraceRecorder:
                 }
                 for b in range(self.n_buildings)
             },
+        }
+
+    def backfill_hot_discomfort_from_env(self, env) -> Dict[str, Any]:
+        """
+        Episode 结束后，用与 env.evaluate() 相同的建筑温度序列回填高温不适判定。
+
+        解决：决策时 WrapperEnv 无 buildings / 观测室温贴设定点，导致剧本全「否」，
+        但 KPI discomfort_hot_proportion 仍约 95%+ 的口径不一致。
+        """
+        from checa.utils import compute_hot_discomfort_from_values, resolve_citylearn_env
+
+        real_env = resolve_citylearn_env(env)
+        if real_env is None or not getattr(real_env, 'buildings', None):
+            return {'updated': 0, 'hot': 0, 'total': 0, 'error': 'no_buildings'}
+
+        series_by_b = []
+        for building in real_env.buildings:
+            indoor = np.asarray(building.indoor_dry_bulb_temperature, dtype=float)
+            cool = np.asarray(building.indoor_dry_bulb_temperature_cooling_set_point, dtype=float)
+            band = np.asarray(building.comfort_band, dtype=float)
+            occ = np.asarray(building.occupant_count, dtype=float)
+            series_by_b.append({
+                'indoor': indoor,
+                'cool': cool,
+                'band': band,
+                'occ': occ,
+                'n': int(min(len(indoor), len(cool))),
+            })
+
+        updated = 0
+        hot = 0
+        total = 0
+        for row in self.rows:
+            try:
+                b = int(row.get('building', 0))
+                step = int(row.get('step', -1))
+            except (TypeError, ValueError):
+                continue
+            if b < 0 or b >= len(series_by_b) or step < 0:
+                continue
+            ser = series_by_b[b]
+            if step >= ser['n']:
+                continue
+
+            indoor = float(ser['indoor'][step])
+            cool_sp = float(ser['cool'][step])
+            band = float(ser['band'][step]) if step < len(ser['band']) else 2.0
+            occ = float(ser['occ'][step]) if step < len(ser['occ']) else 1.0
+            indoor_obs = row.get('kpi_indoor_temp_obs', row.get('indoor_temp'))
+
+            note = (
+                f'已按 evaluate 温度序列回填：step={step}，'
+                f'动力学室内={indoor:.2f}°C，制冷设定={cool_sp:.2f}°C'
+            )
+            if indoor_obs not in (None, ''):
+                try:
+                    obs_v = float(indoor_obs)
+                    if abs(obs_v - indoor) > 0.05:
+                        note += f'；决策时观测室内曾为 {obs_v:.2f}°C'
+                except (TypeError, ValueError):
+                    pass
+
+            kpi = compute_hot_discomfort_from_values(
+                indoor,
+                cool_sp,
+                band=band,
+                occupant=occ,
+                indoor_obs=indoor_obs,
+                indoor_source='evaluate.indoor[step]',
+                setpoint_source='evaluate.cooling_set_point[step]',
+                dynamics_note=note,
+            )
+            row.update(kpi)
+            total += 1
+            updated += 1
+            if kpi.get('kpi_is_hot_discomfort'):
+                hot += 1
+
+            # 重建剧本行（使 [高温不适判定] 与回填后的 kpi_* 一致）
+            refine_applied = bool(row.get('refine_applied'))
+            narrative_lines = _build_decision_narrative_lines(
+                row, refine_applied, row.get('electricity_pricing')
+            )
+            narrative_entries = build_narrative_entries(narrative_lines, include_snippet=False)
+            row['decision_narrative'] = '|||'.join(narrative_lines)
+            row['decision_narrative_tags'] = '|||'.join(e['code_tag'] for e in narrative_entries)
+            row['decision_narrative_entries'] = narrative_entries
+
+        return {
+            'updated': updated,
+            'hot': hot,
+            'total': total,
+            'hot_rate': (hot / total) if total else 0.0,
         }
 
     def build_decision_trace_steps(self) -> List[Dict[str, Any]]:

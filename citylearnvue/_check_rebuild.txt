@@ -1,0 +1,7 @@
+soc chart: True
+cool floor: True
+tmp cap: True
+ele soft: True
+price: True
+cats: True
+api: True

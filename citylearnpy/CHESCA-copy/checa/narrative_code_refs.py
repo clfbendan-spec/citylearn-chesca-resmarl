@@ -37,15 +37,27 @@ CODE_REF_SPECS: Dict[str, Dict[str, Any]] = {
     },
     'pid_normal': {
         'file': 'checa/cooling_device_controller/cooling_device_controller.py',
-        'start': 141,
-        'end': 196,
-        'label': 'CoolingDeviceController.find_best_action() 正常 PID',
+        'start': 113,
+        'end': 250,
+        'label': 'CoolingDeviceController.find_best_action() 正常 PID→TMP',
     },
     'pid_outage': {
         'file': 'checa/cooling_device_controller/cooling_device_controller.py',
-        'start': 156,
-        'end': 196,
-        'label': 'CoolingDeviceController.find_best_action() 停电 PID',
+        'start': 113,
+        'end': 250,
+        'label': 'CoolingDeviceController.find_best_action() 停电 PID→TMP',
+    },
+    'pid_get_actions': {
+        'file': 'checa/cooling_device_controller/pid_controller.py',
+        'start': 35,
+        'end': 140,
+        'label': 'PIDController.get_actions() 入参与 P/I/D',
+    },
+    'hot_discomfort': {
+        'file': 'checa/utils.py',
+        'start': 61,
+        'end': 150,
+        'label': 'compute_step_hot_discomfort() 对齐 CityLearn KPI',
     },
     'outage_constraint': {
         'file': 'checa/agent.py',
@@ -220,9 +232,13 @@ def classify_narrative_line(text: str) -> str:
         return 'community'
     if '[预测层]' in text:
         return 'forecast'
-    if '[PID层]' in text or '[制冷(TMP)]' in text:
+    if '[冷机PID推演]' in text:
+        return 'pid_get_actions'
+    if '[高温不适判定]' in text:
+        return 'hot_discomfort'
+    if '[空调控制]' in text or '[PID层]' in text or '[制冷(TMP)]' in text:
         return 'pid_outage' if '停电' in text else 'pid_normal'
-    if '[停电约束]' in text:
+    if '[停电约束]' in text or '[停电供电盘点]' in text:
         return 'outage_constraint'
     if '[RBC层]' in text or '[供热(DHW)]' in text:
         return 'rbc_outage' if '停电' in text else 'rbc_normal'

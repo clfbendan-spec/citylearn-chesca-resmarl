@@ -47,7 +47,8 @@ from citylearn.citylearn import CityLearnEnv  # noqa: E402
 from agents.user_agent import SubmissionAgent  # noqa: E402
 from checa.residual.policy import ResidualActorCritic  # noqa: E402
 from checa.residual.state_builder import residual_state_dim  # noqa: E402
-from local_evaluation_copy import WrapperEnv, DEFAULT_SCHEMA  # noqa: E402
+from CHESCA import DEFAULT_SCHEMA  # noqa: E402
+from utils.ches_env import WrapperEnv  # noqa: E402
 from rewards.user_reward import SubmissionReward  # noqa: E402
 
 

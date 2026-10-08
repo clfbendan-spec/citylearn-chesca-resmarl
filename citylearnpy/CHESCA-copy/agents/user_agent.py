@@ -2,11 +2,11 @@
 参赛 Agent 入口文件 —— CHESCA 算法对外的「大门」
 ====================================================
 
-local_evaluation_copy.py 通过本模块加载控制算法（CHESCA-copy 副本，原版见 CHESCA-main/）：
+CHESCA.py 通过本模块加载控制算法（CHESCA-copy 副本，原版见 CHESCA-main/）：
   from agents.user_agent import SubmissionAgent
 
 【调用关系图】
-  local_evaluation_copy.evaluate()
+  CHESCA.evaluate()
     └── SubmissionAgent (= my_agent)
           ├── register_reset(obs)   # episode 开始时
           │     ├── self.reset()    # 清空 Checa 内部历史/计数器
@@ -68,6 +68,6 @@ class my_agent(Checa):
 
 
 ###################################################################
-# local_evaluation_copy.py 导入此名称；修改下方赋值即可切换 Agent 实现
+# CHESCA.py 导入此名称；修改下方赋值即可切换 Agent 实现
 SubmissionAgent = my_agent
 ###################################################################

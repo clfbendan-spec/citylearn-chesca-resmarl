@@ -11,10 +11,10 @@
         </p>
         <p v-else-if="showComparison" class="hint">
           <template v-if="comparisonViewMode === 'diff'">
-            差值对比：{{ compareLabel(compareFrom) }} vs {{ compareLabel(compareTo) }}
+            差值对比：{{ sideLabel(compareFrom, '评估模型') }} − {{ sideLabel(compareTo, '对照组') }}
           </template>
           <template v-else>
-            并排对比：{{ compareLabel(compareFrom) }} vs {{ compareLabel(compareTo) }}
+            并排对比：左 {{ sideLabel(compareFrom, '评估模型') }} · 右 {{ sideLabel(compareTo, '对照组') }}
           </template>
         </p>
       </div>
@@ -38,9 +38,15 @@
         >
           {{ comparisonViewMode === 'diff' ? '并排对比' : '差值对比' }}
         </el-button>
-        <el-button v-if="showComparison" size="small" @click="closeComparison">返回 KPI</el-button>
         <el-button
-          v-else-if="canCompare"
+          v-if="showComparison && !isPairCompare"
+          size="small"
+          @click="closeComparison"
+        >
+          返回 KPI
+        </el-button>
+        <el-button
+          v-else-if="!showComparison && canCompare"
           type="warning"
           size="small"
           @click="openCompare"
@@ -94,14 +100,35 @@
       class="table-wrap"
     >
       <table class="kpi-native-table kpi-merged-compare-table">
+        <colgroup>
+          <col class="kpi-fixed-col" />
+          <col
+            v-for="col in mergedSideBySideTable.valueColumns"
+            :key="'col-from-' + col"
+            :style="{ width: mergedSideBySideTable.valueColWidth }"
+          />
+          <col
+            v-for="col in mergedSideBySideTable.valueColumns"
+            :key="'col-to-' + col"
+            :style="{ width: mergedSideBySideTable.valueColWidth }"
+          />
+        </colgroup>
         <thead>
           <tr>
             <th rowspan="2" class="kpi-col-head">{{ columnLabel(mergedSideBySideTable.kpiKey) }}</th>
             <th :colspan="mergedSideBySideTable.valueColumns.length" class="algo-head algo-head-from">
-              {{ compareLabel(compareFrom) }}
+              <template v-if="isPairCompare">
+                <div class="algo-role">评估模型</div>
+                <div class="algo-name">{{ compareLabel(compareFrom) }}</div>
+              </template>
+              <template v-else>{{ compareLabel(compareFrom) }}</template>
             </th>
             <th :colspan="mergedSideBySideTable.valueColumns.length" class="algo-head algo-head-to">
-              {{ compareLabel(compareTo) }}
+              <template v-if="isPairCompare">
+                <div class="algo-role">对照组</div>
+                <div class="algo-name">{{ compareLabel(compareTo) }}</div>
+              </template>
+              <template v-else>{{ compareLabel(compareTo) }}</template>
             </th>
           </tr>
           <tr>
@@ -123,13 +150,32 @@
         </thead>
         <tbody>
           <tr v-for="(row, rowIndex) in mergedSideBySideTable.rows" :key="rowIndex">
-            <td class="kpi-col-cell">{{ kpiLabel(row.kpi) }}</td>
+            <td class="kpi-col-cell">
+              <span class="kpi-col-text" :title="kpiLabel(row.kpi)">{{ kpiLabel(row.kpi) }}</span>
+            </td>
             <td
               v-for="col in mergedSideBySideTable.valueColumns"
               :key="'from-' + rowIndex + '-' + col"
               class="val-from"
             >
-              {{ formatCellValue(getRowCell(row.from, col)) }}
+              <span class="val-with-icon">
+                <span class="val-text">{{ formatCellValue(getRowCell(row.from, col)) }}</span>
+                <i
+                  v-if="kpiAdvantage(row.kpi, row.from, row.to, col) === 'better'"
+                  class="ri-thumb-up-fill adv-icon adv-better"
+                  title="评估模型优于对照组"
+                />
+                <i
+                  v-else-if="kpiAdvantage(row.kpi, row.from, row.to, col) === 'worse'"
+                  class="ri-thumb-down-fill adv-icon adv-worse"
+                  title="评估模型劣于对照组"
+                />
+                <i
+                  v-else-if="kpiAdvantage(row.kpi, row.from, row.to, col) === 'equal'"
+                  class="ri-scales-3-fill adv-icon adv-equal"
+                  title="评估模型与对照组持平"
+                />
+              </span>
             </td>
             <td
               v-for="col in mergedSideBySideTable.valueColumns"
@@ -159,7 +205,7 @@
 
 <script>
 import SelectSimulationCompareModal from '@/components/shared/SelectSimulationCompareModal.vue'
-import { formatColumnName, formatKpiName } from '@/utils/kpiLabels'
+import { formatColumnName, formatKpiName, compareKpiAdvantage } from '@/utils/kpiLabels'
 import { collectKpiTableColumns, formatKpiCellValue } from '@/utils/kpiCsvParse'
 import { formatResmarlLabel } from '@/utils/resmarlLabels'
 
@@ -180,13 +226,17 @@ export default {
       compareFrom: null,
       compareTo: null,
       comparisonRows: [],
-      /** diff=差值单表 | sideBySide=合并双算法单表 */
-      comparisonViewMode: 'diff'
+      /** diff=差值单表 | sideBySide=合并双算法单表；默认并排 */
+      comparisonViewMode: 'sideBySide'
     }
   },
   computed: {
     activeResmarlLabel() {
       return formatResmarlLabel(this.resmarlBySim[this.activeSim])
+    },
+    /** 模型优选双模型：selected[0]=评估 selected[1]=对照 */
+    isPairCompare() {
+      return Array.isArray(this.selectedSimulations) && this.selectedSimulations.length === 2
     },
     currentRows() {
       if (!this.activeSim) return []
@@ -228,6 +278,9 @@ export default {
       const valueColumns = collectKpiTableColumns([...fromRows, ...toRows]).filter(
         (c) => c !== kpiKey
       )
+      const n = Math.max(valueColumns.length, 1)
+      // 左右各占剩余宽度的一半，故每侧列宽相同 → 两组总宽一致
+      const valueColWidth = `calc((100% - 220px) / ${n * 2})`
       const toByKpi = new Map(
         toRows.map((row) => [this.getRowCell(row, kpiKey), row]).filter(([k]) => k)
       )
@@ -241,7 +294,7 @@ export default {
           to: toByKpi.get(kpi) || {}
         })
       })
-      return { kpiKey, valueColumns, rows }
+      return { kpiKey, valueColumns, valueColWidth, rows }
     },
     emptyDescription() {
       if (this.showComparison && this.comparisonViewMode === 'sideBySide' && !this.sideBySideReady) {
@@ -257,15 +310,39 @@ export default {
     }
   },
   watch: {
+    selectedSimulations: {
+      immediate: true,
+      handler() {
+        this.tryAutoSideBySide()
+      }
+    },
+    parsedKpis: {
+      deep: true,
+      handler() {
+        this.tryAutoSideBySide()
+      }
+    },
     activeSim() {
-      this.closeComparison()
+      if (!this.isPairCompare) {
+        this.closeComparison()
+      }
     }
   },
   methods: {
     compareLabel(sim) {
       if (!sim) return ''
       const tag = formatResmarlLabel(this.resmarlBySim[sim])
-      return tag && tag !== '未标注' ? `${sim} (${tag})` : sim
+      return tag ? `${sim} (${tag})` : sim
+    },
+    roleCompareLabel(sim, role) {
+      const name = this.compareLabel(sim)
+      return name ? `${role} · ${name}` : role
+    },
+    sideLabel(sim, role) {
+      if (this.isPairCompare) {
+        return this.roleCompareLabel(sim, role)
+      }
+      return this.compareLabel(sim)
     },
     resolveKpiColumnKey(row) {
       if (!row || typeof row !== 'object') return 'KPI'
@@ -295,40 +372,76 @@ export default {
     formatCellValue(val) {
       return formatKpiCellValue(val)
     },
+    kpiAdvantage(kpiKey, fromRow, toRow, col) {
+      return compareKpiAdvantage(
+        kpiKey,
+        this.getRowCell(fromRow, col),
+        this.getRowCell(toRow, col)
+      )
+    },
     kpiLabel(key) {
       return formatKpiName(key, this.labelLocale)
     },
     columnLabel(key) {
       return formatColumnName(key, this.labelLocale)
     },
+    tryAutoSideBySide() {
+      if (!this.isPairCompare) {
+        return
+      }
+      const evalSim = this.selectedSimulations[0]
+      const controlSim = this.selectedSimulations[1]
+      const fromRows = this.parsedKpis[evalSim]
+      const toRows = this.parsedKpis[controlSim]
+      if (!Array.isArray(fromRows) || !fromRows.length || !Array.isArray(toRows) || !toRows.length) {
+        return
+      }
+      this.compareFrom = evalSim
+      this.compareTo = controlSim
+      this.buildDiffRows(evalSim, controlSim)
+      this.comparisonViewMode = 'sideBySide'
+      this.showComparison = true
+    },
+    buildDiffRows(fromSim, toSim) {
+      const Y = this.parsedKpis[fromSim]
+      const X = this.parsedKpis[toSim]
+      if (!X || !Y || X.length !== Y.length) {
+        this.comparisonRows = []
+        return false
+      }
+      const kpiKey = this.resolveKpiColumnKey(X[0])
+      // 差值 = 评估(左) − 对照(右) 便于解读
+      this.comparisonRows = Y.map((yRow, i) => {
+        const xRow = X[i]
+        if (this.getRowCell(xRow, kpiKey) !== this.getRowCell(yRow, kpiKey)) {
+          return { [kpiKey]: this.getRowCell(yRow, kpiKey), error: 'KPI mismatch' }
+        }
+        const diff = { [kpiKey]: this.getRowCell(yRow, kpiKey) }
+        collectKpiTableColumns(Y).forEach((key) => {
+          if (key === kpiKey) return
+          const a = parseFloat(this.getRowCell(yRow, key))
+          const b = parseFloat(this.getRowCell(xRow, key))
+          diff[key] = !Number.isNaN(a) && !Number.isNaN(b) ? (a - b).toFixed(3) : ''
+        })
+        return diff
+      })
+      return true
+    },
     openCompare() {
+      if (this.isPairCompare) {
+        this.tryAutoSideBySide()
+        return
+      }
       this.compareFrom = this.activeSim
       this.showCompareModal = true
     },
     onCompareSelected(target) {
       this.compareTo = target
-      const X = this.parsedKpis[target]
-      const Y = this.parsedKpis[this.compareFrom]
-      if (!X || !Y || X.length !== Y.length) {
+      if (!this.buildDiffRows(this.compareFrom, target)) {
         this.$message.warning('所选仿真 KPI 行数不一致，无法对比')
         return
       }
-      const kpiKey = this.resolveKpiColumnKey(X[0])
-      this.comparisonRows = X.map((xRow, i) => {
-        const yRow = Y[i]
-        if (this.getRowCell(xRow, kpiKey) !== this.getRowCell(yRow, kpiKey)) {
-          return { [kpiKey]: this.getRowCell(xRow, kpiKey), error: 'KPI mismatch' }
-        }
-        const diff = { [kpiKey]: this.getRowCell(xRow, kpiKey) }
-        collectKpiTableColumns(X).forEach((key) => {
-          if (key === kpiKey) return
-          const a = parseFloat(this.getRowCell(xRow, key))
-          const b = parseFloat(this.getRowCell(yRow, key))
-          diff[key] = !Number.isNaN(a) && !Number.isNaN(b) ? (a - b).toFixed(3) : ''
-        })
-        return diff
-      })
-      this.comparisonViewMode = 'diff'
+      this.comparisonViewMode = 'sideBySide'
       this.showComparison = true
     },
     toggleComparisonView() {
@@ -347,7 +460,7 @@ export default {
       this.compareFrom = null
       this.compareTo = null
       this.comparisonRows = []
-      this.comparisonViewMode = 'diff'
+      this.comparisonViewMode = 'sideBySide'
     },
     cellStyle(val) {
       const n = parseFloat(val)
@@ -362,29 +475,31 @@ export default {
 
 <style scoped>
 .kpi-panel {
-  margin-top: 16px;
-  margin-bottom: 24px;
-  padding: 12px 16px 16px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  background: #fafafa;
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--divider-color);
+  border-radius: var(--ha-card-border-radius);
+  background: var(--card-background-color);
   flex-shrink: 0;
+  box-shadow: var(--ha-card-box-shadow);
 }
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
+  gap: var(--space-3);
 }
 .title {
   margin: 0 0 4px;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--primary-text-color);
 }
 .hint {
   margin: 0;
   font-size: 13px;
-  color: #909399;
+  color: var(--secondary-text-color);
 }
 .resmarl-tag {
   margin-left: 8px;
@@ -410,28 +525,37 @@ export default {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  background: #fff;
+  background: var(--card-background-color);
 }
 .kpi-native-table th,
 .kpi-native-table td {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--divider-color);
   padding: 8px 12px;
   text-align: left;
   white-space: nowrap;
 }
 .kpi-native-table thead th {
-  background: #f5f7fa;
-  color: #606266;
-  font-weight: 600;
+  background: var(--input-fill-color);
+  color: var(--secondary-text-color);
+  font-weight: 500;
 }
 .kpi-native-table tbody tr:nth-child(odd) td {
-  background: #fff;
+  background: var(--card-background-color);
 }
 .kpi-native-table tbody tr:nth-child(even) td {
-  background: #f0f2f5;
+  background: rgba(0, 0, 0, 0.02);
 }
 .kpi-native-table tbody tr:hover td {
-  background: #e8f5e9;
+  background: rgba(var(--rgb-primary-color), 0.06);
+}
+
+.kpi-merged-compare-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.kpi-merged-compare-table .kpi-fixed-col {
+  width: 220px;
 }
 
 .kpi-merged-compare-table .kpi-col-head,
@@ -439,40 +563,75 @@ export default {
   position: sticky;
   left: 0;
   z-index: 2;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.04);
 }
 
+.kpi-merged-compare-table .kpi-col-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
 .kpi-merged-compare-table .kpi-col-head {
-  background: #f5f7fa;
+  background: var(--input-fill-color);
   z-index: 3;
 }
 
 .kpi-merged-compare-table tbody tr:nth-child(odd) .kpi-col-cell {
-  background: #fff;
+  background: var(--card-background-color);
 }
 .kpi-merged-compare-table tbody tr:nth-child(even) .kpi-col-cell {
-  background: #f0f2f5;
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .kpi-merged-compare-table .algo-head {
   text-align: center;
   font-size: 14px;
+  white-space: normal;
+}
+
+.kpi-merged-compare-table .algo-role {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.kpi-merged-compare-table .algo-name {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+  white-space: normal;
+  word-break: break-all;
 }
 
 .kpi-merged-compare-table .algo-head-from {
-  background: #ecf5ff;
-  color: #409eff;
+  background: rgba(var(--rgb-primary-color), 0.1);
+  color: var(--primary-color);
 }
 
 .kpi-merged-compare-table .algo-head-to {
-  background: #fdf6ec;
-  color: #e6a23c;
+  background: rgba(255, 152, 0, 0.12);
+  color: var(--accent-color);
 }
 
 .kpi-merged-compare-table .sub-head {
   text-align: center;
   font-size: 12px;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-merged-compare-table .sub-head-from {
@@ -494,6 +653,37 @@ export default {
 }
 .kpi-merged-compare-table tbody tr:nth-child(even) .val-to {
   background: #faf0e4;
+}
+.kpi-merged-compare-table .val-from {
+  position: relative;
+}
+.kpi-merged-compare-table .val-with-icon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.kpi-merged-compare-table .val-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-merged-compare-table .adv-icon {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 15px;
+  line-height: 1;
+}
+.kpi-merged-compare-table .adv-better {
+  color: #67c23a;
+}
+.kpi-merged-compare-table .adv-worse {
+  color: #f56c6c;
+}
+.kpi-merged-compare-table .adv-equal {
+  color: #909399;
 }
 .kpi-merged-compare-table tbody tr:hover .kpi-col-cell {
   background: #e8f5e9;

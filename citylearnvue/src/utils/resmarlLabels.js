@@ -1,16 +1,26 @@
 /**
  * 从任务 chesca_agent_config / resmarlSummary 生成看板标签。
+ * 纯基线（未启用残差）不展示「纯 CHESCA」字样，返回空字符串。
  */
+
+function sanitizeLabel(label) {
+  const text = label == null ? '' : String(label).trim()
+  if (!text || text === '纯 CHESCA') {
+    return ''
+  }
+  return text
+}
 
 export function formatResmarlLabel(summary) {
   if (!summary || typeof summary !== 'object') {
-    return '未标注'
+    return ''
   }
-  if (summary.label) {
-    return String(summary.label)
+  const fromSummary = sanitizeLabel(summary.label)
+  if (fromSummary) {
+    return fromSummary
   }
   if (!summary.enabled) {
-    return '纯 CHESCA'
+    return ''
   }
   const alpha = Number(summary.alpha)
   if (!Number.isFinite(alpha) || alpha <= 0) {
@@ -32,7 +42,7 @@ export function parseAgentConfigJson(text) {
 
 export function buildResmarlSummaryFromConfig(cfg) {
   if (!cfg || typeof cfg !== 'object') {
-    return { enabled: false, marlMode: 'none', alpha: 0, label: '纯 CHESCA' }
+    return { enabled: false, marlMode: 'none', alpha: 0, label: '' }
   }
   const enabled = !!cfg.resmarl_enabled
   let marlMode = cfg.marl_mode != null ? String(cfg.marl_mode).trim().toLowerCase() : 'none'
@@ -41,28 +51,24 @@ export function buildResmarlSummaryFromConfig(cfg) {
     marlMode = 'multi_agent'
   }
   const alpha = Number(cfg.residual_alpha) || 0
-  let label = '纯 CHESCA'
+  let label = ''
   if (!enabled || marlMode === 'none') {
-    label = '纯 CHESCA'
+    label = ''
   } else if (alpha <= 0) {
     label = 'CHESCA-ResMARL α=0'
   } else {
-    const epochs = cfg.multi_agent_train_epochs != null ? cfg.multi_agent_train_epochs : 20
-    const split = cfg.schema_split_enabled !== false
-    const evalShort = split && cfg.eval_schema
-      ? String(cfg.eval_schema).replace('citylearn_challenge_2023_', '')
-      : ''
-    const splitHint = split && evalShort ? ` · eval=${evalShort}` : ''
-    label = `CHESCA-ResMARL α=${alpha.toFixed(2)}(SAC ${epochs}轮${splitHint})`
+    const ckpt = cfg.multi_agent_checkpoint != null ? String(cfg.multi_agent_checkpoint).trim() : ''
+    label = ckpt
+      ? `CHESCA-ResMARL α=${alpha.toFixed(2)}(预存模型)`
+      : `CHESCA-ResMARL α=${alpha.toFixed(2)}(缺 checkpoint)`
   }
-  const schemaSplit = cfg.schema_split_enabled !== false
   return {
     enabled,
     marlMode,
     alpha,
     label,
-    schemaSplit,
-    trainSchema: cfg.train_schema,
     evalSchema: cfg.eval_schema,
+    trainSchema: cfg.train_schema,
+    multiAgentEvalSchema: cfg.multi_agent_eval_schema,
   }
 }

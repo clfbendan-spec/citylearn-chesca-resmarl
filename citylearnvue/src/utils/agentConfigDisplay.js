@@ -16,6 +16,200 @@ export const AGENT_CONFIG_FIELDS = [
     group: 'balance',
     hint: 'Refine 减负荷时 TMP 最大削减比例'
   },
+  {
+    key: 'min_cool_per_c_overheat',
+    label: '过热保底系数',
+    group: 'cooling',
+    hint: '动力学过热时每 °C 最小制冷（相对额定功率）'
+  },
+  {
+    key: 'min_cool_per_c_outdoor_gap',
+    label: '室外保底系数',
+    group: 'cooling',
+    hint: '室外开环保底；0=关闭'
+  },
+  {
+    key: 'outdoor_gap_deadband_c',
+    label: '室外保底死区',
+    group: 'cooling',
+    hint: '室外−设定超过该死区(°C)才启用室外保底'
+  },
+  {
+    key: 'outdoor_floor_max_overheat_c',
+    label: '室外保底过热阈值',
+    group: 'cooling',
+    hint: '仅当过热低于该值时叠加室外保底'
+  },
+  {
+    key: 'cooling_demand_feedforward_frac',
+    label: '冷负荷前馈比例',
+    group: 'cooling',
+    hint: '用 cooling_demand 折算电需求下限；0=关闭'
+  },
+  {
+    key: 'demand_feedforward_only_when_overheat',
+    label: '前馈仅过热启用',
+    group: 'cooling'
+  },
+  {
+    key: 'outdoor_floor_allow_when_under_setpoint',
+    label: '室外保底允许低于设定',
+    group: 'cooling',
+    hint: 'overheat<0 时仍可按室外温差保底'
+  },
+  {
+    key: 'clear_open_loop_floor_when_under_setpoint',
+    label: '低于设定清开环保底',
+    group: 'cooling',
+    hint: '旧行为；开启后 overheat<0 清掉室外/前馈'
+  },
+  {
+    key: 'use_lagged_dynamics_indoor',
+    label: '滞后动力学室温',
+    group: 'cooling',
+    hint: 'PID 用 building.indoor[-2]'
+  },
+  {
+    key: 'lagged_indoor_only_when_hotter',
+    label: '仅更热时用滞后室温',
+    group: 'cooling'
+  },
+  {
+    key: 'lagged_indoor_hotter_margin_c',
+    label: '滞后更热裕度',
+    group: 'cooling',
+    hint: '°C；仅 when_hotter 模式生效'
+  },
+  {
+    key: 'post_outage_soft_charge_enabled',
+    label: '复电缓充',
+    group: 'battery',
+    hint: '抑制停电恢复后强充尖峰'
+  },
+  {
+    key: 'post_outage_relax_steps',
+    label: '缓充窗口步数',
+    group: 'battery',
+    hint: '复电后连续 N 步生效'
+  },
+  {
+    key: 'post_outage_waive_min_soc',
+    label: '豁免小时 min_soc',
+    group: 'battery',
+    hint: '复电窗口内不强制抬 SOC 到小时下限'
+  },
+  {
+    key: 'post_outage_max_ele_charge',
+    label: '复电 ELE 充电上限',
+    group: 'battery',
+    hint: '窗口内充电动作上限（SOC 比例）'
+  },
+  {
+    key: 'post_outage_forbid_charge_when_overheat',
+    label: '过热禁充',
+    group: 'battery',
+    hint: '复电窗口过热时强制 ELE≤0'
+  },
+  {
+    key: 'post_outage_overheat_c',
+    label: '禁充过热阈值',
+    group: 'battery',
+    hint: '°C'
+  },
+  {
+    key: 'post_outage_tmp_cap_enabled',
+    label: '复电 TMP 帽',
+    group: 'cooling',
+    hint: '抑制复电满功率制冷尖峰'
+  },
+  {
+    key: 'post_outage_tmp_cap_steps',
+    label: 'TMP 帽窗口步数',
+    group: 'cooling'
+  },
+  {
+    key: 'post_outage_tmp_max_start',
+    label: '首步 TMP 上限',
+    group: 'cooling',
+    hint: '刚复电时制冷动作上限'
+  },
+  {
+    key: 'post_outage_tmp_ramp',
+    label: 'TMP 线性爬升',
+    group: 'cooling'
+  },
+  {
+    key: 'post_outage_tmp_stagger',
+    label: 'TMP 分栋错峰',
+    group: 'cooling'
+  },
+  {
+    key: 'price_aware_battery_enabled',
+    label: '电价感知电池',
+    group: 'battery',
+    hint: '高价禁充/强放，低价补 SOC'
+  },
+  {
+    key: 'price_high_quantile',
+    label: '高价分位数',
+    group: 'battery'
+  },
+  {
+    key: 'price_low_quantile',
+    label: '低价分位数',
+    group: 'battery'
+  },
+  {
+    key: 'price_history_min_steps',
+    label: '电价历史最少步数',
+    group: 'battery'
+  },
+  {
+    key: 'price_high_soc_threshold',
+    label: '高价强放 SOC 阈值',
+    group: 'battery'
+  },
+  {
+    key: 'price_high_forbid_charge',
+    label: '高价禁充',
+    group: 'battery'
+  },
+  {
+    key: 'price_high_force_discharge',
+    label: '高价强放',
+    group: 'battery'
+  },
+  {
+    key: 'price_high_discharge_ele',
+    label: '高价放电幅度',
+    group: 'battery'
+  },
+  {
+    key: 'price_min_reserve_soc',
+    label: '韧性地板 SOC',
+    group: 'battery',
+    hint: '非停电放电不得低于此 SOC'
+  },
+  {
+    key: 'price_global_reserve_enabled',
+    label: '全局韧性地板',
+    group: 'battery'
+  },
+  {
+    key: 'price_low_target_soc',
+    label: '低价补电目标 SOC',
+    group: 'battery'
+  },
+  {
+    key: 'price_low_charge_ele',
+    label: '低价补电幅度',
+    group: 'battery'
+  },
+  {
+    key: 'price_low_search_boost',
+    label: '低价树搜索促补电',
+    group: 'battery'
+  },
   { key: 'max_soc_normal', label: '正常 SOC 上限', group: 'battery' },
   { key: 'max_soc_outage', label: '停电 SOC 上限', group: 'battery' },
   {
@@ -26,23 +220,42 @@ export const AGENT_CONFIG_FIELDS = [
   { key: 'resmarl_enabled', label: '启用 CHESCA-ResMARL', group: 'resmarl' },
   { key: 'marl_mode', label: 'MARL 模式', group: 'resmarl', hint: 'none / multi_agent' },
   {
-    key: 'multi_agent_train_epochs',
-    label: 'SAC 训练轮数',
+    key: 'multi_agent_checkpoint',
+    label: '预存 SAC 模型',
     group: 'resmarl',
-    hint: '评估前 Multi-Agent SAC 训练 epoch'
+    hint: '启用 ResMARL 时必填；评估侧不再现场训练'
   },
   { key: 'multi_agent_explore', label: 'SAC explore', group: 'resmarl' },
   { key: 'residual_alpha', label: '残差强度 α', group: 'resmarl' },
   { key: 'resmarl_after_safety', label: '安全审查后残差', group: 'resmarl' },
-  { key: 'residual_action_mask', label: '动作 mask', group: 'resmarl' }
+  { key: 'residual_action_mask', label: '动作 mask', group: 'resmarl' },
+  {
+    key: 'train_schema',
+    label: 'Multi-agent 训练数据集',
+    group: 'resmarl',
+    hint: '仅 Multi-agent.py 训练使用'
+  },
+  {
+    key: 'multi_agent_eval_schema',
+    label: 'Multi-agent 评估数据集',
+    group: 'resmarl',
+    hint: '仅 Multi-agent.py 评估使用'
+  },
+  {
+    key: 'eval_schema',
+    label: 'CHESCA 评估数据集',
+    group: 'resmarl',
+    hint: 'CHESCA / ResMARL 仿真与 KPI'
+  }
 ]
 
 const GROUP_META = {
   forecast: { title: '预测层', order: 1 },
   balance: { title: '负荷平衡 / Refine', order: 2 },
-  battery: { title: '电池 SOC 约束', order: 3 },
-  resmarl: { title: 'CHESCA-ResMARL', order: 4 },
-  other: { title: '其它参数', order: 5 }
+  cooling: { title: '冷机开环保底', order: 3 },
+  battery: { title: '电池 SOC 约束', order: 4 },
+  resmarl: { title: 'CHESCA-ResMARL', order: 5 },
+  other: { title: '其它参数', order: 6 }
 }
 
 const KNOWN_KEYS = new Set([
@@ -53,6 +266,9 @@ const KNOWN_KEYS = new Set([
 /** 旧版配置快照中的废弃键，看板侧栏不再展示 */
 const DEPRECATED_KEYS = new Set([
   'multi_agent_checkpoint_path',
+  'multi_agent_train_epochs',
+  'schema_split_enabled',
+  'train_episode_time_steps',
   'resmarl_policy_path',
   'multi_agent_enabled',
   'residual_enabled',
@@ -71,14 +287,37 @@ export function formatConfigValue(key, value) {
   if (typeof value === 'boolean') return value ? '是' : '否'
   if (key === 'marl_mode') {
     const modeMap = {
-      none: '纯 CHESCA',
+      none: '未启用',
       multi_agent: 'CHESCA-ResMARL'
     }
     return modeMap[String(value).toLowerCase()] || String(value)
   }
   if (typeof value === 'number') {
-    if (key === 'residual_alpha' || key === 'TMP_max_reduction_percent') {
+    if (
+      key === 'residual_alpha' ||
+      key === 'TMP_max_reduction_percent' ||
+      key === 'cooling_demand_feedforward_frac' ||
+      key === 'post_outage_max_ele_charge' ||
+      key === 'post_outage_tmp_max_start' ||
+      key === 'price_high_quantile' ||
+      key === 'price_low_quantile' ||
+      key === 'price_high_soc_threshold' ||
+      key === 'price_high_discharge_ele' ||
+      key === 'price_min_reserve_soc' ||
+      key === 'price_low_target_soc' ||
+      key === 'price_low_charge_ele'
+    ) {
       return Number(value).toFixed(2)
+    }
+    if (
+      key === 'min_cool_per_c_overheat' ||
+      key === 'min_cool_per_c_outdoor_gap' ||
+      key === 'outdoor_gap_deadband_c' ||
+      key === 'outdoor_floor_max_overheat_c' ||
+      key === 'lagged_indoor_hotter_margin_c' ||
+      key === 'post_outage_overheat_c'
+    ) {
+      return Number(value).toFixed(3).replace(/\.?0+$/, '')
     }
     if (key === 'tau') return String(Math.round(value))
     return Number.isInteger(value) ? String(value) : Number(value).toFixed(4).replace(/\.?0+$/, '')
@@ -161,7 +400,7 @@ export function buildAgentConfigView(input) {
     ;[
       'resmarl_enabled',
       'marl_mode',
-      'multi_agent_train_epochs',
+      'multi_agent_checkpoint',
       'multi_agent_explore',
       'residual_alpha',
       'resmarl_after_safety',

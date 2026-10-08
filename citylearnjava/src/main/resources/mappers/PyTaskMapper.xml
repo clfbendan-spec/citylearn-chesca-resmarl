@@ -6,15 +6,21 @@
         <id column="id" property="id" />
         <result column="py_id" property="pyId" />
         <result column="status" property="status" />
+        <result column="task_name" property="taskName" />
         <result column="if_delete" property="ifDelete" />
         <result column="if_show" property="ifShow" />
         <result column="show_name" property="showName" />
+        <result column="if_notified" property="ifNotified" />
+        <result column="type" property="type" />
+        <result column="train_config" property="trainConfig" />
+        <result column="eval_config" property="evalConfig" />
         <result column="create_time" property="createTime" />
         <result column="update_time" property="updateTime" />
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, py_id, status, if_delete, if_show, show_name, create_time, update_time
+        id, py_id, status, task_name, if_delete, if_show, show_name, if_notified,
+        `type`, train_config, eval_config, create_time, update_time
     </sql>
 
 </mapper>

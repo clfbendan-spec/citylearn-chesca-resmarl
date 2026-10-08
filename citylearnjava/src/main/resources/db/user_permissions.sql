@@ -1,0 +1,2 @@
+-- 已废弃：权限改存 permission + user_permission 表
+-- 请执行 permission.sql

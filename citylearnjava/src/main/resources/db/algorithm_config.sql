@@ -20,8 +20,8 @@ INSERT INTO `algorithm_config` (`config_key`, `config_value`, `value_type`, `des
 ('tmp_max_reduction_percent', '0.0', 'number', '冷机最大削减比例TMP_max_reduction_percent', NOW()),
 ('tau', '1', 'number', '预测优化步长tau', NOW()),
 ('balance_type', 'C', 'string', '电池树搜索适应度类型balance_type', NOW()),
-('resmarl_enabled', 'false', 'string', '是否启用 CHESCA-ResMARL', NOW()),
-('marl_mode', 'none', 'string', 'MARL 模式：none / multi_agent', NOW()),
+('resmarl_enabled', 'true', 'string', '兼容字段：是否残差由入口脚本决定', NOW()),
+('marl_mode', 'multi_agent', 'string', 'MARL 模式：none / multi_agent（实际由入口脚本覆盖）', NOW()),
 ('multi_agent_train_epochs', '20', 'number', 'Multi-Agent SAC 训练轮数', NOW()),
 ('multi_agent_explore', 'false', 'string', 'Multi-Agent 评估时是否开启 explore', NOW()),
 ('residual_alpha', '0.0', 'number', 'CHESCA-ResMARL 残差强度 α∈[0,1]', NOW()),
@@ -29,7 +29,8 @@ INSERT INTO `algorithm_config` (`config_key`, `config_value`, `value_type`, `des
 ('resmarl_after_safety', 'true', 'string', '残差是否在安全审查之后施加', NOW()),
 ('schema_split_enabled', 'true', 'string', '是否启用训测 schema 分离（方案 A）', NOW()),
 ('train_schema', 'citylearn_challenge_2023_phase_2_local_evaluation', 'string', 'Multi-Agent SAC 训练 schema', NOW()),
-('eval_schema', 'citylearn_challenge_2023_phase_2_online_evaluation_1', 'string', 'CHESCA 仿真/KPI 评估 schema', NOW())
+('eval_schema', 'citylearn_challenge_2023_phase_2_online_evaluation_1', 'string', 'CHESCA.py 仿真/KPI 评估 schema', NOW()),
+('resmarl_eval_schema', 'citylearn_challenge_2023_phase_2_online_evaluation_1', 'string', 'CHESCA_ResMARL.py 仿真/KPI 评估 schema', NOW())
 ON DUPLICATE KEY UPDATE
   `config_value` = VALUES(`config_value`),
   `value_type` = VALUES(`value_type`),

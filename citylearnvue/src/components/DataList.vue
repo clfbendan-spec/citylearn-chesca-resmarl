@@ -1,593 +1,684 @@
 <template>
-  <div>
-    <el-row :gutter="20">
-      <el-col :span="6">
-        <el-select v-model="monthValue" placeholder="月份" >
-      <el-option
-        v-for="item in monthOptions"
-        :key="item.value"
-        :label="item.label"
-        :value="item.value">
-      </el-option>
-    </el-select>
-      </el-col>
-      <el-col :span="6">
-        <el-select v-model="hourValue" placeholder="小时" >
-      <el-option
-        v-for="item in hourOptions"
-        :key="item.value"
-        :label="item.label"
-        :value="item.value">
-      </el-option>
-    </el-select>
-      </el-col>
-      <el-col :span="6">
-        <el-select v-model="dayTypeValue" placeholder="星期" >
-      <el-option
-        v-for="item in dayTypeOptions"
-        :key="item.value"
-        :label="item.label"
-        :value="item.value">
-      </el-option>
-    </el-select>
-      </el-col>
-      <el-col :span="6">
-        <el-button type="primary" @click="handleChange">搜索</el-button>
-      </el-col>
+  <div class="data-list-page ha-page">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">原始数据</h1>
+        <p class="page-desc">
+          
+        </p>
+      </div>
       
-     
-    </el-row>
-    
-    
-    
+    </header>
 
-    <el-table
-      :data="tableData"
-      style="width: 100%"
-      border
-      stripe
-      height="calc(100vh - 100px)"
-      :max-height="1500"
-      :scrollable="true"
-      v-loading="loading">
-      <el-table-column
-        prop="month"
-        label="月份"
-        width="60"
-        fixed="left"
-        :formatter="formatMonth">
-      </el-table-column>
-      <el-table-column
-        prop="hour"
-        label="小时"
-        width="60"
-        fixed="left">
-      </el-table-column>
-      <el-table-column
-          prop="dayType"
-          label="星期"
-          width="80"
-          fixed="left"
-          :formatter="formatDayType">
-        </el-table-column>
-      
-      <el-table-column
-        prop="daylightSavingsStatus"
-        label="是否处于夏令时"
-        :formatter="formatDaylightStatus">
-      </el-table-column>
-      <el-table-column
-        prop="indoorDryBulbTemperature"
-        label="室内干球温度">
-      </el-table-column>
-      <el-table-column
-        prop="averageUnmetCoolingSetpointDifference"
-        label="平均未满足冷却设定点温差">
-      </el-table-column>
-      <el-table-column
-        prop="indoorRelativeHumidity"
-        label="室内相对湿度">
-      </el-table-column>
-      <el-table-column
-        prop="nonShiftableLoad"
-        label="电器当前消耗电量">
-      </el-table-column>
-      <el-table-column
-        prop="dhwDemand"
-        label="供热需求">
-      </el-table-column>
-      <el-table-column
-        prop="coolingDemand"
-        label="制冷需求">
-      </el-table-column>
-      <el-table-column
-        prop="heatingDemand"
-        label="供暖需求">
-      </el-table-column>
-      <el-table-column
-        prop="solarGeneration"
-        label="光伏发电量">
-      </el-table-column>
-      <el-table-column
-        prop="occupantCount"
-        label="建筑内人员数量">
-      </el-table-column>
-      <el-table-column
-        prop="indoorDryBulbTemperatureCoolingSetPoint"
-        label="室内干球温度制冷设定点">
-      </el-table-column>
-      <el-table-column
-        prop="indoorDryBulbTemperatureHeatingSetPoint"
-        label="室内干球温度制热设定点">
-      </el-table-column>
-      <el-table-column
-        prop="hvacMode"
-        label="制冷模式">
-      </el-table-column>
-      <el-table-column
-        prop="carbonIntensity"
-        label="二氧化碳排放率">
-      </el-table-column>
-      <el-table-column
-        prop="electricityPricing"
-        label="单位电价">
-      </el-table-column>
-      <el-table-column
-        prop="electricityPricingPredicted1"
-        label="预测电价1">
-      </el-table-column>
-      <el-table-column
-        prop="electricityPricingPredicted2"
-        label="预测电价2">
-      </el-table-column>
-      <el-table-column
-        prop="electricityPricingPredicted3"
-        label="预测电价3">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorDryBulbTemperature"
-        label="室外干球温度">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorRelativeHumidity"
-        label="室外相对湿度">
-      </el-table-column>
-      <el-table-column
-        prop="diffuseSolarIrradiance"
-        label="散射太阳辐照度">
-      </el-table-column>
-      <el-table-column
-        prop="directSolarIrradiance"
-        label="直接太阳辐照度">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorDryBulbTemperaturePredicted1"
-        label="室外干球温度预测1">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorDryBulbTemperaturePredicted2"
-        label="室外干球温度预测2">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorDryBulbTemperaturePredicted3"
-        label="室外干球温度预测3">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorRelativeHumidityPredicted1"
-        label="室外相对湿度预测1">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorRelativeHumidityPredicted2"
-        label="室外相对湿度预测2">
-      </el-table-column>
-      <el-table-column
-        prop="outdoorRelativeHumidityPredicted3"
-        label="室外相对湿度预测3">
-      </el-table-column>
-       <el-table-column
-        prop="diffuseSolarIrradiancePredicted1"
-        label="漫射太阳辐照度预测1">
-      </el-table-column>
-       <el-table-column
-        prop="diffuseSolarIrradiancePredicted2"
-        label="漫射太阳辐照度预测2">
-      </el-table-column>
-      <el-table-column
-        prop="diffuseSolarIrradiancePredicted3"
-        label="漫射太阳辐照度预测3">
-      </el-table-column>
-      <el-table-column
-        prop="directSolarIrradiancePredicted1"
-        label="直射太阳辐照度预测1">
-      </el-table-column>
-      <el-table-column
-        prop="directSolarIrradiancePredicted2"
-        label="直射太阳辐照度预测2">
-      </el-table-column>
-      <el-table-column
-        prop="directSolarIrradiancePredicted3"
-        label="直射太阳辐照度预测3">
-      </el-table-column>
-    </el-table>
+    <el-card shadow="never" class="ha-surface filter-card">
+      <div class="filter-toolbar">
+        <div class="filter-field filter-field-dataset">
+          <label class="filter-label">数据集</label>
+          <el-select
+            v-model="datasetSchema"
+            filterable
+            size="small"
+            class="filter-select filter-select-wide"
+            :loading="datasetLoading"
+            placeholder="选择本地数据集"
+            @change="onDatasetChange"
+          >
+            <el-option
+              v-for="item in datasetOptions"
+              :key="item.schemaKey"
+              :label="item.displayName"
+              :value="item.schemaKey"
+            />
+          </el-select>
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">建筑</label>
+          <el-select v-model="buildingId" size="small" class="filter-select" @change="handleChange">
+            <el-option
+              v-for="b in buildingOptions"
+              :key="b.value"
+              :label="b.label"
+              :value="b.value"
+            />
+          </el-select>
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">日期</label>
+          <el-date-picker
+            v-model="dateValue"
+            type="date"
+            size="small"
+            placeholder="全部日期"
+            value-format="yyyy-MM-dd"
+            clearable
+            class="filter-select filter-date"
+          />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">小时</label>
+          <el-select v-model="hourValue" size="small" placeholder="全部" clearable class="filter-select filter-select-sm">
+            <el-option
+              v-for="item in hourOptions"
+              :key="'h-' + item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">星期</label>
+          <el-select v-model="dayTypeValue" size="small" placeholder="全部" clearable class="filter-select filter-select-sm">
+            <el-option
+              v-for="item in dayTypeOptions"
+              :key="'d-' + item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </div>
+        <div class="filter-actions">
+          <el-button type="primary" size="small" icon="el-icon-search" @click="handleChange">搜索</el-button>
+          <el-button size="small" icon="el-icon-refresh" @click="resetFilters">重置</el-button>
+        </div>
+      </div>
+    </el-card>
 
+    <el-card shadow="never" class="ha-surface table-card">
+   
+      <div class="table-wrap" v-loading="loading">
+        <el-table
+          :data="pagedTableData"
+          class="data-table"
+          stripe
+          :height="tableHeight"
+          :header-cell-style="headerCellStyle"
+        >
+          <el-table-column
+            prop="date"
+            label="日期"
+            width="120"
+            fixed="left"
+          />
+          <el-table-column
+            prop="hour"
+            label="小时"
+            width="72"
+            fixed="left"
+          />
+          <el-table-column
+            prop="dayType"
+            label="星期"
+            width="96"
+            fixed="left"
+            :formatter="formatDayType"
+          />
+          <el-table-column
+            prop="daylightSavingsStatus"
+            label="是否处于夏令时"
+            min-width="120"
+            :formatter="formatDaylightStatus"
+          />
+          <el-table-column
+            v-for="col in metricColumns"
+            :key="col.prop"
+            :prop="col.prop"
+            :label="col.label"
+            :min-width="col.minWidth"
+            :formatter="col.formatter"
+          />
+        </el-table>
+      </div>
+      <div class="table-pagination">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next, jumper"
+          :current-page.sync="currentPage"
+          :page-size.sync="pageSize"
+          :page-sizes="[24, 48, 96, 192]"
+          :total="total"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
+    </el-card>
   </div>
 </template>
 
 <script>
-import axios from 'axios';
+import axios from 'axios'
+
+const HVAC_MODE_LABELS = {
+  0: '关闭',
+  1: '制冷',
+  2: '供暖'
+}
+
+function formatFixed3(value) {
+  if (value == null || value === '') return '—'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(3)
+}
+
+function makeDecimalFormatter() {
+  return (row, column, cellValue) => formatFixed3(cellValue)
+}
+
+function formatOccupant(row, column, cellValue) {
+  if (cellValue == null || cellValue === '') return '—'
+  const n = Number(cellValue)
+  if (!Number.isFinite(n)) return '—'
+  return String(Math.round(n))
+}
+
+function formatHvacMode(row, column, cellValue) {
+  if (cellValue == null || cellValue === '') return '—'
+  const key = Math.round(Number(cellValue))
+  return HVAC_MODE_LABELS[key] != null ? HVAC_MODE_LABELS[key] : String(cellValue)
+}
+
+/** 度量列：表头带单位；小数值保留 3 位（月/时/星期/夏令时除外） */
+const METRIC_COLUMNS = [
+  { prop: 'indoorDryBulbTemperature', label: '室内干球温度 (°C)', minWidth: 140 },
+  {
+    prop: 'averageUnmetCoolingSetpointDifference',
+    label: '平均未满足冷却设定点温差 (°C)',
+    minWidth: 200
+  },
+  { prop: 'indoorRelativeHumidity', label: '室内相对湿度 (%)', minWidth: 140 },
+  { prop: 'nonShiftableLoad', label: '电器当前消耗电量 (kWh)', minWidth: 160 },
+  { prop: 'dhwDemand', label: '供热需求 (kWh)', minWidth: 120 },
+  { prop: 'coolingDemand', label: '制冷需求 (kWh)', minWidth: 120 },
+  { prop: 'heatingDemand', label: '供暖需求 (kWh)', minWidth: 120 },
+  { prop: 'solarGeneration', label: '光伏发电量 (W/kW)', minWidth: 140 },
+  {
+    prop: 'occupantCount',
+    label: '建筑内人员数量 (人)',
+    minWidth: 140,
+    formatter: formatOccupant
+  },
+  {
+    prop: 'indoorDryBulbTemperatureCoolingSetPoint',
+    label: '室内干球温度制冷设定点 (°C)',
+    minWidth: 190
+  },
+  {
+    prop: 'indoorDryBulbTemperatureHeatingSetPoint',
+    label: '室内干球温度制热设定点 (°C)',
+    minWidth: 190
+  },
+  {
+    prop: 'hvacMode',
+    label: '暖通模式',
+    minWidth: 100,
+    formatter: formatHvacMode
+  },
+  {
+    prop: 'carbonIntensity',
+    label: '二氧化碳排放率 (kgCO₂/kWh)',
+    minWidth: 190
+  },
+  { prop: 'electricityPricing', label: '单位电价 ($/kWh)', minWidth: 130 },
+  { prop: 'electricityPricingPredicted1', label: '预测电价1 ($/kWh)', minWidth: 140 },
+  { prop: 'electricityPricingPredicted2', label: '预测电价2 ($/kWh)', minWidth: 140 },
+  { prop: 'electricityPricingPredicted3', label: '预测电价3 ($/kWh)', minWidth: 140 },
+  { prop: 'outdoorDryBulbTemperature', label: '室外干球温度 (°C)', minWidth: 140 },
+  { prop: 'outdoorRelativeHumidity', label: '室外相对湿度 (%)', minWidth: 140 },
+  { prop: 'diffuseSolarIrradiance', label: '散射太阳辐照度 (W/m²)', minWidth: 160 },
+  { prop: 'directSolarIrradiance', label: '直接太阳辐照度 (W/m²)', minWidth: 160 },
+  {
+    prop: 'outdoorDryBulbTemperaturePredicted1',
+    label: '室外干球温度预测1 (°C)',
+    minWidth: 170
+  },
+  {
+    prop: 'outdoorDryBulbTemperaturePredicted2',
+    label: '室外干球温度预测2 (°C)',
+    minWidth: 170
+  },
+  {
+    prop: 'outdoorDryBulbTemperaturePredicted3',
+    label: '室外干球温度预测3 (°C)',
+    minWidth: 170
+  },
+  {
+    prop: 'outdoorRelativeHumidityPredicted1',
+    label: '室外相对湿度预测1 (%)',
+    minWidth: 170
+  },
+  {
+    prop: 'outdoorRelativeHumidityPredicted2',
+    label: '室外相对湿度预测2 (%)',
+    minWidth: 170
+  },
+  {
+    prop: 'outdoorRelativeHumidityPredicted3',
+    label: '室外相对湿度预测3 (%)',
+    minWidth: 170
+  },
+  {
+    prop: 'diffuseSolarIrradiancePredicted1',
+    label: '漫射太阳辐照度预测1 (W/m²)',
+    minWidth: 190
+  },
+  {
+    prop: 'diffuseSolarIrradiancePredicted2',
+    label: '漫射太阳辐照度预测2 (W/m²)',
+    minWidth: 190
+  },
+  {
+    prop: 'diffuseSolarIrradiancePredicted3',
+    label: '漫射太阳辐照度预测3 (W/m²)',
+    minWidth: 190
+  },
+  {
+    prop: 'directSolarIrradiancePredicted1',
+    label: '直射太阳辐照度预测1 (W/m²)',
+    minWidth: 190
+  },
+  {
+    prop: 'directSolarIrradiancePredicted2',
+    label: '直射太阳辐照度预测2 (W/m²)',
+    minWidth: 190
+  },
+  {
+    prop: 'directSolarIrradiancePredicted3',
+    label: '直射太阳辐照度预测3 (W/m²)',
+    minWidth: 190
+  }
+].map((col) => ({
+  ...col,
+  formatter: col.formatter || makeDecimalFormatter()
+}))
 
 export default {
+  name: 'DataList',
   data() {
     return {
-      tableData: [],
+      metricColumns: METRIC_COLUMNS,
+      allRows: [],
+      buildingId: 'building1',
+      datasetSchema: 'citylearn_challenge_2023_phase_2_local_evaluation',
+      datasetOptions: [],
+      datasetLoading: false,
+      dateValue: '',
       dayTypeValue: '',
-      dayTypeOptions: [{
-          value: '',
-          label: '全部日期'
-        },{
-          value: '1',
-          label: '星期一'
-        }, {
-          value: '2',
-          label: '星期二'
-        }, {
-          value: '3',
-          label: '星期三'
-        }, {
-          value: '4',
-          label: '星期四'
-        }, {
-          value: '5',
-          label: '星期五'
-        },{
-          value: '6',
-          label: '星期六'
-        },{
-          value: '7',
-          label: '星期天'
-        }],
+      dayTypeOptions: [
+        { value: '', label: '全部' },
+        { value: '1', label: '星期一' },
+        { value: '2', label: '星期二' },
+        { value: '3', label: '星期三' },
+        { value: '4', label: '星期四' },
+        { value: '5', label: '星期五' },
+        { value: '6', label: '星期六' },
+        { value: '7', label: '星期天' }
+      ],
       hourValue: '',
-      hourOptions: [{
-          value: '',
-          label: '全部时间'
-        },{
-          value: '1',
-          label: '1'
-        },{
-          value: '2',
-          label: '2'
-        },{
-          value: '3',
-          label: '3'
-        },{
-          value: '4',
-          label: '4'
-        },{
-          value: '5',
-          label: '5'
-        },{
-          value: '6',
-          label: '6'
-        },{
-          value: '7',
-          label: '7'
-        },{
-          value: '8',
-          label: '8'
-        },{
-          value: '9',
-          label: '9'
-        },{
-          value: '10',
-          label: '10'
-        },{
-          value: '11',
-          label: '11'
-        },{
-          value: '12',
-          label: '12'
-        },{
-          value: '13',
-          label: '13'
-        },{
-          value: '14',
-          label: '14'
-        },{
-          value: '15',
-          label: '15'
-        },{
-          value: '16',
-          label: '16'
-        },{
-          value: '17',
-          label: '17'
-        },{
-          value: '18',
-          label: '18'
-        },{
-          value: '19',
-          label: '19'
-        },{
-          value: '20',
-          label: '20'
-        },{
-          value: '21',
-          label: '21'
-        },{
-          value: '22',
-          label: '22'
-        },{
-          value: '23',
-          label: '23'
-        },{
-          value: '24',
-          label: '24'
-        },],
-      monthValue: '',
-      monthOptions: [{
-          value: '',
-          label: '全部月份'
-        },{
-          value: '1',
-          label: '1月'
-        }, {
-          value: '2',
-          label: '2月'
-        }, {
-          value: '3',
-          label: '3月'
-        }, {
-          value: '4',
-          label: '4月'
-        }, {
-          value: '5',
-          label: '5月'
-        },{
-          value: '6',
-          label: '6月'
-        },{
-          value: '7',
-          label: '7月'
-        },{
-          value: '8',
-          label: '8月'
-        },{
-          value: '9',
-          label: '9月'
-        },{
-          value: '10',
-          label: '10月'
-        },{
-          value: '11',
-          label: '11月'
-        },{
-          value: '12',
-          label: '12月'
-        },],
+      hourOptions: [
+        { value: '', label: '全部' },
+        ...Array.from({ length: 24 }, (_, i) => ({
+          value: String(i + 1),
+          label: String(i + 1)
+        }))
+      ],
       loading: false,
-      pageSize: 20,
+      pageSize: 24,
       currentPage: 1,
-      total: 0
+      total: 0,
+      tableHeight: 560,
+      headerCellStyle: {
+        background: 'var(--input-fill-color)',
+        color: 'var(--primary-text-color)',
+        fontWeight: '500'
+      }
+    }
+  },
+  computed: {
+    selectedDataset() {
+      return this.datasetOptions.find((d) => d.schemaKey === this.datasetSchema) || null
+    },
+    datasetSchemaLabel() {
+      return (this.selectedDataset && this.selectedDataset.displayName) || this.datasetSchema || '—'
+    },
+    buildingOptions() {
+      const n = Math.max(
+        1,
+        Number((this.selectedDataset && this.selectedDataset.buildingCount) || 3)
+      )
+      return Array.from({ length: n }, (_, i) => ({
+        value: `building${i + 1}`,
+        label: `建筑 ${i + 1}`
+      }))
+    },
+    pagedTableData() {
+      const start = (this.currentPage - 1) * this.pageSize
+      return this.allRows.slice(start, start + this.pageSize)
     }
   },
   created() {
-    this.fetchData();
+    this.initPage()
+  },
+  mounted() {
+    this.updateTableHeight()
+    window.addEventListener('resize', this.updateTableHeight)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.updateTableHeight)
   },
   methods: {
-    formatDayType(row, column, cellValue) {
-      switch (cellValue) {
-        case 1:
-          return '星期一';
-        case 2:
-          return '星期二';
-        case 3:
-          return '星期三';
-        case 4:
-          return '星期四';
-        case 5:
-          return '星期五';
-        case 6:
-          return '星期六';
-        case 7:
-          return '星期天';
-        default:
-          return '';
+    async initPage() {
+      await this.loadDatasetOptions()
+      await this.fetchData()
+    },
+    async loadDatasetOptions() {
+      this.datasetLoading = true
+      try {
+        const response = await axios.get('/api/web/basedata/getDatasetList')
+        if (!response.data || response.data.code !== 0) {
+          throw new Error((response.data && response.data.message) || '加载数据集列表失败')
+        }
+        const list = Array.isArray(response.data.data) ? response.data.data : []
+        this.datasetOptions = list
+        if (!list.some((d) => d.schemaKey === this.datasetSchema) && list.length) {
+          this.datasetSchema = list[0].schemaKey
+        }
+        this.ensureBuildingInRange()
+      } catch (e) {
+        console.error(e)
+        this.$message.error((e && e.message) || '加载数据集列表失败，请确认已执行 citylearn_dataset.sql')
+      } finally {
+        this.datasetLoading = false
       }
     },
-    formatMonth(row, column, cellValue) {
-      switch (cellValue) {
-        case 1:
-          return '1月';
-        case 2:
-          return '2月';
-        case 3:
-          return '3月';
-        case 4:
-          return '4月';
-        case 5:
-          return '5月';
-        case 6:
-          return '6月';
-        case 7:
-          return '7月';
-        case 8:
-          return '8月';
-        case 9:
-          return '9月';
-        case 10:
-          return '10月';
-        case 11:
-          return '11月';
-        case 12:
-          return '12月';
-        default:
-          return '';
+    ensureBuildingInRange() {
+      const ok = this.buildingOptions.some((b) => b.value === this.buildingId)
+      if (!ok) this.buildingId = this.buildingOptions[0].value
+    },
+    onDatasetChange() {
+      this.ensureBuildingInRange()
+      this.currentPage = 1
+      this.fetchData()
+    },
+    updateTableHeight() {
+      this.$nextTick(() => {
+        const wrap = this.$el && this.$el.querySelector('.table-wrap')
+        if (!wrap) {
+          this.tableHeight = Math.max(420, window.innerHeight - 360)
+          return
+        }
+        const top = wrap.getBoundingClientRect().top
+        // 预留底部分页条 + 页面边距
+        const bottomPad = 96
+        this.tableHeight = Math.max(360, Math.floor(window.innerHeight - top - bottomPad))
+      })
+    },
+    formatDayType(row, column, cellValue) {
+      const map = {
+        1: '星期一',
+        2: '星期二',
+        3: '星期三',
+        4: '星期四',
+        5: '星期五',
+        6: '星期六',
+        7: '星期天'
       }
+      return map[cellValue] || ''
     },
     formatDaylightStatus(row, column, cellValue) {
-      return cellValue ? '是' : '否';
+      return cellValue ? '是' : '否'
     },
     fetchData() {
-      this.loading = true;
-      axios.get('/api/web/basedata/getList', {
-        params: {
-          buildingId: 'building1',
-          dayType: this.dayTypeValue,
-          month: this.monthValue,
-          hour: this.hourValue
-        }
-      })
-      .then(response => {
-        this.tableData = response.data.data;
-        this.total = response.data.total || 0;
-      })
-      .catch(error => {
-        console.error('获取数据失败:', error);
-        this.$message.error('数据加载失败');
-      })
-      .finally(() => {
-        this.loading = false;
-      });
+      this.loading = true
+      axios
+        .get('/api/web/basedata/getList', {
+          params: {
+            buildingId: this.buildingId,
+            datasetSchema: this.datasetSchema,
+            date: this.dateValue || undefined,
+            dayType: this.dayTypeValue || undefined,
+            hour: this.hourValue || undefined
+          }
+        })
+        .then((response) => {
+          if (!response.data || response.data.code !== 0) {
+            throw new Error((response.data && response.data.message) || '加载失败')
+          }
+          const rows = Array.isArray(response.data.data) ? response.data.data : []
+          this.allRows = rows
+          this.total = rows.length
+          const maxPage = Math.max(1, Math.ceil(this.total / this.pageSize) || 1)
+          if (this.currentPage > maxPage) this.currentPage = maxPage
+        })
+        .catch((error) => {
+          console.error('获取数据失败:', error)
+          this.allRows = []
+          this.total = 0
+          this.$message.error((error && error.message) || '数据加载失败')
+        })
+        .finally(() => {
+          this.loading = false
+          this.updateTableHeight()
+        })
     },
     handleChange() {
-      this.fetchData();
+      this.currentPage = 1
+      this.fetchData()
+    },
+    resetFilters() {
+      this.dateValue = ''
+      this.hourValue = ''
+      this.dayTypeValue = ''
+      this.currentPage = 1
+      this.fetchData()
     },
     handleSizeChange(val) {
-      this.pageSize = val;
-      this.fetchData();
+      this.pageSize = val
+      this.currentPage = 1
+      this.updateTableHeight()
     },
     handleCurrentChange(val) {
-      this.currentPage = val;
-      this.fetchData();
+      this.currentPage = val
     }
   }
 }
 </script>
 
 <style scoped>
-.el-table {
-  margin: 20px 0;
-  overflow: auto;
+.data-list-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  background: var(--primary-background-color);
 }
-.el-table::before {
-  height: 0;
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
 }
-.el-table__body-wrapper {
+
+.page-title {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--primary-text-color);
+}
+
+.page-desc {
+  margin: 0;
+  max-width: 640px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--secondary-text-color);
+}
+
+.header-meta {
+  flex-shrink: 0;
+  padding-top: 8px;
+}
+
+.result-count {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+  background: rgba(var(--rgb-primary-color), 0.1);
+}
+
+.ha-surface {
+  border: 1px solid var(--divider-color);
+  border-radius: var(--ha-card-border-radius);
+  background: var(--card-background-color);
+}
+
+.filter-card >>> .el-card__body {
+  padding: var(--space-3) var(--space-4);
+}
+
+.filter-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px 12px;
   overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #409EFF #f5f5f5;
 }
-.el-table__body-wrapper::-webkit-scrollbar {
+
+.filter-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.filter-label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--secondary-text-color);
+  white-space: nowrap;
+}
+
+.filter-select {
+  width: 112px;
+}
+
+.filter-select-sm {
+  width: 88px;
+}
+
+.filter-select-wide {
+  width: 200px;
+}
+
+.filter-date {
+  width: 136px;
+}
+
+.filter-date >>> .el-input {
+  width: 136px;
+}
+
+.filter-field-dataset {
+  min-width: 0;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.table-card {
+  overflow: visible;
+}
+
+.table-card >>> .el-card__body {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.table-card-head {
+  margin-bottom: var(--space-4);
+}
+
+.table-card-title {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--primary-text-color);
+}
+
+.table-card-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--secondary-text-color);
+}
+
+.table-wrap {
+  width: 100%;
+  min-height: 360px;
+}
+
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--divider-color);
+}
+
+.table-pagination >>> .el-pagination {
+  padding: 0;
+  font-weight: 400;
+}
+
+.data-table {
+  width: 100%;
+}
+
+.data-table >>> .el-table .cell {
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table >>> .el-table__body-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+}
+
+.data-table >>> .el-table__body-wrapper::-webkit-scrollbar {
   height: 8px;
   width: 8px;
 }
-.el-table__body-wrapper::-webkit-scrollbar-track {
-  background: #f5f5f5;
-}
-.el-table__body-wrapper::-webkit-scrollbar-thumb {
-  background-color: #409EFF;
-  border-radius: 4px;
-}
-.el-pagination {
-  justify-content: center;
-}
-.tooltip-content {
-  display: inline-block;
-  margin: 5px;
-}
-.tooltip-content span {
-  cursor: pointer;
-  color: #409EFF;
-}
-.image-list-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+
+.data-table >>> .el-table__body-wrapper::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.pagination {
-  margin-bottom: 20px;
-  display: flex;
-  justify-content: center;
-}
-
-.image-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-}
-
-.image-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.image {
-  width: 100%;
-  height: 100%;
+.data-table >>> .el-table__body-wrapper::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.22);
   border-radius: 4px;
 }
 
-.image-title {
-  margin-top: 8px;
-  text-align: center;
-  font-weight: bold;
+@media (max-width: 900px) {
+  .filter-toolbar {
+    gap: 8px;
+  }
+
+  .filter-select-wide {
+    width: 160px;
+  }
 }
-
-
-
-.detail-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.detail-image {
-  width: auto;
-  max-width: 100%;
-  max-height: 70vh;
-  margin-bottom: 20px;
-}
-
-.detail-title {
-  margin-bottom: 15px;
-  text-align: center;
-}
-
-.detail-description {
-  width: 100%;
-  text-align: center;
-}
-
-.detail-description p {
-  margin-bottom: 10px;
-}
-
-.el-row {
-    margin-bottom: 20px;
-    &:last-child {
-      margin-bottom: 0;
-    }
-  }
-  .el-col {
-    border-radius: 4px;
-  }
-  .bg-purple-dark {
-    background: #99a9bf;
-  }
-  .bg-purple {
-    background: #d3dce6;
-  }
-  .bg-purple-light {
-    background: #e5e9f2;
-  }
-  .grid-content {
-    border-radius: 4px;
-    min-height: 36px;
-  }
-  .row-bg {
-    padding: 10px 0;
-    background-color: #f9fafc;
-  }
 </style>

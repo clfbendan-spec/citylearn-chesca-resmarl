@@ -70,4 +70,23 @@ public class PyFile implements Serializable {
      */
     @TableField("if_show")
     private Boolean ifShow;
+
+    /**
+     * 脚本类型，用于代码编辑器页文件列表筛选：
+     * train=只训练 / eval=只评估 / both=训练+评估一体
+     */
+    @TableField("script_type")
+    private String scriptType;
+
+    /**
+     * 该脚本的算法配置（JSON 数组），由代码编辑器文件列表的「配置」按钮保存：
+     * <pre>[{"id":1,"param_name":"train-schema","value":"1"}, ...]</pre>
+     * <ul>
+     *   <li>id —— algorithm_param_config.id，选了哪个参数</li>
+     *   <li>param_name —— 参数别名（界面第二列右侧输入框的值；留空表示沿用原名）</li>
+     *   <li>value —— 参数值；数据集类参数存 citylearn_dataset.id</li>
+     * </ul>
+     */
+    @TableField("algorithm_config")
+    private String algorithmConfig;
 }
