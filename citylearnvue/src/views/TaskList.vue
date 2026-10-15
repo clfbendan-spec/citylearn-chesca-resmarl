@@ -324,6 +324,11 @@ export default {
       if (!row) {
         return '-'
       }
+      // 仪表盘「展示名称」（show_name）优先：用户在记录页给执行记录起的名字最贴近他的叫法，
+      //   简易任务（type=1）本来没有名字列，只有这样才显示得出来（2026-10-09 使用者要求）
+      if (row.showName) {
+        return row.showName
+      }
       if (this.isPipelineTask(row)) {
         return row.taskName || '（未命名）'
       }

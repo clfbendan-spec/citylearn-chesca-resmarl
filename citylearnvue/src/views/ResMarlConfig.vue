@@ -214,7 +214,7 @@ export default {
       multiAgentCheckpoint: '',
       residualAlpha: 0,
       maskKeys: ['ele'],
-      resmarlAfterSafety: true,
+      resmarlAfterSafety: false,
       trainSchema: 'citylearn_challenge_2023_phase_2_local_evaluation',
       multiAgentEvalSchema: 'citylearn_challenge_2023_phase_2_online_evaluation_1',
       evalSchema: 'citylearn_challenge_2023_phase_2_online_evaluation_1',
@@ -268,7 +268,7 @@ export default {
       const mask = data.residualActionMask || { dhw: false, ele: true, tmp: false }
       this.maskKeys = ['dhw', 'ele', 'tmp'].filter((k) => !!mask[k])
       if (!this.maskKeys.length) this.maskKeys = ['ele']
-      this.resmarlAfterSafety = data.resmarlAfterSafety !== false
+      this.resmarlAfterSafety = data.resmarlAfterSafety === true
       this.trainSchema = data.trainSchema || 'citylearn_challenge_2023_phase_2_local_evaluation'
       this.multiAgentEvalSchema = data.multiAgentEvalSchema
         || 'citylearn_challenge_2023_phase_2_online_evaluation_1'

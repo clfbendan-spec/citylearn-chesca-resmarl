@@ -27,6 +27,7 @@
 # 导入库
 import argparse 
 import json
+import os
 import re       
 import sys        
 import time       
@@ -125,6 +126,25 @@ def parse_args():
                         help='温度控制的最大降额比例（默认 0.0 ✓）')
     parser.add_argument('--tmp_max_reduction_percent', type=float, default=DEFAULTS.get('tmp_max_reduction_percent'),
                         help='同上（历史小写写法 ✓ 两种都认 ✓）')
+    parser.add_argument('--peak_trigger_mode', type=str, default=DEFAULTS.get('peak_trigger_mode'),
+                        help='削峰触发信号口径：net（净负荷，旧行为）/ ns_spike（单栋实测不可调负荷尖峰）'
+                             '/ district_spike（片区不可调负荷尖峰，推荐）')
+    parser.add_argument('--ns_spike_mult', type=float, default=DEFAULTS.get('ns_spike_mult'),
+                        help='尖峰判据倍数：实测不可调负荷 > 该倍数 × 历史均值即触发')
+    parser.add_argument('--rebound_window', type=int, default=DEFAULTS.get('rebound_window'),
+                        help='削峰触发后抑制回弹过调的步数（0 = 关闭）')
+    parser.add_argument('--rebound_cap', type=float, default=DEFAULTS.get('rebound_cap'),
+                        help='回弹窗口内制冷动作相对「触发前基准」的限幅系数（1.0 = 不限）')
+    parser.add_argument('--peak_battery_discharge_enabled', type=str, default=DEFAULTS.get('peak_battery_discharge_enabled'),
+                        help='district_spike 触发步是否把各楼电池拉到最大放电（true/false）')
+    parser.add_argument('--peak_battery_discharge_ele', type=float, default=DEFAULTS.get('peak_battery_discharge_ele'),
+                        help='触发步电池 ELE 动作幅度（-1 = 单步最大放电）')
+    parser.add_argument('--peak_cut_graded_enabled', type=str, default=DEFAULTS.get('peak_cut_graded_enabled'),
+                        help='是否用分级削峰替代 0/1 硬削（true/false）')
+    parser.add_argument('--peak_cut_graded_m_lo', type=float, default=DEFAULTS.get('peak_cut_graded_m_lo'),
+                        help='分级带宽下沿：r ≤ m_lo 不削峰（r = 片区当步 NS / 其运行均值）')
+    parser.add_argument('--peak_cut_graded_m_hi', type=float, default=DEFAULTS.get('peak_cut_graded_m_hi'),
+                        help='分级带宽上沿：r ≥ m_hi 满削（电池同此门槛满放）')
     parser.add_argument('--min_cool_per_c_overheat', type=float, default=DEFAULTS.get('min_cool_per_c_overheat'),
                         help='每超设定点 1°C 至少开多少制冷（冷机开环保底 ✓）')
     parser.add_argument('--min_cool_per_c_outdoor_gap', type=float, default=DEFAULTS.get('min_cool_per_c_outdoor_gap'),
@@ -141,6 +161,8 @@ def parse_args():
                         help='true/false：室内已低于设定点时，还允许室外触发的保底吗 ✓')
     parser.add_argument('--clear_open_loop_floor_when_under_setpoint', type=str, default=DEFAULTS.get('clear_open_loop_floor_when_under_setpoint'),
                         help='true/false：低于设定点时是否清掉开环保底 ✓')
+    parser.add_argument('--dhw_storage_fix', type=str, default=DEFAULTS.get('dhw_storage_fix'),
+                        help='true/false：是否修复上游 DHW 储能 bug（默认 false，逐位等于上游 ✓）')
     parser.add_argument('--use_lagged_dynamics_indoor', type=str, default=DEFAULTS.get('use_lagged_dynamics_indoor'),
                         help='true/false：室内温度是否用带滞后的动力学来估 ✓')
     parser.add_argument('--lagged_indoor_only_when_hotter', type=str, default=DEFAULTS.get('lagged_indoor_only_when_hotter'),
@@ -171,6 +193,8 @@ def parse_args():
                         help='true/false：各楼栋错峰放开 ✓')
     parser.add_argument('--price_aware_battery_enabled', type=str, default=DEFAULTS.get('price_aware_battery_enabled'),
                         help='true/false：启用看电价决定充放电 ✓')
+    parser.add_argument('--price_band_tie_strict', type=str, default=DEFAULTS.get('price_band_tie_strict'),
+                        help='true/false：价格分位并列（≤2 档电价）时按退化处理并改严格比较 ✓ 默认关')
     parser.add_argument('--price_high_quantile', type=float, default=DEFAULTS.get('price_high_quantile'),
                         help='高价分位点（0~1 ✓ 默认 0.75 ✓）')
     parser.add_argument('--price_low_quantile', type=float, default=DEFAULTS.get('price_low_quantile'),
@@ -535,6 +559,16 @@ if __name__ == '__main__':
     output_dir.mkdir(parents=True, exist_ok=True)
     render_session = '.' if args.output_dir else args.render_session
     agent_config = build_agent_config(_cli_overrides_from_args(args)) or {}
+
+    # 环境层「DHW 储能修复」开关（2026-10-15）：
+    #   必须在**环境构造之前**设好 —— citylearn/building.py::update_dhw_storage 每步实时读
+    #   os.environ['CITYLEARN_DHW_STORAGE_FIX']（'1'/'true'/'yes'/'on' 视为开启）。
+    #   默认关（未传或 false）⇒ 逐位等于上游 CityLearn，零侵入 ✓。
+    if agent_config.get('dhw_storage_fix'):
+        os.environ['CITYLEARN_DHW_STORAGE_FIX'] = '1'
+        log_console('[env] DHW 储能修复已开启（CITYLEARN_DHW_STORAGE_FIX=1）')
+    else:
+        os.environ.pop('CITYLEARN_DHW_STORAGE_FIX', None)
 
     class Config:
         SCHEMA = DEFAULT_SCHEMA

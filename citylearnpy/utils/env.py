@@ -584,3 +584,30 @@ from typing import Any
 
 
 _STATUS = 'not_installed'
+
+# ============================================================================
+# ==== 段：统一随机停电种子（2026-10-09 新增 ✓）====
+POWER_OUTAGE_SEED = 90000
+
+
+# 把每栋楼的随机停电模型种子钉成固定值（必须在 env.reset() **之前**调用 ✓）
+def set_power_outage_seed(env: Any, seed: int = POWER_OUTAGE_SEED) -> Any:
+    citylearn_env = unwrap_citylearn_env(env)
+    for b in getattr(citylearn_env, 'buildings', None) or []:
+        model = getattr(b, 'stochastic_power_outage_model', None)
+        if model is not None:
+            model.random_seed = int(seed)
+    return env
+
+
+# 包装基类 reset：先钉种子，再走原 reset（原 reset 就是 CityLearn 生成停电序列的时刻 ✓）
+# 幂等安装 ⇒ 模块被重复 import 也不会叠加包装 ✓
+if not getattr(RLlibMultiAgentEnv.reset, '_power_outage_seed_hooked', False):
+    _ORIG_RESET = RLlibMultiAgentEnv.reset
+
+    def _reset_with_fixed_power_outage(self, *args, **kwargs):
+        set_power_outage_seed(self)
+        return _ORIG_RESET(self, *args, **kwargs)
+
+    _reset_with_fixed_power_outage._power_outage_seed_hooked = True
+    RLlibMultiAgentEnv.reset = _reset_with_fixed_power_outage

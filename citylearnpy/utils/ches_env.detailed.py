@@ -81,6 +81,43 @@ class WrapperEnv:
         # 转发到底层 CityLearnEnv.buildings，供高温不适等 KPI 口径读取动力学室温。
         return self.unwrapped.buildings
 
+# 按数据集名定位本地 schema.json（CityLearn 缓存目录 / 包内 datasets）。找不到返回 None ✓
+# [详注-BEGIN]（生成简版时整段删除）
+#   ⚠️ 2026-10-09 新增：CityLearn 的 schema setter 只有「**文件**路径」那一支走本地
+#     （`os.path.isfile(schema)` ✓）；传数据集**名字**会落到
+#     `schema in dataset.get_dataset_names()` 那一支 ✗ —— 那里要请求 GitHub API 拿数据集清单，
+#     离线或触发限流（403 rate limit）时整个评估直接抛异常 ✗
+#     （2026-10-09 实测：任务 3459c7d9… 的 CHESCA.py 就炸在 citylearn/data.py 的 API 请求上 ✓）。
+#   ⇒ 建环境前先把名字解析成本地 `schema.json` 的**绝对路径** ✓。
+#
+#   与 `utils/env.py` 的 `resolve_schema_path` **同源** ✓（同一组查找根、同样的
+#   「命中多个取最后一个」口径 ✓）；刻意**不 import 那边** ✗ —— 那会把 Ray/RLlib 依赖
+#   和温度 monkeypatch 引进纯 CHESCA（见文件头"为什么单独成模块" ✓）。
+#   ⇒ **改这里请同步 utils/env.py 的 resolve_schema_path** ✓（两边口径要一直一致 ✓）。
+# [详注-END]
+def resolve_local_schema_file(schema: str):
+    roots = [
+        Path.home() / 'AppData' / 'Local' / 'intelligent-environments-lab' / 'citylearn',
+        Path.home() / '.citylearn',
+    ]
+    for root in roots:
+        try:
+            if Path(root).is_dir():
+                hits = sorted(Path(root).glob(f'**/{schema}/schema.json'))
+                if hits:
+                    return hits[-1]
+        except Exception:
+            pass
+    try:
+        import citylearn
+        cand = Path(citylearn.__file__).resolve().parent / 'datasets' / schema / 'schema.json'
+        if cand.is_file():
+            return cand
+    except Exception:
+        pass
+    return None
+
+
 def create_citylearn_env(config, reward_function, schema=None, episode_time_steps=None):
     # 根据配置创建 CityLearn 仿真环境。
     # 参数 schema：可选，覆盖 config.SCHEMA（训测分离时传入 eval_schema）。
@@ -115,6 +152,16 @@ def create_citylearn_env(config, reward_function, schema=None, episode_time_step
         env_kwargs['render_directory'] = getattr(config, 'RENDER_DIR', DEFAULT_OUTPUT_DIR)
         env_kwargs['render_session_name'] = getattr(config, 'RENDER_SESSION', DEFAULT_RENDER_SESSION)
 
-    env = CityLearnEnv(schema, **env_kwargs)
+    # schema 名 → 本地 schema.json 的绝对路径（绕开 CityLearn 的 GitHub 数据集清单查询 ✓）
+    # [详注-BEGIN]（生成简版时整段删除）
+    #   只有「文件路径」才走 CityLearn 的本地分支 ✓；名字会触发 GitHub API ✗（见 resolve_local_schema_file ✓）。
+    #   解析不到（数据集既不在缓存也不在包内）⇒ 原样传名字，退回旧行为、报错信息不变 ✓。
+    # [详注-END]
+    schema_arg = schema
+    if isinstance(schema, str):
+        _schema_file = resolve_local_schema_file(schema)
+        if _schema_file is not None:
+            schema_arg = str(_schema_file)
+    env = CityLearnEnv(schema_arg, **env_kwargs)
     wrapper_env = WrapperEnv(env)
     return env, wrapper_env

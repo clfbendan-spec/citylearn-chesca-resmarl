@@ -1169,6 +1169,8 @@ export default {
       const parts = []
       if (t.modelReady === false) {
         parts.push('模型已不在磁盘上（早期训练写在全局目录、被后来的训练覆盖），仅作记录，不能选')
+      } else if (t.modelFromGlobal) {
+        parts.push('模型来自全局兜底目录（历史任务共用同一份），选中后评估加载的是最后一次训练覆盖的那版')
       }
       if (t.scriptName) {
         parts.push(`脚本：${t.scriptName}`)

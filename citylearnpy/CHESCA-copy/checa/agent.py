@@ -117,6 +117,44 @@ class Checa(Agent):
             'B_high': 1.0,         # 负荷高于均值+B_high×std 时触发减负荷
             'TMP_max_reduction_percent': 0.0,
             'peak_TMP_reduction': 0.0,
+            # 制冷削峰「触发信号」可选（默认 'net' = 现状：预测净负荷 vs 自身历史均值+B_high×σ）。
+            # 'ns_spike' = 换成「实测不可调负荷 > ns_spike_mult×其历史均值」——见 _opt_pure_chesca.py
+            #   的实测：'net' 口径是退化的（B_high 小 ⇒ 全年误触发毁舒适；B_high 大 ⇒ 够不到真尖峰）。
+            'peak_trigger_mode': 'net',
+            'ns_spike_mult': 3.0,
+            # O1 削峰后「回弹抑制」：ns_spike 触发步之后 rebound_window 步内，把制冷动作
+            #   压到 rebound_cap × 触发步削峰前的动作，抑制控制器把开度补回造成的过冷超调。
+            #   默认 window=0 ⇒ 本机制不生效 ⇒ 与改动前逐位一致 ✓（见 纯CHESCA优化空间核定.md）
+            'rebound_window': 0,
+            'rebound_cap': 1.0,
+            # O3″ 电池削峰：district_spike 触发步把所有楼电池拉到 peak_battery_discharge_ele
+            #   （默认 -1.0 = 单步最大放电）。判据与制冷削峰同源、当步可观测 ⇒ 纯因果、无前瞻、无需学习。
+            #   默认 enabled=False ⇒ 本机制不生效 ⇒ 与改动前逐位一致 ✓（见 纯CHESCA优化空间核定.md）
+            #   ⚠️ 它是 peak_trigger_mode='district_spike' 的**修饰开关**；其它模式下静默 no-op。
+            'peak_battery_discharge_enabled': False,
+            'peak_battery_discharge_ele': -1.0,
+            # O3‴ DHW 削峰（district_spike 的**修饰开关**）：同一「片区尖峰」判据下，把 DHW 储热拉到
+            #   peak_dhw_discharge_ele（默认 -1.0 = 单步最大放热）。纯因果、无前瞻、无需学习。
+            #   mode='fire'：r>m_lo 即放（与制冷分级同源，可覆盖 5<r<6 那段"电池未满放"的缺口）；
+            #   mode='full'：r≥m_hi 才放（与电池同源，等价于把电池那一步也加一路 DHW 放电）。
+            #   默认 enabled=False ⇒ 本机制不生效 ⇒ 与改动前逐位一致 ✓
+            #   ⚠️ 同为 district_spike 的修饰开关；其它模式下静默 no-op。
+            'peak_dhw_discharge_enabled': False,
+            'peak_dhw_discharge_ele': -1.0,
+            'peak_dhw_discharge_mode': 'fire',
+            # P1 分级削峰（district_spike 的**修饰开关**，默认 False ⇒ 与硬阈值逐位一致 ✓）：
+            #   把 0/1 硬削换成连续分级  pct = TMP_max_reduction_percent × clip((r − m_lo)/(m_hi − m_lo), 0, 1)，
+            #   其中 r = 当步片区 NS / 其运行均值。r ≤ m_lo 不削、r ≥ m_hi 满削（pct=TMP）。
+            #   电池仍只在 r ≥ m_hi（pct 打满）时触发，与硬规则同源。
+            #   ⚠️ 同为 district_spike 的修饰开关；其它模式下静默 no-op。
+            #   ★ m_lo 默认值经 P0（官方 evaluate() 口径）重标定为 **5.0**（不是早期原型试的 3.0）：
+            #     拐点在 5 —— 只加 5<r<6 的部分削峰即可拿到 ramping/daily_peak 改善，
+            #     舒适代价 online 仅 +0.13pp、local 反而 −0.05pp（弱支配硬削）；
+            #     m_lo≤4 多削 3<r<6 的中尖峰，舒适代价与收益不成比例（online 相对 +18%~+33%）。
+            #     详见《CHESCA-P0官方口径定论.md》。默认 False ⇒ 本行不影响默认路径 ✓
+            'peak_cut_graded_enabled': False,
+            'peak_cut_graded_m_lo': 5.0,
+            'peak_cut_graded_m_hi': 6.0,
             'max_soc_reduction_in_outage': 0.70,
             'increase_scale_outage': 1.166,
             # ResMARL 残差层（阶段0：默认关闭，保证与纯 CHESCA 基线一致）
@@ -164,6 +202,10 @@ class Checa(Agent):
             'price_low_target_soc': 0.80,
             'price_low_charge_ele': 0.25,
             'price_low_search_boost': True,
+            # 价格分位退化修法（默认关 ⇒ 逐位等于旧行为）：
+            # ≤2 档电价时 quantile(0.75)==quantile(0.25) ⇒ `>=` 使绝大多步被判高价 ⇒ 电池只出不进。
+            # 打开后：① hi<=lo+1e-12（并列/退化）⇒ 本步判 'mid'（交回树搜索）；② 比较改严格 > / <。
+            'price_band_tie_strict': False,
         }
         if params is not None:
             self.params = {**default_params, **params}
@@ -182,6 +224,13 @@ class Checa(Agent):
         # ---------- 历史缓存：用于负荷平衡与 ramping 优化 ----------
         self.elec_consumption_history = [[] for _ in range(self.n_buildings)]
         self.elec_consumption_history_per_hour = [[[] for _ in range(24)] for _ in range(self.n_buildings)]
+        # 实测不可调负荷历史（供 peak_trigger_mode='ns_spike' 的尖峰判据）
+        self.ns_load_history = [[] for _ in range(self.n_buildings)]
+        # 片区级不可调负荷之和（供 peak_trigger_mode='district_spike'：整片一起让路）
+        self.dist_ns_history = []
+        # O1 回弹抑制状态：触发后剩余限幅步数 + 触发步削峰前的制冷动作（作限幅基准）
+        self._rebound_steps_left = [0 for _ in range(self.n_buildings)]
+        self._rebound_ref = [0.0 for _ in range(self.n_buildings)]
         self.elec_consumption_prediction_history = [[] for _ in range(self.n_buildings)]
 
         self.predicted_dhw_device_demand = [0.0 for _ in range(self.n_buildings)]
@@ -352,9 +401,14 @@ class Checa(Agent):
         """
         阶段 5：对 CHESCA 基准动作 a_base 施加 ResMARL 修正，得到 a_final。
 
-        CHESCA-ResMARL（Multi-Agent SAC）使用 blend：
-          a_final = clip( (1−α)·a_base + α·a_rl_masked )
-        （SAC 输出绝对动作 a_rl；mask 关闭维保持 a_base）
+        CHESCA-ResMARL（Multi-Agent SAC）默认使用**残差叠加**语义：
+          a_final = 安全投影( clip( a_base + α·span·(mask ⊙ a_rl) ) )
+        （residual_mode='blend' 时退回旧式 (1−α)·a_base + α·a_rl_masked；
+          详见 multi_agent_runner_copy.MultiAgentResidualCorrector）
+
+        安全投影（action_safety_projection）所需的楼栋上下文在这里每步注入 ——
+        它只在残差真正生效的路径上被使用，因此对纯 CHESCA 无影响
+        （下面 correct() 在未启用/α=0 时会提前原样返回 a_base）。
 
         行为保证：
           - resmarl_enabled=False 或 residual_alpha=0 → 原样返回 a_base
@@ -369,12 +423,24 @@ class Checa(Agent):
             if 'hour' in self.observation_names_b else None,
             'forecasts': self.forecasts,
             'cur_battery_soc': list(self.cur_battery_soc),
+            # P0 门控所需：硬件 DoD 下限与逐楼栋停电标记（与 CHESCA 自身判据同源 ✓）
+            'min_battery_soc': [float(self.min_battery_soc[b]) for b in range(self.n_buildings)],
+            'outage': [bool(self.outage_details[b]['outage_flag']) for b in range(self.n_buildings)],
             'cur_dhw_soc': list(self.cur_dhw_soc),
             'net_load_mean': [
                 float(np.mean(self.elec_consumption_history[b])) if self.elec_consumption_history[b] else 0.0
                 for b in range(self.n_buildings)
             ],
         }
+        # 安全投影需要"当前步号"：楼栋对象已在挂载时注入，这里每步刷新一次
+        # （ResidualCorrector 等旧实现没有该方法 ⇒ getattr 取不到就跳过，保持兼容）。
+        setter = getattr(self.residual_corrector, 'set_safety_context', None)
+        if setter is not None:
+            try:
+                setter(time_step=int(getattr(self.env.unwrapped, 'time_step', 0)))
+            except Exception:
+                pass
+
         a_final = self.residual_corrector.correct(
             a_base,
             observations=observations,
@@ -413,6 +479,16 @@ class Checa(Agent):
         hour = int(observations[self.observation_names_b.index('hour')])
         predicted_outdoor_temp = self.forecasts['outdoor_temp'][0]
 
+        # 片区级不可调负荷（当步各楼之和）—— 供 peak_trigger_mode='district_spike'。
+        # 仅记账，不影响任何默认路径的动作（默认模式不读它）✓
+        try:
+            _dist = float(sum(
+                float(observations[self.observation_names_b.index(f'non_shiftable_load_{b}')])
+                for b in range(self.n_buildings)))
+            self.dist_ns_history.append(_dist)
+        except (ValueError, IndexError, TypeError):
+            pass
+
         action_proposals = []
         self._trace_initial_meta = {}
         try:
@@ -449,6 +525,12 @@ class Checa(Agent):
             )
             self.elec_consumption_history[b].append(net_electricity_consumption)
             self.elec_consumption_history_per_hour[b][hour - 1].append(net_electricity_consumption)
+            # 实测不可调负荷（ns_spike 触发判据用）：观测名与 trace_exporter 一致
+            try:
+                self.ns_load_history[b].append(
+                    float(observations[self.observation_names_b.index(f'non_shiftable_load_{b}')]))
+            except (ValueError, IndexError, TypeError):
+                pass
             # 前 13 步冷机 PID 需要预热，冷却需求暂置 0
             last_step_cooling_demand = (
                 observations[self.observation_names_b.index(f'cooling_demand_{b}')]
@@ -886,6 +968,17 @@ class Checa(Agent):
             low_q, high_q = 0.25, 0.75
         hi = float(np.quantile(hist, high_q))
         lo = float(np.quantile(hist, low_q))
+        # —— 门控修法 price_band_tie_strict（默认 False ⇒ 逐位等于旧逻辑）——
+        if bool(self.params.get('price_band_tie_strict', False)):
+            # 分位数并列（≤2 档电价）⇒ 判定退化，本步不干预，交回树搜索
+            if hi <= lo + 1e-12:
+                return 'mid', price, lo, hi
+            if price > hi:                      # 严格大于
+                return 'high', price, lo, hi
+            if price < lo:                      # 严格小于
+                return 'low', price, lo, hi
+            return 'mid', price, lo, hi
+        # legacy（默认）：保持旧行为，冻结基线不受影响
         if price >= hi:
             return 'high', price, lo, hi
         if price <= lo:
@@ -1167,12 +1260,15 @@ class Checa(Agent):
                     self.predicted_dhw_device_demand[b] = self.compute_pred_dhw_device_consumption(b, final_actions[3 * b])
 
                 TMP_action = final_actions[3 * b + 2]
-                avoidable_elec = self.params['TMP_max_reduction_percent'] * self.predicted_cooling_demand[b]
+                # ns_spike 模式下，制冷削峰交由下面的「实测尖峰」块负责 ⇒ 这里制冷不再削（只保留 DHW 均衡）
+                _pct = (0.0 if str(self.params.get('peak_trigger_mode', 'net')) in ('ns_spike', 'district_spike')
+                        else self.params['TMP_max_reduction_percent'])
+                avoidable_elec = _pct * self.predicted_cooling_demand[b]
                 if (consumption_to_be_reduced > 0) and (avoidable_elec > consumption_to_be_reduced):
-                    final_actions[3 * b + 2] = TMP_action * (1 - self.params['TMP_max_reduction_percent'])
+                    final_actions[3 * b + 2] = TMP_action * (1 - _pct)
                 else:
                     consumption_to_be_reduced -= avoidable_elec
-                    final_actions[3 * b + 2] = TMP_action * (1 - self.params['TMP_max_reduction_percent'])
+                    final_actions[3 * b + 2] = TMP_action * (1 - _pct)
                 pred_out_temp = self.forecasts['outdoor_temp'][0]
                 self.predicted_cooling_demand[b], _ = self.cooling_device_controller[b].compute_pred_cooling_consumption(
                     final_actions[3 * b + 2], pred_out_temp
@@ -1204,6 +1300,95 @@ class Checa(Agent):
                             final_actions[3 * b] = self.env.action_space[0].high[3 * b]
 
                     self.predicted_dhw_device_demand[b] = self.compute_pred_dhw_device_consumption(b, final_actions[3 * b])
+
+            # ---- [可选 · 纯启发式] 用「实测不可调负荷尖峰」触发制冷削峰 ----
+            # 动机：上面那条分支的触发量是 *预测* 净负荷，尖峰时被平滑 ⇒ 退化（见 _opt_pure_chesca.py）。
+            # 默认 peak_trigger_mode='net' ⇒ 本块不执行 ⇒ 与改动前逐位一致 ✓
+            # ---- [可选 · 纯启发式] O1 削峰后回弹抑制 ----
+            # 注意：本块必须在下面 trigger 块**之前**执行，否则触发步自己就会把倒计时用掉一步
+            # （off-by-one ⇒ rebound_window 实际只覆盖 W-1 步）。默认 window=0 ⇒ 不执行 ✓
+            if int(self.params.get('rebound_window', 0) or 0) > 0 and self._rebound_steps_left[b] > 0:
+                _cap = float(self.params.get('rebound_cap', 1.0)) * self._rebound_ref[b]
+                if final_actions[3 * b + 2] > _cap:
+                    final_actions[3 * b + 2] = _cap
+                    trace_meta['rebound_capped'] = True
+                    pred_out_temp = self.forecasts['outdoor_temp'][0]
+                    self.predicted_cooling_demand[b], _ = (
+                        self.cooling_device_controller[b].compute_pred_cooling_consumption(
+                            final_actions[3 * b + 2], pred_out_temp))
+                self._rebound_steps_left[b] -= 1
+
+            # ---- [可选 · 纯启发式] 用「片区级不可调负荷尖峰」触发 => 整片一起让路 ----
+            # 动机：ns_spike 只削"自己也在尖峰"的楼，片区峰值那步**没尖峰的楼不动**
+            # （local: b1 的 0.777 kWh 制冷没被削）⇒ 与 oracle 差 4.2pp/2.7pp。
+            # 默认 'net' ⇒ 不执行 ✓
+            if (str(self.params.get('peak_trigger_mode', 'net')) == 'district_spike'
+                    and self.dist_ns_history):
+                d_now = float(self.dist_ns_history[-1])
+                d_mean = float(np.mean(self.dist_ns_history))
+                d_mult = float(self.params.get('ns_spike_mult', 3.0))
+                # 触发判据：默认硬阈值（0/1）；peak_cut_graded_enabled=True 时换成连续分级
+                #   pct = TMP × clip((r − m_lo)/(m_hi − m_lo), 0, 1)，r = NS_t / 运行均值。
+                #   默认 False ⇒ pct 与触发条件都与改动前**逐位一致** ✓
+                if bool(self.params.get('peak_cut_graded_enabled', False)):
+                    _m_lo = float(self.params.get('peak_cut_graded_m_lo', 5.0))
+                    _m_hi = float(self.params.get('peak_cut_graded_m_hi', 6.0))
+                    _r = d_now / max(d_mean, 1e-9)
+                    _frac = float(np.clip((_r - _m_lo) / max(_m_hi - _m_lo, 1e-9), 0.0, 1.0))
+                    pct = float(self.params.get('TMP_max_reduction_percent', 0.0)) * _frac
+                    _fire = _frac > 0.0
+                    _fire_batt = _frac >= 1.0
+                else:
+                    pct = float(self.params.get('TMP_max_reduction_percent', 0.0))
+                    _fire = d_now > d_mult * max(d_mean, 1e-9)
+                    _fire_batt = _fire
+                if _fire:
+                    final_actions[3 * b + 2] = final_actions[3 * b + 2] * (1.0 - pct)
+                    trace_meta['district_spike_trigger'] = True
+                    pred_out_temp = self.forecasts['outdoor_temp'][0]
+                    self.predicted_cooling_demand[b], _ = (
+                        self.cooling_device_controller[b].compute_pred_cooling_consumption(
+                            final_actions[3 * b + 2], pred_out_temp))
+                    # O3″：同一「片区尖峰」判据下，把电池拉到最大放电（纯因果，无需学习）。
+                    # 默认 enabled=False ⇒ 不执行 ⇒ 与改动前逐位一致 ✓
+                    if _fire_batt and bool(self.params.get('peak_battery_discharge_enabled', False)):
+                        _ele = float(self.params.get('peak_battery_discharge_ele', -1.0))
+                        final_actions[3 * b + 1] = _ele
+                        self.predicted_battery_demand[b], _ = (
+                            self.compute_pred_battery_consumption(b, _ele))
+                        trace_meta['peak_battery_discharge'] = True
+                    # O3‴：同一「片区尖峰」判据下把 DHW 储热放电（纯因果，无前瞻）。
+                    #   mode='fire' ⇒ r>m_lo 即放（含 5<r<6 那段）；mode='full' ⇒ 与电池同源（r≥m_hi）。
+                    #   默认 enabled=False ⇒ 不执行 ⇒ 与改动前逐位一致 ✓
+                    if bool(self.params.get('peak_dhw_discharge_enabled', False)):
+                        _dhw_mode = str(self.params.get('peak_dhw_discharge_mode', 'fire'))
+                        _dhw_fire = _fire_batt if _dhw_mode == 'full' else True
+                        if _dhw_fire:
+                            _dhw = float(self.params.get('peak_dhw_discharge_ele', -1.0))
+                            final_actions[3 * b] = _dhw
+                            self.predicted_dhw_device_demand[b] = (
+                                self.compute_pred_dhw_device_consumption(b, _dhw))
+                            trace_meta['peak_dhw_discharge'] = True
+
+            if str(self.params.get('peak_trigger_mode', 'net')) == 'ns_spike':
+                ns_hist = self.ns_load_history[b]
+                if ns_hist:
+                    ns_now = float(ns_hist[-1])
+                    ns_mean = float(np.mean(ns_hist))
+                    mult = float(self.params.get('ns_spike_mult', 3.0))
+                    if ns_now > mult * max(ns_mean, 1e-9):
+                        pct = float(self.params.get('TMP_max_reduction_percent', 0.0))
+                        # O1：以「削峰前」的制冷动作作限幅基准，并武装后续 rebound_window 步
+                        _rb_win = int(self.params.get('rebound_window', 0) or 0)
+                        if _rb_win > 0:
+                            self._rebound_ref[b] = float(final_actions[3 * b + 2])
+                            self._rebound_steps_left[b] = _rb_win
+                        final_actions[3 * b + 2] = final_actions[3 * b + 2] * (1.0 - pct)
+                        trace_meta['ns_spike_trigger'] = True
+                        pred_out_temp = self.forecasts['outdoor_temp'][0]
+                        self.predicted_cooling_demand[b], _ = (
+                            self.cooling_device_controller[b].compute_pred_cooling_consumption(
+                                final_actions[3 * b + 2], pred_out_temp))
 
             trace_meta['dhw_after_safety'] = float(final_actions[3 * b])
             trace_meta['tmp_after_safety'] = float(final_actions[3 * b + 2])

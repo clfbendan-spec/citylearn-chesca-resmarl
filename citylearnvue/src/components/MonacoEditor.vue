@@ -373,6 +373,18 @@
               </template>
             </el-table-column>
             <el-table-column prop="curvePoints" label="曲线点" width="72" align="center" />
+            <!-- 任务名称放在「断点更新时间」之前：有名称的记录先看名字再看时间；
+                 老记录（代码编辑器直接跑的训练任务）没有名字 ⇒ 只显示时间，这里用「—」占位 -->
+            <el-table-column label="任务名称" min-width="180" show-overflow-tooltip>
+              <template slot-scope="scope">
+                <span v-if="scope.row.displayName">{{ scope.row.displayName }}</span>
+                <span
+                  v-else
+                  style="color: #bbb"
+                  title="这条记录没有任务名（代码编辑器直接跑的训练任务），按断点更新时间区分"
+                >—</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="updated" label="断点更新时间" min-width="150" />
           </el-table>
           <div v-if="!resumeTaskLoading && !resumeTaskList.length" class="resume-task-empty">

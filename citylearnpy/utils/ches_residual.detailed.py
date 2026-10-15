@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from utils.base import log_console
-from utils.ches_config import DEFAULT_RESIDUAL_ALPHA
+from utils.ches_config import DEFAULT_RESIDUAL_ALPHA, RESIDUAL_LAYER_KEYS
 
 
 # 训练任务的模型落盘约定（与 Java 侧 BaseDataService.MARL_CKPT_REL_DIR 一致）
@@ -72,8 +72,17 @@ class ChesResidualLayer:
     def __init__(self, agent_config: Optional[Dict[str, Any]], marl_mode: str = 'none', log=None):
         self.agent_config: Dict[str, Any] = dict(agent_config or {})
         self.marl_mode = marl_mode
-        # 只有显式 multi_agent 才启用（纯 CHESCA 入口恒为 none ✓）
-        self.active = (marl_mode == 'multi_agent')
+        # 只有显式 multi_agent **且 α>0** 才启用（纯 CHESCA 入口恒为 none ✓）
+        # [详注-BEGIN]（生成简版时整段删除）
+        #   为什么把 α>0 也算进 active ✓：
+        #     α=0 时 correct() 本来就原样返回 a_base（数值上恒等 ✓），但旧写法仍会走
+        #     `_require_checkpoint()` → 加载 SAC → 建旁路 multi_env ✗ ⇒ 附带 Ray 起停与
+        #     每步额外推进一步的**副作用与开销** ⇒ "α=0 退化"只在**动作**上成立、整体不等价 ✗。
+        #     并入 α>0 后，α=0 与 `marl_mode=none` 走**完全相同**的路径 ⇒ 严格等价 ✓
+        #     ⇒ 「α=0 消融」与「纯 CHESCA 基线」两组实验的口径可逐位对齐 ✓。
+        # [详注-END]
+        alpha = float(self.agent_config.get('residual_alpha', DEFAULT_RESIDUAL_ALPHA) or 0.0)
+        self.active = (marl_mode == 'multi_agent') and alpha > 0.0
         self.log = log or log_console
         self.agent: Any = None
         self.multi_env: Any = None
@@ -110,6 +119,18 @@ class ChesResidualLayer:
                 agent_params['residual_action_mask'] = self.agent_config['residual_action_mask']
             if self.agent_config.get('resmarl_after_safety') is not None:
                 agent_params['resmarl_after_safety'] = self.agent_config['resmarl_after_safety']
+            # [详注-BEGIN]（生成简版时整段删除）
+            #   为什么必须在这里转发 ✗：残差器的配置是 `parse_residual_config(agent.params)` ✓
+            #   （multi_agent_runner_copy.py 建的 MultiAgentResidualCorrector ✓），
+            #   它按 `.get(键, 默认)` 取值 ⇒ 不转发的话安全投影 / P0 门控**全被默认值吃掉** ✗
+            #   （默认投影 True ⇒ `--safety_projection_enabled false` 等于没传 ✗）。
+            #   只转发**显式给了的**键 ✓（不塞默认值）⇒ 缺省口径仍由 ResidualConfig 独占 ✓。
+            # [详注-END]
+            # 安全投影 / P0 门控的开关也随 agent_params 透传：残差器读的是 params，
+            # 不转发 ⇒ 这几项全被 parse_residual_config 的默认值吃掉（投影恒 True ✗）。
+            for key in RESIDUAL_LAYER_KEYS:
+                if self.agent_config.get(key) is not None:
+                    agent_params[key] = self.agent_config[key]
         else:
             agent_params['resmarl_enabled'] = False
             agent_params['residual_alpha'] = 0.0

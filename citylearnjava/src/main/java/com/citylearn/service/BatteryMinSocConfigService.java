@@ -63,6 +63,8 @@ public class BatteryMinSocConfigService {
     public static final String KEY_PRICE_LOW_TARGET_SOC = "price_low_target_soc";
     public static final String KEY_PRICE_LOW_CHARGE_ELE = "price_low_charge_ele";
     public static final String KEY_PRICE_LOW_SEARCH_BOOST = "price_low_search_boost";
+    // P0-2：价格分位退化门控（默认 false ⇒ 逐位等于旧行为）
+    public static final String KEY_PRICE_BAND_TIE_STRICT = "price_band_tie_strict";
     public static final String KEY_TAU = "tau";
     public static final String KEY_BALANCE_TYPE = "balance_type";
     public static final String KEY_RESMARL_ENABLED = "resmarl_enabled";
@@ -79,6 +81,28 @@ public class BatteryMinSocConfigService {
     public static final String KEY_EVAL_SCHEMA = "eval_schema";
     /** CHESCA_ResMARL.py 专用评估 schema（与 CHESCA.py 的 eval_schema 独立） */
     public static final String KEY_RESMARL_EVAL_SCHEMA = "resmarl_eval_schema";
+    // ---- 片区尖峰削峰「结构层」（2026-10-11 P2 接入；与 checa/agent.py default_params 同源）----
+    /** 削峰触发信号口径：net / ns_spike / district_spike */
+    public static final String KEY_PEAK_TRIGGER_MODE = "peak_trigger_mode";
+    /** 尖峰判据倍数（实测不可调负荷 > 该倍数 × 历史均值即触发） */
+    public static final String KEY_NS_SPIKE_MULT = "ns_spike_mult";
+    /** 削峰后回弹抑制窗口步数（0 = 关闭） */
+    public static final String KEY_REBOUND_WINDOW = "rebound_window";
+    /** 回弹窗口内制冷动作限幅系数（1.0 = 不限） */
+    public static final String KEY_REBOUND_CAP = "rebound_cap";
+    /** 触发步是否把各楼电池拉到最大放电 */
+    public static final String KEY_PEAK_BATTERY_DISCHARGE_ENABLED = "peak_battery_discharge_enabled";
+    /** 触发步电池 ELE 动作幅度（-1 = 单步最大放电） */
+    public static final String KEY_PEAK_BATTERY_DISCHARGE_ELE = "peak_battery_discharge_ele";
+    /** 是否用分级削峰替代 0/1 硬削 */
+    public static final String KEY_PEAK_CUT_GRADED_ENABLED = "peak_cut_graded_enabled";
+    /** 分级带宽下沿（r ≤ m_lo 不削） */
+    public static final String KEY_PEAK_CUT_GRADED_M_LO = "peak_cut_graded_m_lo";
+    /** 分级带宽上沿（r ≥ m_hi 满削，电池同此门槛满放） */
+    public static final String KEY_PEAK_CUT_GRADED_M_HI = "peak_cut_graded_m_hi";
+    // ---- 环境层「DHW 储能修复」开关（2026-10-15）----
+    /** 是否修复上游 DHW 储能 bug（默认 false ⇒ 逐位等于上游 CityLearn） */
+    public static final String KEY_DHW_STORAGE_FIX = "dhw_storage_fix";
 
     private static final double DEFAULT_MAX_SOC_NORMAL = 0.99;
     private static final double DEFAULT_MAX_SOC_OUTAGE = 0.87;
@@ -121,6 +145,8 @@ public class BatteryMinSocConfigService {
     private static final double DEFAULT_PRICE_LOW_TARGET_SOC = 0.80;
     private static final double DEFAULT_PRICE_LOW_CHARGE_ELE = 0.25;
     private static final boolean DEFAULT_PRICE_LOW_SEARCH_BOOST = true;
+    // P0-2：价格分位退化门控，默认关（零侵入）
+    private static final boolean DEFAULT_PRICE_BAND_TIE_STRICT = false;
     private static final int DEFAULT_TAU = 1;
     private static final String DEFAULT_BALANCE_TYPE = "C";
     private static final boolean DEFAULT_RESMARL_ENABLED = true;
@@ -130,10 +156,23 @@ public class BatteryMinSocConfigService {
     private static final String DEFAULT_MULTI_AGENT_CHECKPOINT = "";
     private static final double DEFAULT_RESIDUAL_ALPHA = 0.0;
     private static final String DEFAULT_RESIDUAL_ACTION_MASK = "{\"dhw\":false,\"ele\":true,\"tmp\":false}";
-    private static final boolean DEFAULT_RESMARL_AFTER_SAFETY = true;
+    /** 2026-10-09：默认值与 Python 侧（utils/ches_config.py 的 DEFAULTS / argparse）对齐为 false */
+    private static final boolean DEFAULT_RESMARL_AFTER_SAFETY = false;
     private static final boolean DEFAULT_SCHEMA_SPLIT_ENABLED = true;
     private static final String DEFAULT_TRAIN_SCHEMA = "citylearn_challenge_2023_phase_2_local_evaluation";
     private static final String DEFAULT_EVAL_SCHEMA = "citylearn_challenge_2023_phase_2_online_evaluation_1";
+    // ---- 片区尖峰削峰「结构层」默认值（逐字对齐 checa/agent.py default_params）----
+    private static final String DEFAULT_PEAK_TRIGGER_MODE = "net";
+    private static final double DEFAULT_NS_SPIKE_MULT = 3.0;
+    private static final int DEFAULT_REBOUND_WINDOW = 0;
+    private static final double DEFAULT_REBOUND_CAP = 1.0;
+    private static final boolean DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED = false;
+    private static final double DEFAULT_PEAK_BATTERY_DISCHARGE_ELE = -1.0;
+    private static final boolean DEFAULT_PEAK_CUT_GRADED_ENABLED = false;
+    private static final double DEFAULT_PEAK_CUT_GRADED_M_LO = 5.0;
+    private static final double DEFAULT_PEAK_CUT_GRADED_M_HI = 6.0;
+    // 环境层「DHW 储能修复」默认关 ⇒ 逐位等于上游 CityLearn
+    private static final boolean DEFAULT_DHW_STORAGE_FIX = false;
 
     private static final double[] DEFAULT_MIN_SOC = {
             0.60, 0.65, 0.72, 0.78, 0.80, 0.85,
@@ -190,9 +229,20 @@ public class BatteryMinSocConfigService {
         vo.setPriceLowTargetSoc(getNumberConfig(KEY_PRICE_LOW_TARGET_SOC, DEFAULT_PRICE_LOW_TARGET_SOC));
         vo.setPriceLowChargeEle(getNumberConfig(KEY_PRICE_LOW_CHARGE_ELE, DEFAULT_PRICE_LOW_CHARGE_ELE));
         vo.setPriceLowSearchBoost(getBoolConfig(KEY_PRICE_LOW_SEARCH_BOOST, DEFAULT_PRICE_LOW_SEARCH_BOOST));
+        vo.setPriceBandTieStrict(getBoolConfig(KEY_PRICE_BAND_TIE_STRICT, DEFAULT_PRICE_BAND_TIE_STRICT));
         vo.setTau(getIntConfig(KEY_TAU, DEFAULT_TAU));
         vo.setBalanceType(getStringConfig(KEY_BALANCE_TYPE, DEFAULT_BALANCE_TYPE));
         vo.setEvalSchema(getStringConfig(KEY_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA));
+        // 片区尖峰削峰「结构层」（2026-10-11 P2）
+        vo.setPeakTriggerMode(getStringConfig(KEY_PEAK_TRIGGER_MODE, DEFAULT_PEAK_TRIGGER_MODE));
+        vo.setNsSpikeMult(getNumberConfig(KEY_NS_SPIKE_MULT, DEFAULT_NS_SPIKE_MULT));
+        vo.setReboundWindow(getIntConfig(KEY_REBOUND_WINDOW, DEFAULT_REBOUND_WINDOW));
+        vo.setReboundCap(getNumberConfig(KEY_REBOUND_CAP, DEFAULT_REBOUND_CAP));
+        vo.setPeakBatteryDischargeEnabled(getBoolConfig(KEY_PEAK_BATTERY_DISCHARGE_ENABLED, DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED));
+        vo.setPeakBatteryDischargeEle(getNumberConfig(KEY_PEAK_BATTERY_DISCHARGE_ELE, DEFAULT_PEAK_BATTERY_DISCHARGE_ELE));
+        vo.setPeakCutGradedEnabled(getBoolConfig(KEY_PEAK_CUT_GRADED_ENABLED, DEFAULT_PEAK_CUT_GRADED_ENABLED));
+        vo.setPeakCutGradedMLo(getNumberConfig(KEY_PEAK_CUT_GRADED_M_LO, DEFAULT_PEAK_CUT_GRADED_M_LO));
+        vo.setPeakCutGradedMHi(getNumberConfig(KEY_PEAK_CUT_GRADED_M_HI, DEFAULT_PEAK_CUT_GRADED_M_HI));
         return vo;
     }
 
@@ -335,6 +385,9 @@ public class BatteryMinSocConfigService {
         if (config.getPriceLowSearchBoost() == null) {
             config.setPriceLowSearchBoost(defaults.getPriceLowSearchBoost());
         }
+        if (config.getPriceBandTieStrict() == null) {
+            config.setPriceBandTieStrict(defaults.getPriceBandTieStrict());
+        }
         if (config.getTau() == null) {
             config.setTau(defaults.getTau());
         }
@@ -468,6 +521,11 @@ public class BatteryMinSocConfigService {
                 String.valueOf(Boolean.TRUE.equals(config.getPriceLowSearchBoost())),
                 "低价树搜索抬高SOC下限促补电"
         );
+        upsertStringConfig(
+                KEY_PRICE_BAND_TIE_STRICT,
+                String.valueOf(Boolean.TRUE.equals(config.getPriceBandTieStrict())),
+                "价格分位并列时按退化处理（关闭 = 旧行为）"
+        );
         saveTauConfig(config.getTau());
         saveBalanceTypeConfig(config.getBalanceType());
         String evalSchema = config.getEvalSchema() == null ? "" : config.getEvalSchema().trim();
@@ -475,6 +533,25 @@ public class BatteryMinSocConfigService {
             evalSchema = DEFAULT_EVAL_SCHEMA;
         }
         upsertStringConfig(KEY_EVAL_SCHEMA, evalSchema, "CHESCA 仿真/KPI 评估 schema");
+        // 片区尖峰削峰「结构层」（2026-10-11 P2）
+        savePeakTriggerModeConfig(config.getPeakTriggerMode());
+        saveNonNegConfig(KEY_NS_SPIKE_MULT, config.getNsSpikeMult(), 20.0, "尖峰判据倍数ns_spike_mult");
+        saveReboundWindowConfig(config.getReboundWindow());
+        saveNonNegConfig(KEY_REBOUND_CAP, config.getReboundCap(), 2.0, "回弹限幅系数rebound_cap");
+        upsertStringConfig(
+                KEY_PEAK_BATTERY_DISCHARGE_ENABLED,
+                String.valueOf(Boolean.TRUE.equals(config.getPeakBatteryDischargeEnabled())),
+                "触发步电池满放peak_battery_discharge_enabled"
+        );
+        saveSignedUnitConfig(KEY_PEAK_BATTERY_DISCHARGE_ELE, config.getPeakBatteryDischargeEle(),
+                "满放ELE幅度peak_battery_discharge_ele");
+        upsertStringConfig(
+                KEY_PEAK_CUT_GRADED_ENABLED,
+                String.valueOf(Boolean.TRUE.equals(config.getPeakCutGradedEnabled())),
+                "分级削峰开关peak_cut_graded_enabled"
+        );
+        saveNonNegConfig(KEY_PEAK_CUT_GRADED_M_LO, config.getPeakCutGradedMLo(), 20.0, "分级带宽下沿peak_cut_graded_m_lo");
+        saveNonNegConfig(KEY_PEAK_CUT_GRADED_M_HI, config.getPeakCutGradedMHi(), 20.0, "分级带宽上沿peak_cut_graded_m_hi");
     }
 
     public void saveMinSocPerHour(Map<String, Double> config) {
@@ -539,9 +616,20 @@ public class BatteryMinSocConfigService {
         vo.setPriceLowTargetSoc(DEFAULT_PRICE_LOW_TARGET_SOC);
         vo.setPriceLowChargeEle(DEFAULT_PRICE_LOW_CHARGE_ELE);
         vo.setPriceLowSearchBoost(DEFAULT_PRICE_LOW_SEARCH_BOOST);
+        vo.setPriceBandTieStrict(DEFAULT_PRICE_BAND_TIE_STRICT);
         vo.setTau(DEFAULT_TAU);
         vo.setBalanceType(DEFAULT_BALANCE_TYPE);
         vo.setEvalSchema(DEFAULT_EVAL_SCHEMA);
+        // 片区尖峰削峰「结构层」（2026-10-11 P2）
+        vo.setPeakTriggerMode(DEFAULT_PEAK_TRIGGER_MODE);
+        vo.setNsSpikeMult(DEFAULT_NS_SPIKE_MULT);
+        vo.setReboundWindow(DEFAULT_REBOUND_WINDOW);
+        vo.setReboundCap(DEFAULT_REBOUND_CAP);
+        vo.setPeakBatteryDischargeEnabled(DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED);
+        vo.setPeakBatteryDischargeEle(DEFAULT_PEAK_BATTERY_DISCHARGE_ELE);
+        vo.setPeakCutGradedEnabled(DEFAULT_PEAK_CUT_GRADED_ENABLED);
+        vo.setPeakCutGradedMLo(DEFAULT_PEAK_CUT_GRADED_M_LO);
+        vo.setPeakCutGradedMHi(DEFAULT_PEAK_CUT_GRADED_M_HI);
         return vo;
     }
 
@@ -835,8 +923,22 @@ public class BatteryMinSocConfigService {
         payload.put("price_low_target_soc", config.getPriceLowTargetSoc());
         payload.put("price_low_charge_ele", config.getPriceLowChargeEle());
         payload.put("price_low_search_boost", config.getPriceLowSearchBoost());
+        payload.put("price_band_tie_strict", config.getPriceBandTieStrict());
         payload.put("tau", config.getTau());
         payload.put("balance_type", config.getBalanceType());
+        // 片区尖峰削峰「结构层」（2026-10-11 P2）：键名 = checa/agent.py 的 params 键名
+        payload.put(KEY_PEAK_TRIGGER_MODE, config.getPeakTriggerMode());
+        payload.put(KEY_NS_SPIKE_MULT, config.getNsSpikeMult());
+        payload.put(KEY_REBOUND_WINDOW, config.getReboundWindow());
+        payload.put(KEY_REBOUND_CAP, config.getReboundCap());
+        payload.put(KEY_PEAK_BATTERY_DISCHARGE_ENABLED, config.getPeakBatteryDischargeEnabled());
+        payload.put(KEY_PEAK_BATTERY_DISCHARGE_ELE, config.getPeakBatteryDischargeEle());
+        payload.put(KEY_PEAK_CUT_GRADED_ENABLED, config.getPeakCutGradedEnabled());
+        payload.put(KEY_PEAK_CUT_GRADED_M_LO, config.getPeakCutGradedMLo());
+        payload.put(KEY_PEAK_CUT_GRADED_M_HI, config.getPeakCutGradedMHi());
+        // 环境层「DHW 储能修复」开关（2026-10-15）：默认 false ⇒ 逐位等于上游 CityLearn。
+        // 打开时 CHESCA.py / CHESCA_ResMARL.py 在环境构造前设 CITYLEARN_DHW_STORAGE_FIX=1。
+        payload.put(KEY_DHW_STORAGE_FIX, getBoolConfig(KEY_DHW_STORAGE_FIX, DEFAULT_DHW_STORAGE_FIX));
         // 是否启用残差由入口脚本决定，不再读库中的 resmarl_enabled 开关
         payload.put(KEY_RESMARL_ENABLED, forResMarlEntry);
         payload.put(KEY_MARL_MODE, forResMarlEntry ? "multi_agent" : "none");
@@ -1055,11 +1157,58 @@ public class BatteryMinSocConfigService {
                     "低价树搜索抬高SOC下限促补电"
             );
         }
+        if (algorithmConfigMapper.selectById(KEY_PRICE_BAND_TIE_STRICT) == null) {
+            upsertStringConfig(
+                    KEY_PRICE_BAND_TIE_STRICT,
+                    String.valueOf(DEFAULT_PRICE_BAND_TIE_STRICT),
+                    "价格分位并列时按退化处理（关闭 = 旧行为）"
+            );
+        }
         if (algorithmConfigMapper.selectById(KEY_TAU) == null) {
             upsertIntConfig(KEY_TAU, DEFAULT_TAU, "预测优化步长tau");
         }
         if (algorithmConfigMapper.selectById(KEY_BALANCE_TYPE) == null) {
             upsertStringConfig(KEY_BALANCE_TYPE, DEFAULT_BALANCE_TYPE, "电池树搜索适应度类型balance_type");
+        }
+        // 片区尖峰削峰「结构层」（2026-10-11 P2）：缺行才播种，默认值与 agent.py 逐字一致
+        if (algorithmConfigMapper.selectById(KEY_PEAK_TRIGGER_MODE) == null) {
+            upsertStringConfig(KEY_PEAK_TRIGGER_MODE, DEFAULT_PEAK_TRIGGER_MODE, "削峰触发信号口径peak_trigger_mode");
+        }
+        if (algorithmConfigMapper.selectById(KEY_NS_SPIKE_MULT) == null) {
+            upsertNumberConfig(KEY_NS_SPIKE_MULT, DEFAULT_NS_SPIKE_MULT, "尖峰判据倍数ns_spike_mult");
+        }
+        if (algorithmConfigMapper.selectById(KEY_REBOUND_WINDOW) == null) {
+            upsertIntConfig(KEY_REBOUND_WINDOW, DEFAULT_REBOUND_WINDOW, "回弹抑制窗口rebound_window");
+        }
+        if (algorithmConfigMapper.selectById(KEY_REBOUND_CAP) == null) {
+            upsertNumberConfig(KEY_REBOUND_CAP, DEFAULT_REBOUND_CAP, "回弹限幅系数rebound_cap");
+        }
+        if (algorithmConfigMapper.selectById(KEY_PEAK_BATTERY_DISCHARGE_ENABLED) == null) {
+            upsertStringConfig(KEY_PEAK_BATTERY_DISCHARGE_ENABLED,
+                    String.valueOf(DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED),
+                    "触发步电池满放peak_battery_discharge_enabled");
+        }
+        if (algorithmConfigMapper.selectById(KEY_PEAK_BATTERY_DISCHARGE_ELE) == null) {
+            upsertNumberConfig(KEY_PEAK_BATTERY_DISCHARGE_ELE, DEFAULT_PEAK_BATTERY_DISCHARGE_ELE,
+                    "满放ELE幅度peak_battery_discharge_ele");
+        }
+        if (algorithmConfigMapper.selectById(KEY_PEAK_CUT_GRADED_ENABLED) == null) {
+            upsertStringConfig(KEY_PEAK_CUT_GRADED_ENABLED,
+                    String.valueOf(DEFAULT_PEAK_CUT_GRADED_ENABLED),
+                    "分级削峰开关peak_cut_graded_enabled");
+        }
+        if (algorithmConfigMapper.selectById(KEY_PEAK_CUT_GRADED_M_LO) == null) {
+            upsertNumberConfig(KEY_PEAK_CUT_GRADED_M_LO, DEFAULT_PEAK_CUT_GRADED_M_LO,
+                    "分级带宽下沿peak_cut_graded_m_lo");
+        }
+        if (algorithmConfigMapper.selectById(KEY_PEAK_CUT_GRADED_M_HI) == null) {
+            upsertNumberConfig(KEY_PEAK_CUT_GRADED_M_HI, DEFAULT_PEAK_CUT_GRADED_M_HI,
+                    "分级带宽上沿peak_cut_graded_m_hi");
+        }
+        // 环境层「DHW 储能修复」（2026-10-15）：默认关 ⇒ 逐位等于上游 CityLearn
+        if (algorithmConfigMapper.selectById(KEY_DHW_STORAGE_FIX) == null) {
+            upsertStringConfig(KEY_DHW_STORAGE_FIX, String.valueOf(DEFAULT_DHW_STORAGE_FIX),
+                    "DHW 储能修复开关dhw_storage_fix");
         }
         if (algorithmConfigMapper.selectById(KEY_RESMARL_ENABLED) == null) {
             upsertStringConfig(KEY_RESMARL_ENABLED, String.valueOf(DEFAULT_RESMARL_ENABLED), "兼容字段：是否残差由入口脚本决定");
@@ -1242,6 +1391,41 @@ public class BatteryMinSocConfigService {
             throw new RuntimeException(KEY_BALANCE_TYPE + " 须为 A、B 或 C");
         }
         upsertStringConfig(KEY_BALANCE_TYPE, normalized, "电池树搜索适应度类型balance_type");
+    }
+
+    /** 削峰触发信号口径：只认 net / ns_spike / district_spike（2026-10-11 P2） */
+    private void savePeakTriggerModeConfig(String mode) {
+        if (mode == null || mode.trim().isEmpty()) {
+            throw new RuntimeException("缺少配置项: " + KEY_PEAK_TRIGGER_MODE);
+        }
+        String normalized = mode.trim().toLowerCase();
+        if (!"net".equals(normalized) && !"ns_spike".equals(normalized)
+                && !"district_spike".equals(normalized)) {
+            throw new RuntimeException(KEY_PEAK_TRIGGER_MODE + " 须为 net、ns_spike 或 district_spike");
+        }
+        upsertStringConfig(KEY_PEAK_TRIGGER_MODE, normalized, "削峰触发信号口径peak_trigger_mode");
+    }
+
+    /** 回弹抑制窗口：整数步数，0 = 关闭；上限 48（与 ches_config 的 clamp 一致） */
+    private void saveReboundWindowConfig(Integer window) {
+        if (window == null) {
+            throw new RuntimeException("缺少配置项: " + KEY_REBOUND_WINDOW);
+        }
+        if (window < 0 || window > 48) {
+            throw new RuntimeException(KEY_REBOUND_WINDOW + " 须在 0~48 之间");
+        }
+        upsertIntConfig(KEY_REBOUND_WINDOW, window, "回弹抑制窗口rebound_window");
+    }
+
+    /** 带符号单位区间 [-1, 1]：用于电池满放 ELE 动作（-1 = 单步最大放电） */
+    private void saveSignedUnitConfig(String key, Double value, String description) {
+        if (value == null) {
+            throw new RuntimeException("缺少配置项: " + key);
+        }
+        if (value < -1.0 || value > 1.0) {
+            throw new RuntimeException(key + " 须在 [-1, 1] 之间");
+        }
+        upsertNumberConfig(key, value, description);
     }
 
     private void upsertNumberConfig(String key, double value, String description) {

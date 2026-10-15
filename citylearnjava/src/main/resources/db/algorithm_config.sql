@@ -26,7 +26,7 @@ INSERT INTO `algorithm_config` (`config_key`, `config_value`, `value_type`, `des
 ('multi_agent_explore', 'false', 'string', 'Multi-Agent 评估时是否开启 explore', NOW()),
 ('residual_alpha', '0.0', 'number', 'CHESCA-ResMARL 残差强度 α∈[0,1]', NOW()),
 ('residual_action_mask', '{"dhw":false,"ele":true,"tmp":false}', 'json', 'CHESCA-ResMARL 可修正动作维 mask', NOW()),
-('resmarl_after_safety', 'true', 'string', '残差是否在安全审查之后施加', NOW()),
+('resmarl_after_safety', 'false', 'string', '残差是否在安全审查之后施加', NOW()),
 ('schema_split_enabled', 'true', 'string', '是否启用训测 schema 分离（方案 A）', NOW()),
 ('train_schema', 'citylearn_challenge_2023_phase_2_local_evaluation', 'string', 'Multi-Agent SAC 训练 schema', NOW()),
 ('eval_schema', 'citylearn_challenge_2023_phase_2_online_evaluation_1', 'string', 'CHESCA.py 仿真/KPI 评估 schema', NOW()),

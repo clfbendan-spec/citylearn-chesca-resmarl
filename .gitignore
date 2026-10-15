@@ -73,6 +73,8 @@ env/
 *.lof
 *.lot
 *.los
+# 编译产物（thesis/main.pdf）；源图在 thesis/images/ 下另存 PDF，不忽略
+main.pdf
 
 # ---------- 实验数据 / 运行产物（体积大）----------
 output/

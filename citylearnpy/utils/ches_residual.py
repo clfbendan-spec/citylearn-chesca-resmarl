@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from utils.base import log_console
-from utils.ches_config import DEFAULT_RESIDUAL_ALPHA
+from utils.ches_config import DEFAULT_RESIDUAL_ALPHA, RESIDUAL_LAYER_KEYS
 
 
 # 训练任务的模型落盘约定（与 Java 侧 BaseDataService.MARL_CKPT_REL_DIR 一致）
@@ -38,8 +38,9 @@ class ChesResidualLayer:
     def __init__(self, agent_config: Optional[Dict[str, Any]], marl_mode: str = 'none', log=None):
         self.agent_config: Dict[str, Any] = dict(agent_config or {})
         self.marl_mode = marl_mode
-        # 只有显式 multi_agent 才启用（纯 CHESCA 入口恒为 none ✓）
-        self.active = (marl_mode == 'multi_agent')
+        # 只有显式 multi_agent **且 α>0** 才启用（纯 CHESCA 入口恒为 none ✓）
+        alpha = float(self.agent_config.get('residual_alpha', DEFAULT_RESIDUAL_ALPHA) or 0.0)
+        self.active = (marl_mode == 'multi_agent') and alpha > 0.0
         self.log = log or log_console
         self.agent: Any = None
         self.multi_env: Any = None
@@ -69,6 +70,11 @@ class ChesResidualLayer:
                 agent_params['residual_action_mask'] = self.agent_config['residual_action_mask']
             if self.agent_config.get('resmarl_after_safety') is not None:
                 agent_params['resmarl_after_safety'] = self.agent_config['resmarl_after_safety']
+            # 安全投影 / P0 门控的开关也随 agent_params 透传：残差器读的是 params，
+            # 不转发 ⇒ 这几项全被 parse_residual_config 的默认值吃掉（投影恒 True ✗）。
+            for key in RESIDUAL_LAYER_KEYS:
+                if self.agent_config.get(key) is not None:
+                    agent_params[key] = self.agent_config[key]
         else:
             agent_params['resmarl_enabled'] = False
             agent_params['residual_alpha'] = 0.0

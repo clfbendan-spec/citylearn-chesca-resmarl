@@ -674,6 +674,20 @@
               开启：低价时抬高树搜索的 SOC 下限，促使一步充到「当前 SOC + 补电幅度」，让搜索更积极地抓住便宜电。
             </p>
           </div>
+          <div class="form-item">
+            <label class="form-label">价格分位退化修法 (price_band_tie_strict)</label>
+            <el-switch
+              v-model="priceBandTieStrict"
+              :disabled="!priceAwareBatteryEnabled"
+            />
+            <p class="field-hint">
+              默认关闭（与旧行为逐位一致）。开启后：当高/低价分位数并列（电价只有 ≤2 档时
+              quantile(0.75)==quantile(0.25)，会让分位判定把绝大多数步误判成「高价」而全程禁充、
+              把线上电池锁死）⇒ 本步按「中价」处理交回树搜索，并把比较改为严格大于/小于。
+              线上数据集：峰值 16.442→16.320、电池活跃步 2.7%→99.9%；本数据集 local 有 3 档电价，
+              开启会改变其分类，按需使用。
+            </p>
+          </div>
             </div>
           </div>
         </div>
@@ -757,6 +771,129 @@
 
         <div class="chesca-block">
         <div class="config-section">
+          <div class="balance-panel">
+            <h3 class="section-heading">片区尖峰削峰</h3>
+            <p class="balance-desc">
+              削峰「结构层」：由片区实测不可调负荷尖峰触发，配合电池让路、分级削峰与回弹抑制。
+              下方默认值 = 算法内置默认（旧口径 / 全部关闭）⇒ 不动它们就不会改变默认行为。
+              推荐部署：district_spike + 倍数 6.0 + 电池满放开 + 分级削峰 (5, 6) + 关闭电价感知电池。
+            </p>
+            <div class="balance-form">
+              <div class="form-item">
+                <label class="form-label">削峰触发信号口径 (peak_trigger_mode)</label>
+                <el-select v-model="peakTriggerMode" class="hour-select">
+                  <el-option
+                    v-for="option in peakTriggerModeOptions"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
+                </el-select>
+                <p class="field-hint">
+                  net = 旧口径（预测净负荷超阈值）；ns_spike = 单栋不可调负荷尖峰；
+                  district_spike = 片区尖峰（推荐）。下面 7 项**仅在 district_spike 下生效**。
+                </p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">尖峰判据倍数 (ns_spike_mult)</label>
+                <el-input-number
+                  v-model="nsSpikeMult"
+                  :min="0"
+                  :max="20"
+                  :step="0.5"
+                  :precision="2"
+                  controls-position="right"
+                  class="number-input"
+                />
+                <p class="field-hint">
+                  实测不可调负荷 &gt; 该倍数 × 历史均值即触发。越大越少触发；本数据集经重标定后推荐 6.0。
+                </p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">回弹抑制窗口 (rebound_window)</label>
+                <el-input-number
+                  v-model="reboundWindow"
+                  :min="0"
+                  :max="48"
+                  :step="1"
+                  :precision="0"
+                  controls-position="right"
+                  class="number-input"
+                />
+                <p class="field-hint">触发步之后多少步内限幅制冷动作；0 = 关闭。</p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">回弹限幅系数 (rebound_cap)</label>
+                <el-input-number
+                  v-model="reboundCap"
+                  :min="0"
+                  :max="2"
+                  :step="0.05"
+                  :precision="2"
+                  controls-position="right"
+                  class="number-input"
+                />
+                <p class="field-hint">限幅 = 触发前制冷动作 × 该系数；1.0 = 不限幅。仅当窗口 &gt; 0 时生效。</p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">触发步电池满放 (peak_battery_discharge_enabled)</label>
+                <el-switch v-model="peakBatteryDischargeEnabled" />
+                <p class="field-hint">
+                  触发步把所有楼电池拉到最大放电。⚠️ 需同时关闭「电价感知电池」，
+                  否则线上数据集可能因 SOC 被提前抽干而变成无效动作。
+                </p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">满放 ELE 幅度 (peak_battery_discharge_ele)</label>
+                <el-input-number
+                  v-model="peakBatteryDischargeEle"
+                  :min="-1"
+                  :max="1"
+                  :step="0.05"
+                  :precision="2"
+                  controls-position="right"
+                  class="number-input"
+                />
+                <p class="field-hint">-1 = 单步最大放电。</p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">分级削峰 (peak_cut_graded_enabled)</label>
+                <el-switch v-model="peakCutGradedEnabled" />
+                <p class="field-hint">用连续分级削峰替代 0/1 硬削，同触发步数下显著降低舒适代价。</p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">分级带宽下沿 (peak_cut_graded_m_lo)</label>
+                <el-input-number
+                  v-model="peakCutGradedMLo"
+                  :min="0"
+                  :max="20"
+                  :step="0.5"
+                  :precision="2"
+                  controls-position="right"
+                  class="number-input"
+                />
+                <p class="field-hint">r ≤ 下沿完全不削峰。本数据集经官方口径重标定的拐点 = 5.0。</p>
+              </div>
+              <div class="form-item">
+                <label class="form-label">分级带宽上沿 (peak_cut_graded_m_hi)</label>
+                <el-input-number
+                  v-model="peakCutGradedMHi"
+                  :min="0"
+                  :max="20"
+                  :step="0.5"
+                  :precision="2"
+                  controls-position="right"
+                  class="number-input"
+                />
+                <p class="field-hint">r ≥ 上沿满削（电池同此门槛满放）。须大于下沿。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <div class="chesca-block">
+        <div class="config-section">
           <div class="balance-panel tau-panel">
             <h3 class="section-heading">预测步长 (tau)</h3>
             <div class="form-item tau-form-item">
@@ -825,6 +962,24 @@ const DEFAULT_PRICE_GLOBAL_RESERVE_ENABLED = true
 const DEFAULT_PRICE_LOW_TARGET_SOC = 0.8
 const DEFAULT_PRICE_LOW_CHARGE_ELE = 0.25
 const DEFAULT_PRICE_LOW_SEARCH_BOOST = true
+const DEFAULT_PRICE_BAND_TIE_STRICT = false
+
+// 片区尖峰削峰「结构层」（2026-10-11 P2）
+const DEFAULT_PEAK_TRIGGER_MODE = 'net'
+const DEFAULT_NS_SPIKE_MULT = 3.0
+const DEFAULT_REBOUND_WINDOW = 0
+const DEFAULT_REBOUND_CAP = 1.0
+const DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED = false
+const DEFAULT_PEAK_BATTERY_DISCHARGE_ELE = -1.0
+const DEFAULT_PEAK_CUT_GRADED_ENABLED = false
+const DEFAULT_PEAK_CUT_GRADED_M_LO = 5.0
+const DEFAULT_PEAK_CUT_GRADED_M_HI = 6.0
+
+const PEAK_TRIGGER_MODE_OPTIONS = [
+  { value: 'net', label: 'net — 净负荷阈值（默认）', desc: '按片区净负荷的常规阈值触发，等价于改动前行为（零侵入）。' },
+  { value: 'ns_spike', label: 'ns_spike — 不可调负荷尖峰', desc: '当不可调负荷超过自身近期均值的 mult 倍时触发，只看外生负荷、不看电池。' },
+  { value: 'district_spike', label: 'district_spike — 片区尖峰', desc: '片区净负荷超过近期均值的 mult 倍时触发，并允许电池在尖峰步满放（削峰主力模式）。' }
+]
 const DEFAULT_TAU = 1
 
 const TAU_OPTIONS = [
@@ -927,6 +1082,18 @@ export default {
       priceLowTargetSoc: DEFAULT_PRICE_LOW_TARGET_SOC,
       priceLowChargeEle: DEFAULT_PRICE_LOW_CHARGE_ELE,
       priceLowSearchBoost: DEFAULT_PRICE_LOW_SEARCH_BOOST,
+      priceBandTieStrict: DEFAULT_PRICE_BAND_TIE_STRICT,
+      // 片区尖峰削峰「结构层」（2026-10-11 P2）
+      peakTriggerMode: DEFAULT_PEAK_TRIGGER_MODE,
+      peakTriggerModeOptions: PEAK_TRIGGER_MODE_OPTIONS,
+      nsSpikeMult: DEFAULT_NS_SPIKE_MULT,
+      reboundWindow: DEFAULT_REBOUND_WINDOW,
+      reboundCap: DEFAULT_REBOUND_CAP,
+      peakBatteryDischargeEnabled: DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED,
+      peakBatteryDischargeEle: DEFAULT_PEAK_BATTERY_DISCHARGE_ELE,
+      peakCutGradedEnabled: DEFAULT_PEAK_CUT_GRADED_ENABLED,
+      peakCutGradedMLo: DEFAULT_PEAK_CUT_GRADED_M_LO,
+      peakCutGradedMHi: DEFAULT_PEAK_CUT_GRADED_M_HI,
       tau: DEFAULT_TAU,
       tauOptions: TAU_OPTIONS,
       balanceType: DEFAULT_BALANCE_TYPE,
@@ -1165,6 +1332,37 @@ export default {
       if (data.priceLowSearchBoost != null) {
         this.priceLowSearchBoost = !!data.priceLowSearchBoost
       }
+      if (data.priceBandTieStrict != null) {
+        this.priceBandTieStrict = !!data.priceBandTieStrict
+      }
+      // 片区尖峰削峰「结构层」（2026-10-11 P2）
+      if (data.peakTriggerMode != null && String(data.peakTriggerMode).trim()) {
+        this.peakTriggerMode = String(data.peakTriggerMode).trim().toLowerCase()
+      }
+      if (data.nsSpikeMult != null) {
+        this.nsSpikeMult = Number(data.nsSpikeMult)
+      }
+      if (data.reboundWindow != null) {
+        this.reboundWindow = Number(data.reboundWindow)
+      }
+      if (data.reboundCap != null) {
+        this.reboundCap = Number(data.reboundCap)
+      }
+      if (data.peakBatteryDischargeEnabled != null) {
+        this.peakBatteryDischargeEnabled = !!data.peakBatteryDischargeEnabled
+      }
+      if (data.peakBatteryDischargeEle != null) {
+        this.peakBatteryDischargeEle = Number(data.peakBatteryDischargeEle)
+      }
+      if (data.peakCutGradedEnabled != null) {
+        this.peakCutGradedEnabled = !!data.peakCutGradedEnabled
+      }
+      if (data.peakCutGradedMLo != null) {
+        this.peakCutGradedMLo = Number(data.peakCutGradedMLo)
+      }
+      if (data.peakCutGradedMHi != null) {
+        this.peakCutGradedMHi = Number(data.peakCutGradedMHi)
+      }
       if (data.tau != null) {
         this.tau = Number(data.tau)
       }
@@ -1232,6 +1430,7 @@ export default {
         priceLowTargetSoc: this.priceLowTargetSoc,
         priceLowChargeEle: this.priceLowChargeEle,
         priceLowSearchBoost: this.priceLowSearchBoost,
+        priceBandTieStrict: this.priceBandTieStrict,
         tau: this.tau,
         balanceType: this.balanceType,
         evalSchema: (this.evalSchema || '').trim()

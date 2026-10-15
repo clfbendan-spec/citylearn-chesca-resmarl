@@ -37,6 +37,11 @@ class SafetyProjectionConfig:
     hot_cool_action_cap: float = 0.85
     # 过冷时强制关闭制冷
     cold_force_cool_off: bool = True
+    # 停电期制冷下限的封顶（P0-1，2026-10-10）：停电时电网/PV 余量有限，固定 floor 会把应急电量吃掉。
+    #   实测（α=0.3、同一条 CHESCA 基线）：停电 45 个楼栋×步的 action_tmp_final 0.103 → 0.471（4.6×），
+    #   停电未供能 0.283 → 0.840；把投影整体关掉能救回 0.315，但热韧性 0.900 → 0.739。
+    #   ⇒ 停电期把 floor 再压到本值：0.0 = 完全让位给 CHESCA 的保供逻辑；>0 = 允许的"预算内制冷"。
+    outage_cooling_floor: float = 0.0
 
     # --- 停电电池 ---
     enable_outage_projection: bool = True
@@ -175,6 +180,10 @@ def project_building_action(
                 cfg.hot_cool_action_cap,
                 cfg.hot_cool_action_floor + cfg.hot_cool_action_per_c * excess,
             )
+            # P0-1（2026-10-10）：停电期不再无条件强制制冷 —— 用"预算内制冷"封顶，
+            #   否则应急电量会被制冷吃掉（实测未供能 0.283 → 0.840）。
+            if info.outage:
+                floor = min(floor, float(getattr(cfg, 'outage_cooling_floor', 0.0)))
             if out[cool_i] < floor:
                 out[cool_i] = _clip_idx(cool_i, floor)
                 info.cooling_forced_min = True

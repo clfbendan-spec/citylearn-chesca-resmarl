@@ -174,6 +174,10 @@ import AlgorithmConfigDialog from './AlgorithmConfigDialog.vue'
  *   配置   复用 AlgorithmConfigDialog（persist=false）：界面与代码编辑器的「配置」弹窗一致，
  *          点开自动带出该脚本文件的配置，保存只挂到当前任务上，不改脚本文件。
  *
+ * 评估卡「配置」里的「复用历史成功训练任务」候选**按左边所选训练脚本过滤**：
+ *   GET /api/web/basedata/getTrainModelTaskList?pyFileId=<训练脚本id>
+ *   （换训练脚本 / 打开评估配置前会重拉；不按脚本过滤时会把别的算法的训练记录也列进来）
+ *
  * 数据集不在卡片上选：它在「配置」里以 train-schema / eval-schema 参数（数据集下拉）出现，
  * 后端保存时会从 config 里解析出 datasetId / schemaKey / datasetName 回填。
  *
@@ -209,8 +213,13 @@ export default {
       optionsLoaded: false,
       trainScripts: [],
       evalScripts: [],
-      /** 「复用历史成功训练任务」候选（后端 getTrainModelTaskList 下发，评估卡配置弹窗用） */
+      /**
+       * 「复用历史成功训练任务」候选（后端 getTrainModelTaskList 下发，评估卡配置弹窗用）。
+       * **只含左边所选训练脚本产出的记录** —— 换脚本时会重新拉（见 loadTrainModelOptions）。
+       */
       trainTaskOptions: [],
+      /** 上面候选是「为哪个训练脚本 pyId 拉的」：相同就不重复请求（'' = 未按脚本过滤） */
+      trainModelOptionsPyId: null,
       form: {
         taskName: '',
         trainPyId: null,
@@ -376,6 +385,8 @@ export default {
         this.form.trainConfig = null
         this.form.trainConfigPyId = null
       }
+      // 「复用历史成功训练任务」候选跟着换：只显示新训练脚本下的历史任务
+      this.loadTrainModelOptions()
     },
     'form.evalPyId'(value) {
       if (this.form.evalConfigPyId !== value) {
@@ -389,32 +400,62 @@ export default {
       if (!this.optionsLoaded) {
         await this.loadOptions()
       }
+      // 每次打开都让候选失效，随后按训练脚本重拉一次（期间可能有新训练任务跑完）
+      this.trainModelOptionsPyId = null
       if (this.isEdit) {
         await this.loadDetail()
       } else {
         this.resetForm()
       }
+      // 训练脚本定了之后再拉「复用历史成功训练任务」候选（按该脚本过滤）
+      await this.loadTrainModelOptions()
     },
 
     async loadOptions() {
       this.loading = true
       try {
         // 数据集不用在这里拉：改由卡片「配置」里的 train-schema / eval-schema 参数选择；
-        // 「训练模型」下拉的候选（以往成功的训练任务）一并在这里拉一次
-        const [trainRes, evalRes, modelRes] = await Promise.all([
+        // 「复用历史成功训练任务」候选不在此时拉 —— 它要按所选训练脚本过滤，
+        // 放到 loadTrainModelOptions（脚本选定 / 变更时再拉）。
+        const [trainRes, evalRes] = await Promise.all([
           axios.get('/api/web/basedata/getPyFileList', { params: { scriptType: 'train' } }),
-          axios.get('/api/web/basedata/getPyFileList', { params: { scriptType: 'eval' } }),
-          axios.get('/api/web/basedata/getTrainModelTaskList')
+          axios.get('/api/web/basedata/getPyFileList', { params: { scriptType: 'eval' } })
         ])
         this.trainScripts = (trainRes.data && trainRes.data.data) || []
         this.evalScripts = (evalRes.data && evalRes.data.data) || []
-        this.trainTaskOptions = (modelRes.data && modelRes.data.data) || []
         this.optionsLoaded = true
       } catch (error) {
         console.error('加载脚本选项失败:', error)
         this.$message.error('加载脚本选项失败，请检查后端服务')
       } finally {
         this.loading = false
+      }
+    },
+
+    /**
+     * 拉「复用历史成功训练任务」候选：**按左边所选训练脚本过滤**（后端 pyFileId）。
+     *
+     * <p>不按脚本过滤时，选了「District-MARL 训练」也会把 Multi-agent / CHESCA 的训练记录
+     * 全列进来 —— 噪音大，还可能选到口径不匹配的模型（观测维度/奖励语义对不上）。
+     * 换训练脚本时（watch form.trainPyId）会自动重拉。
+     *
+     * @param {boolean} force 为 true 时忽略缓存，强制重拉（打开评估配置弹窗前用）
+     */
+    async loadTrainModelOptions(force = false) {
+      const pyId = this.form.trainPyId || ''
+      if (!force && this.trainModelOptionsPyId === pyId) {
+        return
+      }
+      this.trainModelOptionsPyId = pyId   // 先占位：并发调用不重复请求
+      try {
+        const res = await axios.get('/api/web/basedata/getTrainModelTaskList', {
+          params: pyId ? { pyFileId: pyId } : {}
+        })
+        this.trainTaskOptions = (res.data && res.data.data) || []
+      } catch (error) {
+        this.trainModelOptionsPyId = null   // 失败允许下次重试
+        this.trainTaskOptions = []
+        console.error('加载历史训练任务失败:', error)
       }
     },
 
@@ -528,6 +569,11 @@ export default {
       if (!pyId) {
         this.$message.warning(step === 'train' ? '请先选择训练脚本' : '请先选择评估脚本')
         return
+      }
+      // 评估卡要选「复用历史成功训练任务」：开弹窗前按当前训练脚本刷新一次候选
+      // （期间可能有新的训练任务跑完；override 掉缓存）
+      if (step === 'eval') {
+        this.loadTrainModelOptions(true)
       }
       this.configStep = step
       this.configDialogVisible = true

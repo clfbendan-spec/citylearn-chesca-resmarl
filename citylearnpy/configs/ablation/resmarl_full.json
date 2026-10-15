@@ -35,7 +35,6 @@
   "TMP_max_reduction_percent": 0.0,
   "tau": 1,
   "balance_type": "C",
-  "marl_mode": "multi_agent",
   "resmarl_enabled": true,
   "residual_alpha": 0.15,
   "residual_action_mask": {
@@ -43,12 +42,8 @@
     "ele": true,
     "tmp": false
   },
-  "multi_agent_train_epochs": 20,
-  "multi_agent_explore": false,
+  "resmarl_policy_path": null,
   "resmarl_after_safety": true,
-  "schema_split_enabled": true,
-  "train_schema": "citylearn_challenge_2023_phase_2_local_evaluation",
-  "eval_schema": "citylearn_challenge_2023_phase_2_online_evaluation_1",
   "_ablation_name": "resmarl_full",
-  "_ablation_label": "CHESCA-ResMARL α=0.15"
+  "_ablation_label": "ResMARL α=0.15"
 }

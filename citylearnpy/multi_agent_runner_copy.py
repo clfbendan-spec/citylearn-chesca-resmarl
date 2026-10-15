@@ -8,14 +8,22 @@ CHESCA-ResMARL：Multi-Agent SAC 残差修正模块
   仿真循环中每步：
     sync_multi_env_step()                → 旁路环境与主环境同步观测
   每步 Checa.predict 阶段 5：
-    MultiAgentResidualCorrector.correct() → a_final = clip((1−α)·a_base + α·a_rl)
+    MultiAgentResidualCorrector.correct() → a_final = 合成(残差) → 安全投影 → clip
 
-【公式】（blend：SAC 输出绝对动作 a_rl，不做加法叠加强度）
-  a_final = clip( (1−α)·a_base + α·a_rl_masked )
+【公式】（additive：把 SAC 输出**当残差**解释，而不是当绝对动作）
+  additive（默认 residual_mode='additive'）：
+      a_final = clip( a_base + α · span · (mask ⊙ a_rl) )
+  blend（旧行为，仅供 A/B 对照 residual_mode='blend'）：
+      a_final = clip( (1−α)·a_base + α · a_rl_masked )
   · a_base：CHESCA 阶段 1～4 输出（规则 + refine）
-  · a_rl：agent_0/1/2 各 SAC 输出的绝对动作 [DHW,ELE,TMP]
-  · mask 关闭的维保持 a_base；α=0 → 纯 CHESCA；α=1 → 掩码维完全采用 SAC
-  · 等价写法：a_final = a_base + α·(a_rl_masked − a_base)
+  · a_rl：agent_0/1/2 各 SAC 输出 [DHW,ELE,TMP]；在 additive 语义下表示"残差方向 × 幅度"
+  · mask 关闭的维残差恒为 0；α=0 → 纯 CHESCA；span 控制残差物理尺度（与 α 解耦）
+  · 关键差异 ✗✓：blend 式下网络输出 0 ⇒ 0.85·a_base（**不等于基线**、无恒等点 ✗）；
+    additive 式下网络输出 0 ⇒ **精确等于 a_base** ✓ ⇒ 策略可以"什么都不改"，
+    于是学习目标退化为"往哪个方向偏、偏多少"，而不是"把基线那一份也一起学会"。
+  · 数学上 (1−α)a_base + α·a_rl ≡ a_base + α(a_rl − a_base)，**只改公式写法没有任何行为变化** ——
+    真正的差别是"网络输出的语义"（绝对动作 vs 残差），上面两行才是本模块的实质差异。
+  · 安全投影（action_safety_projection）只在残差真正生效（α>0）的路径上施加，见 after_safety。
 
 【与 Multi-agent.py 的区别】
   Multi-agent.py：训练并保存 Multi-Agent SAC checkpoint
@@ -200,9 +208,11 @@ class MultiAgentResidualCorrector:
 
     【在 predict 阶段 5 中的角色】
       Checa.apply_residual_correction() → correct()
-        → predict_delta()：各 agent SAC 根据 multi_observations 输出绝对动作 a_rl
-        → _blend_target()：mask 开启维用 a_rl，关闭维保留 a_base
-        → a_final = clip((1−α)·a_base + α·a_target)
+        → predict_delta()          ：各 agent SAC 根据 multi_observations 输出 a_rl
+        → 合成                       ：additive 残差 a_base + α·span·(mask⊙a_rl)
+                                     （或 blend 对照 (1−α)·a_base + α·a_target）
+        → _apply_safety_projection()：温控 / 停电硬投影（可用 after_safety 调顺序）
+        → clip 到 action_low/high
 
     multi_observations 由 CHESCA 每步 _bind_multi_obs() 注入，
     来自旁路 multi_env（与主 env 用同一 a_final 同步推进）。
@@ -229,12 +239,169 @@ class MultiAgentResidualCorrector:
         self.deterministic = not self.explore
         self.last_rollout = None
         self._observation_names = None
+        # 安全投影上下文（由评估内核 set_safety_context 每步注入；
+        # 未注入时投影自动跳过，并只提示一次 ⇒ 不会静默失效 ✗）
+        self._safety_buildings: List[Any] = []
+        self._safety_time_step: int = 0
+        self._safety_warned: bool = False
+        self.last_safety_infos: Dict[str, Any] = {}
+        # P0 门控：首次命中提示一次、并逐楼栋累计命中步数（供日志/事后核对 duty cycle ✓）
+        self._gate_warned: bool = False
+        self.gate_stats: Dict[str, int] = {'steps': 0, 'blocked_buildings': 0}
+        # 可学习门控（gate_mode='learned'）：加载 MLP checkpoint；无则用 gate_params / 恒等
+        self.gate = None
+        self._try_load_gate(getattr(config, 'gate_policy_path', None))
+
+    def _try_load_gate(self, path: Optional[str]) -> None:
+        if not path:
+            self.gate = None
+            return
+        try:
+            from pathlib import Path
+            p = Path(path)
+            if not p.is_file():
+                self.gate = None
+                return
+            from checa.residual.gate_head import load_gate
+            self.gate = load_gate(p)
+        except Exception:
+            self.gate = None
+
+    def _note_gate(self, gate_reasons: Sequence[str]) -> None:
+        """累计门控命中情况；首次命中在控制台提示一次（避免"接了但看不出来" ✗）。"""
+        self.gate_stats['steps'] = int(self.gate_stats.get('steps', 0)) + 1
+        hits = sum(1 for r in gate_reasons if str(r) not in ('none', 'gate_off'))
+        if hits <= 0:
+            return
+        self.gate_stats['blocked_buildings'] = (
+            int(self.gate_stats.get('blocked_buildings', 0)) + hits
+        )
+        if self._gate_warned:
+            return
+        self._gate_warned = True
+        try:
+            from checa.residual.config import summarize_gate_reasons
+            from utils.base import log_console
+            log_console(
+                'ℹ️ 残差门控已生效（停电 / SOC 触界 ⇒ 该楼栋本步 α=0）：'
+                f'{summarize_gate_reasons(gate_reasons)}'
+            )
+        except Exception:
+            pass
 
     def set_observation_names(self, names: Optional[List[str]]) -> None:
         self._observation_names = names
 
     def set_multi_observations(self, observations: Optional[Dict[str, Any]]) -> None:
         self.multi_observations = dict(observations or {})
+
+    def set_safety_context(
+        self,
+        buildings: Optional[Sequence[Any]] = None,
+        time_step: Optional[int] = None,
+    ) -> None:
+        """
+        注入安全投影所需的楼栋对象与当前步号（由评估内核每步调用）。
+
+        buildings 稳定 ⇒ 只需注入一次；time_step 每步变化 ⇒ 每步都要刷新。
+        传入 None 表示"该项不变"（便于只刷新 time_step）。
+        """
+        if buildings is not None:
+            self._safety_buildings = list(buildings)
+        if time_step is not None:
+            self._safety_time_step = int(time_step)
+
+    def _masked_delta(self, a_out: np.ndarray) -> np.ndarray:
+        """
+        把网络输出当作残差：mask 关闭维置 0，并长度对齐到 3*n_buildings。
+
+        与 checa.residual.corrector.ResidualCorrector._masked_delta 同一语义，
+        保证两套残差实现（SAC additive / PPO additive）对 mask 的解释一致。
+        """
+        out = np.asarray(a_out, dtype=float).reshape(-1).copy()
+        expected = 3 * self.n_buildings
+        if out.shape[0] > expected:
+            out = out[:expected]
+        elif out.shape[0] < expected:
+            padded = np.zeros(expected, dtype=float)
+            padded[: out.shape[0]] = out
+            out = padded
+        mask = self.config.action_mask
+        for b in range(self.n_buildings):
+            if not mask.get('dhw', False):
+                out[3 * b] = 0.0
+            if not mask.get('ele', True):
+                out[3 * b + 1] = 0.0
+            if not mask.get('tmp', False):
+                out[3 * b + 2] = 0.0
+        return out
+
+    def _apply_safety_projection(
+        self,
+        action: np.ndarray,
+        action_low: Optional[Sequence[float]] = None,
+        action_high: Optional[Sequence[float]] = None,
+    ) -> np.ndarray:
+        """
+        对动作做温控 / 停电硬投影（action_safety_projection.project_building_action）。
+
+        仅在残差真正生效（enabled 且 α>0）的路径上被调用 ⇒ α=0 与纯 CHESCA 逐位一致。
+        未注入楼栋上下文时**显式提示一次**再跳过（避免"接了但静默不生效" ✗）。
+        """
+        if not self._safety_buildings:
+            if not self._safety_warned:
+                self._safety_warned = True
+                try:
+                    from utils.base import log_console
+                    log_console(
+                        '⚠️ 安全投影已启用但缺少楼栋上下文（未调用 set_safety_context），本步跳过。'
+                    )
+                except Exception:
+                    pass
+            return action
+
+        try:
+            from action_safety_projection import (
+                SafetyProjectionConfig,
+                building_comfort_outage_state,
+                project_building_action,
+            )
+        except Exception:
+            return action
+
+        params = self.config.safety_projection_params or {}
+        try:
+            cfg = SafetyProjectionConfig(**params)
+        except TypeError:
+            cfg = SafetyProjectionConfig()
+
+        out = np.asarray(action, dtype=float).reshape(-1).copy()
+        infos: Dict[str, Any] = {}
+        for b, building in enumerate(self._safety_buildings):
+            start = 3 * b
+            if start + 3 > out.size:
+                break
+            action_names = list(getattr(building, 'active_actions', None) or [])
+            if not action_names:
+                action_names = ['dhw_storage', 'electrical_storage', 'cooling_device']
+            state = building_comfort_outage_state(building, self._safety_time_step)
+            low = high = None
+            if action_low is not None and len(action_low) >= start + 3:
+                low = np.asarray(action_low, dtype=float)[start:start + 3]
+            if action_high is not None and len(action_high) >= start + 3:
+                high = np.asarray(action_high, dtype=float)[start:start + 3]
+            new_act, info = project_building_action(
+                out[start:start + 3],
+                action_names,
+                state,
+                config=cfg,
+                action_low=low,
+                action_high=high,
+            )
+            out[start:start + 3] = new_act
+            infos[f'agent_{b}'] = info
+        self.last_safety_infos = infos
+        return out
 
     def predict_delta(
         self,
@@ -243,9 +410,11 @@ class MultiAgentResidualCorrector:
         chesca_state: Optional[Dict[str, Any]] = None,
     ) -> np.ndarray:
         """
-        阶段 5 子步骤：各 agent SAC 根据 multi_observations 推理绝对动作 a_rl。
+        阶段 5 子步骤：各 agent SAC 根据 multi_observations 推理网络输出 a_rl。
 
-        返回值在 correct() 中与 a_base 按 α 混合（非加法残差）。
+        返回值在 correct() 中按 residual_mode 解释：
+          · 'additive'（默认）= 残差方向 × 幅度：mask 外置零 → ×α×span → 叠加到 a_base；
+          · 'blend'（旧）     = 绝对动作：与 a_base 按 α 混合。
         方法名保留 predict_delta 以兼容 ResidualCorrector 接口。
         """
         expected = 3 * self.n_buildings
@@ -309,12 +478,18 @@ class MultiAgentResidualCorrector:
         """
         阶段 5 入口（由 Checa.apply_residual_correction 调用）。
 
-        流程：predict_delta(a_rl) → blend_target → (1−α)·a_base + α·a_target → clip
+        流程：predict_delta(a_rl)
+              → 合成（additive：a_base + α·span·(mask⊙a_rl)；blend：(1−α)a_base + α·a_target）
+              → 安全投影（after_safety=False 作用于合成结果；True 作用于 a_base）
+              → clip 到 action_low / action_high
 
-        示例（单维 ELE）：a_base=0.20, a_rl=0.50, α=0.2
-          → a_final = 0.8·0.20 + 0.2·0.50 = 0.26
-          （旧加法公式会得到 0.20+0.10=0.30，同向时更容易过头）
+        示例（单维 ELE）：a_base=0.20, a_rl=0.50, α=0.2, span=1.0
+          · additive（默认）：a_final = 0.20 + 0.2·0.50 = 0.30
+          · blend（旧）      ：a_final = 0.8·0.20 + 0.2·0.50 = 0.26
+        恒等点 ✗✓：additive 下网络输出 0 ⇒ a_final = a_base（有恒等点 ✓）；
+                  blend 下网络输出 0 ⇒ a_final = 0.8·a_base（**无恒等点** ✗）。
         """
+        from checa.residual.config import evaluate_residual_gate, summarize_gate_reasons
         from checa.residual.corrector import ResidualTrace
 
         base = np.asarray(a_base, dtype=float).reshape(-1).copy()
@@ -335,15 +510,15 @@ class MultiAgentResidualCorrector:
             )
             return base
 
-        # α=0：仍推理 a_rl 供日志展示，但不施加修正
+        # α=0：仍推理网络输出供日志展示（只影响 trace，不施加任何修正）
         if alpha <= 0.0:
-            raw_rl = self.predict_delta(base, observations, chesca_state)
+            raw_out = self.predict_delta(base, observations, chesca_state)
             self.last_trace = ResidualTrace(
                 applied=False,
                 skip_reason='alpha_zero',
                 alpha=alpha,
                 delta=[0.0] * len(base),
-                raw_delta=np.asarray(raw_rl, dtype=float).reshape(-1).tolist(),
+                raw_delta=np.asarray(raw_out, dtype=float).reshape(-1).tolist(),
                 a_base=base.tolist(),
                 a_final=base.tolist(),
                 action_mask=dict(self.config.action_mask),
@@ -351,14 +526,53 @@ class MultiAgentResidualCorrector:
             )
             return base
 
-        raw_rl = self.predict_delta(base, observations, chesca_state)
-        target = self._blend_target(raw_rl, base)
-        # 对齐长度后再混合
-        n = min(len(base), len(target))
-        final = base.copy()
-        final[:n] = (1.0 - alpha) * base[:n] + alpha * target[:n]
-        # 埋点：相对 a_base 的有效增量 α·(a_rl − a_base)
-        scaled = final - base
+        raw_out = self.predict_delta(base, observations, chesca_state)
+        # P0 门控：命中「停电 / SOC 触界」的楼栋本步 α=0（α_eff = α · gate）
+        gate, gate_reasons = evaluate_residual_gate(self.n_buildings, self.config, chesca_state)
+        self._note_gate(gate_reasons)
+        mode = str(getattr(self.config, 'residual_mode', 'additive'))
+        span = float(getattr(self.config, 'span', 1.0))
+        n = len(base)
+
+        # 可学习门控（gate_mode='learned'）：先对 a_base 指定轴做乘性档位削减，再叠加加性残差。
+        # 默认 'binary' ⇒ 返回 None ⇒ base_eff = base ⇒ 与改动前逐位相同 ✓
+        from checa.residual.corrector import _maybe_gate
+        base_gated, g_diag = _maybe_gate(
+            base, self.config, observations=observations,
+            observation_names=self._observation_names, chesca_state=chesca_state,
+            action_low=action_low, action_high=action_high, gate=self.gate,
+        )
+        gate_active = base_gated is not None
+        base_eff = np.asarray(base if not gate_active else base_gated, dtype=float).reshape(-1)
+        final = base_eff.copy()
+
+        if mode == 'blend':
+            # 旧行为（仅供 A/B 对照）：把网络输出当**绝对动作**，与 a_base 按 α 混合。
+            # 无恒等点：网络输出 0 ⇒ 0.85·a_base ✗（门控处 α_eff=0 ⇒ 退回 a_base ✓）
+            target = self._blend_target(raw_out, base_eff)
+            m = min(len(target), n)
+            alpha_vec = alpha * gate[:m]
+            final[:m] = (1.0 - alpha_vec) * base_eff[:m] + alpha_vec * target[:m]
+        else:
+            # 默认：把网络输出当**残差** ⇒ 输出 0 精确等于 a_base（有恒等点 ✓）
+            delta = self._masked_delta(raw_out) * gate
+            m = min(len(delta), n)
+            final[:m] = base_eff[:m] + alpha * span * delta[:m]
+
+        # 加性增量（相对 base_eff）；可学习门控的乘性效果已体现在 base_eff 里
+        scaled_add = final - base_eff
+
+        # 安全投影（温控 / 停电硬约束）：只在残差真正生效的路径上施加
+        # ⇒ α=0 / resmarl_enabled=False 仍逐位等于纯 CHESCA ✓
+        if bool(getattr(self.config, 'safety_projection_enabled', True)):
+            if bool(getattr(self.config, 'after_safety', False)):
+                # 投影先作用于（已门控的）基准，再叠加同一份加性增量
+                proj_base = self._apply_safety_projection(base_eff, action_low, action_high)
+                final = proj_base + scaled_add
+            else:
+                # 默认：残差先合成、再整段投影 ⇒ 最终动作保证落在安全域内 ✓
+                final = self._apply_safety_projection(final, action_low, action_high)
+            scaled = final - base
 
         if action_low is not None and action_high is not None:
             low = np.asarray(action_low, dtype=float).reshape(-1)
@@ -368,8 +582,10 @@ class MultiAgentResidualCorrector:
             scaled = final - base
 
         applied = bool(np.any(np.abs(scaled) > 1e-12))
-        if not policy_loaded:
+        if not policy_loaded and not gate_active:
             skip = 'zero_delta_policy'
+        elif not bool(np.any(gate > 0.0)) and not gate_active:
+            skip = 'gated'
         elif applied:
             skip = 'none'
         else:
@@ -380,11 +596,16 @@ class MultiAgentResidualCorrector:
             skip_reason=skip,
             alpha=alpha,
             delta=scaled.tolist(),
-            raw_delta=np.asarray(raw_rl, dtype=float).reshape(-1).tolist(),
+            # 网络原始输出：additive 语义下 = "残差方向 × 幅度"；blend 语义下 = 绝对动作
+            raw_delta=np.asarray(raw_out, dtype=float).reshape(-1).tolist(),
             a_base=base.tolist(),
             a_final=final.tolist(),
             action_mask=dict(self.config.action_mask),
             policy_loaded=policy_loaded,
+            gate=gate.reshape(-1).tolist(),
+            gate_reason=summarize_gate_reasons(gate_reasons),
+            gate_learned=(g_diag.get('g') if gate_active else None),
+            gate_learned_diag=(dict(g_diag) if gate_active else {}),
         )
         return final
 
@@ -438,13 +659,22 @@ def setup_chesca_multi_agent_residual(
         explore=bool(agent_config.get('multi_agent_explore', False)),
     )
     ma_corrector.set_observation_names(agent.observation_names_b)
+    # 安全投影所需的楼栋对象在这里尽力注入（步号由评估内核每步刷新）；
+    # 取不到就留空 ⇒ 投影会显式提示一次并跳过，而不是静默失效 ✗
+    try:
+        ma_corrector.set_safety_context(buildings=agent.env.buildings)
+    except Exception:
+        pass
     agent.residual_corrector = ma_corrector
     agent.residual_config = residual_config
 
     ckpt = str(agent_config.get('multi_agent_checkpoint') or '').strip()
     log_console(
         f'CHESCA-ResMARL 已启用：加载预存 Multi-Agent SAC，'
-        f'α={residual_config.alpha}，agents={agent_ids}，checkpoint={ckpt}'
+        f'α={residual_config.alpha}，mode={residual_config.residual_mode}，'
+        f'span={residual_config.span}，after_safety={residual_config.after_safety}，'
+        f'proj={residual_config.safety_projection_enabled}，'
+        f'agents={agent_ids}，checkpoint={ckpt}'
     )
     return multi_env, agent_ids, sac_algo
 

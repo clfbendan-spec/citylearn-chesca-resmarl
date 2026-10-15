@@ -24,6 +24,8 @@
 --
 -- 可重复执行
 --   · A/B/C 用 WHERE NOT EXISTS 或"仅在缺失时"更新；
+--   · A 段末尾另有一条幂等 UPDATE：只把 resmarl_after_safety 的
+--     default_value / desc 拉齐（2026-10-09：默认值由 true 改为 false）；
 --   · D 只在目标行还没有这张卡时重建 ⇒ 不会覆盖使用者在弹窗里改过的取值。
 --
 -- 执行方式（本项目手工执行 db/*.sql，无自动迁移）：
@@ -57,12 +59,21 @@ WHERE NOT EXISTS (SELECT 1 FROM `algorithm_param_config` WHERE `param_name` = 'r
 
 INSERT INTO `algorithm_param_config`
     (`name`, `param_name`, `value_type`, `default_value`, `if_system`, `desc`, `create_time`, `is_member`)
-SELECT '安全审查后叠加残差', 'resmarl_after_safety', 'bool', 'true', 0,
-       'true（默认）= 先做安全审查（动作上下限裁剪），再叠加 SAC 残差；false = 先叠加再审查。'
-       '两种顺序会给出不同的 a_final，做消融时才需要改成 false。',
+SELECT '安全审查后叠加残差', 'resmarl_after_safety', 'bool', 'false', 0,
+       'false（默认）= 先叠加 SAC 残差，再做安全审查（动作上下限裁剪）；true = 先审查再叠加。'
+       '两种顺序会给出不同的 a_final，做消融时才需要改成 true。',
        NOW(), 1
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `algorithm_param_config` WHERE `param_name` = 'resmarl_after_safety');
+
+-- A.1 把**已存在**的那行也拉齐（2026-10-09：默认值由 true 改为 false，与 Python / Java 侧对齐）
+--     只改「注册表的默认值 / 说明」；**不碰** py_file.algorithm_config 里已保存的取值 ✗
+--     （那是使用者在配置弹窗里定下的值，按本文件 D 段的约定不覆盖 ⇒ 要改请在界面上重存一次）
+UPDATE `algorithm_param_config`
+SET `default_value` = 'false',
+    `desc` = 'false（默认）= 先叠加 SAC 残差，再做安全审查（动作上下限裁剪）；true = 先审查再叠加。'
+             '两种顺序会给出不同的 a_final，做消融时才需要改成 true。'
+WHERE `param_name` = 'resmarl_after_safety';
 
 -- ---------------------------------------------------------------------------
 -- B. 新建「CHESCA-ResMARL 残差」配置组（members 由 param_name 反查 id 算出，不依赖自增 id）
@@ -120,7 +131,7 @@ SET @card := CONCAT(
     '{"type":"set","set_id":', @resmarl_set_id, ',"params":[',
         '{"id":', @id_alpha, ',"param_name":"residual_alpha","value":"0.15"},',
         '{"id":', @id_mask,  ',"param_name":"residual_action_mask","value":', @mask_json, '},',
-        '{"id":', @id_after, ',"param_name":"resmarl_after_safety","value":true}',
+        '{"id":', @id_after, ',"param_name":"resmarl_after_safety","value":false}',
     ']}');
 
 UPDATE `py_file`

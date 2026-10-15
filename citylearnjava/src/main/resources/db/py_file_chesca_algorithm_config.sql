@@ -25,6 +25,14 @@
 -- ⚠️ 会**覆盖** CHESCA.py 现有脚本配置 ⇒ 先看第 0 步的预览 ✓。
 -- 可重复执行 ✓（每次都按当时的配置页取值重新生成 ✓）。
 --
+-- 🚨 2026-10-11 起**本脚本已不是 CHESCA 脚本配置的权威来源** —— 它只按下面 7 个组重建，
+--    **不含**后来新增的「片区尖峰削峰」组（set_id=11），也**不会**写入 P0 推荐部署值
+--    （`TMP_max_reduction_percent=1.0` / `price_aware_battery_enabled=false` /
+--     `peak_*` 9 键）⇒ 单独跑本脚本会把那些改动**冲掉**。
+--    ✅ 正确姿势：跑完本脚本后，**紧接着跑** `db/py_file_chesca_peak_config.sql`
+--       （它会把「片区尖峰削峰」段补回来并写回推荐值；幂等）。
+--    （生成器 `citylearnpy/_apply_editor_peak_config.py` 是同源的落库版。）
+--
 -- 执行方式（本项目手工执行 db/*.sql，无自动迁移）：
 --   mysql -uroot -p000000 citylearn < py_file_chesca_algorithm_config.sql
 -- ============================================================================

@@ -24,7 +24,15 @@ import json
 import re
 from pathlib import Path
 
-# CHESCA 的默认配置（52 个键 ✓；由旧版实跑导出 ✓ —— 与 Java 侧默认值同源 ✓）
+# CHESCA 的默认配置（61 个键 ✓；由旧版实跑导出 ✓ —— 与 Java 侧默认值同源 ✓）
+#   2026-10-11（P2）：新增 9 个「片区削峰结构层」键 ✓ ——
+#     peak_trigger_mode / ns_spike_mult（触发信号口径）、
+#     rebound_window / rebound_cap（削峰后回弹抑制）、
+#     peak_battery_discharge_enabled / peak_battery_discharge_ele（触发步电池满放）、
+#     peak_cut_graded_enabled / peak_cut_graded_m_lo / peak_cut_graded_m_hi（分级削峰）。
+#   默认值**逐字对齐** checa/agent.py 的 default_params ⇒ 接入后行为逐位不变 ✓（零侵入 ✓）。
+#   ⚠️ 除 peak_trigger_mode / ns_spike_mult 外，其余 7 个都是「修饰开关」——
+#      只在 peak_trigger_mode='district_spike' 下才被读取，其它模式静默 no-op ✓。
 DEFAULTS = {
     'B_high':                                  1.0,
     'B_low':                                   1.18,
@@ -33,6 +41,11 @@ DEFAULTS = {
     'clear_open_loop_floor_when_under_setpoint': False,
     'cooling_demand_feedforward_frac':         0.1,
     'demand_feedforward_only_when_overheat':   False,
+    # 环境层「DHW 储能修复」开关（2026-10-15）：默认关 ⇒ 逐位等于上游 CityLearn。
+    # 打开时脚本在 env 构造前设 os.environ['CITYLEARN_DHW_STORAGE_FIX']='1'，让
+    # citylearn/building.py::update_dhw_storage 用 dhw_storage.capacity 而不是错乘
+    # heating_storage.capacity(=0) —— 上游 bug 使 DHW 储能恒 no-op；修后解锁热水储能。
+    'dhw_storage_fix':                         False,
     'lagged_indoor_hotter_margin_c':           0.3,
     'lagged_indoor_only_when_hotter':          False,
     'marl_mode':                               'none',
@@ -45,9 +58,16 @@ DEFAULTS = {
     'multi_agent_checkpoint':                  '',
     'multi_agent_explore':                     False,
     'multi_agent_train_epochs':                20,
+    'ns_spike_mult':                           3.0,
     'outdoor_floor_allow_when_under_setpoint': True,
     'outdoor_floor_max_overheat_c':            0.5,
     'outdoor_gap_deadband_c':                  5.0,
+    'peak_battery_discharge_ele':              -1.0,
+    'peak_battery_discharge_enabled':          False,
+    'peak_cut_graded_enabled':                 False,
+    'peak_cut_graded_m_hi':                    6.0,
+    'peak_cut_graded_m_lo':                    5.0,
+    'peak_trigger_mode':                       'net',
     'post_outage_forbid_charge_when_overheat': True,
     'post_outage_max_ele_charge':              0.15,
     'post_outage_overheat_c':                  0.5,
@@ -60,6 +80,7 @@ DEFAULTS = {
     'post_outage_tmp_stagger':                 True,
     'post_outage_waive_min_soc':               True,
     'price_aware_battery_enabled':             True,
+    'price_band_tie_strict':                   False,
     'price_global_reserve_enabled':            True,
     'price_high_discharge_ele':                0.15,
     'price_high_forbid_charge':                True,
@@ -72,9 +93,11 @@ DEFAULTS = {
     'price_low_search_boost':                  True,
     'price_low_target_soc':                    0.8,
     'price_min_reserve_soc':                   0.55,
+    'rebound_cap':                             1.0,
+    'rebound_window':                          0,
     'residual_action_mask':                    {'dhw': False, 'ele': True, 'tmp': False},
     'residual_alpha':                          0.0,
-    'resmarl_after_safety':                    True,
+    'resmarl_after_safety':                    False,
     'resmarl_enabled':                         False,
     'tau':                                     1,
     'use_lagged_dynamics_indoor':              True,
@@ -86,6 +109,35 @@ DEFAULT_MIN_SOC_PER_HOUR = DEFAULTS['min_soc_per_hour']
 # CHESCA-ResMARL 残差三项的内置默认（2026-10-08 从 CHESCA_ResMARL.py 抽到这里）
 DEFAULT_RESIDUAL_ALPHA = 0.15
 DEFAULT_RESIDUAL_MASK = dict(DEFAULTS['residual_action_mask'])
+
+# 残差层里「不由 AGENT_PARAM_KEYS 参数表管、而是整包喂给残差器」的开关 ✓：
+#   安全投影 / P0 门控的权威在 checa/residual/config.py 与 action_safety_projection.py ✓，
+#   本模块只负责**透传**（命令行 → agent_config → agent_params ✓）。
+RESIDUAL_LAYER_BOOL_KEYS = (
+    'safety_projection_enabled',
+    'residual_gate_enabled',
+    'residual_gate_outage',
+    'residual_gate_soc_bound',
+)
+RESIDUAL_LAYER_FLOAT_KEYS = (
+    'outage_discharge_action',
+    'residual_gate_soc_margin',
+    # P0-1（2026-10-10）：停电期制冷下限封顶（透传给残差器 → SafetyProjectionConfig）
+    'outage_cooling_floor',
+)
+# 布尔项的缺省（与 ResidualConfig / SafetyProjectionConfig 的字段默认值同源 ✓；仅用于容错 ✓）
+DEFAULT_RESIDUAL_LAYER_BOOLS = {
+    'safety_projection_enabled': True,
+    'residual_gate_enabled': True,
+    'residual_gate_outage': True,
+    'residual_gate_soc_bound': True,
+}
+# 透传清单（agent_config → agent_params；含 dict 形状的 safety_projection_params ✓）
+RESIDUAL_LAYER_KEYS = (
+    RESIDUAL_LAYER_BOOL_KEYS
+    + RESIDUAL_LAYER_FLOAT_KEYS
+    + ('safety_projection_params',)
+)
 
 
 def _parse_min_soc_map(raw):
@@ -149,6 +201,27 @@ def _parse_balance_type(value):
     if balance_type not in ('A', 'B', 'C'):
         raise ValueError(f'balance_type 须为 A、B、C，当前: {balance_type}')
     return balance_type
+
+
+def _parse_peak_trigger_mode(value):
+    # 削峰「触发信号」口径（2026-10-11 P2 接入）：
+    #   net            — 旧行为：预测净负荷 vs 自身历史均值 + B_high×σ（实测已退化，仅作兼容保留）
+    #   ns_spike       — 实测单栋不可调负荷 > ns_spike_mult×其历史均值
+    #   district_spike — 实测**片区**不可调负荷 > ns_spike_mult×其历史均值（推荐；削峰修饰开关的宿主）
+    mode = str(value).strip().lower()
+    if mode not in ('net', 'ns_spike', 'district_spike'):
+        raise ValueError(
+            f'peak_trigger_mode 须为 net / ns_spike / district_spike，当前: {value}'
+        )
+    return mode
+
+
+def _parse_signed_unit(value, name):
+    # 带符号单位比例区间 [-1, 1]：用于电池满放 ELE 动作（-1 = 单步最大放电）
+    number = float(value)
+    if number < -1.0 or number > 1.0:
+        raise ValueError(f'{name} 须在 [-1, 1] 之间，当前: {number}')
+    return number
 
 
 def _parse_bool(value, default=False):
@@ -268,6 +341,31 @@ def load_agent_config(config_path, cli_overrides=None):
             raw.get('TMP_max_reduction_percent', raw.get('tmp_max_reduction_percent', 0.0)),
             'TMP_max_reduction_percent',
         )
+        # 片区削峰「结构层」9 个键（2026-10-11 P2 接入；默认值 = checa/agent.py default_params ✓）
+        peak_trigger_mode = _parse_peak_trigger_mode(raw.get('peak_trigger_mode', 'net'))
+        ns_spike_mult = _parse_nonneg_float(
+            raw.get('ns_spike_mult', 3.0), 'ns_spike_mult', max_value=20.0
+        )
+        rebound_window = int(raw.get('rebound_window', 0))
+        rebound_window = max(0, min(48, rebound_window))
+        rebound_cap = _parse_nonneg_float(
+            raw.get('rebound_cap', 1.0), 'rebound_cap', max_value=2.0
+        )
+        peak_battery_discharge_enabled = _parse_bool(
+            raw.get('peak_battery_discharge_enabled', False), default=False
+        )
+        peak_battery_discharge_ele = _parse_signed_unit(
+            raw.get('peak_battery_discharge_ele', -1.0), 'peak_battery_discharge_ele'
+        )
+        peak_cut_graded_enabled = _parse_bool(
+            raw.get('peak_cut_graded_enabled', False), default=False
+        )
+        peak_cut_graded_m_lo = _parse_nonneg_float(
+            raw.get('peak_cut_graded_m_lo', 5.0), 'peak_cut_graded_m_lo', max_value=20.0
+        )
+        peak_cut_graded_m_hi = _parse_nonneg_float(
+            raw.get('peak_cut_graded_m_hi', 6.0), 'peak_cut_graded_m_hi', max_value=20.0
+        )
         # 冷机开环保底（可选；缺省用收紧后的默认）
         min_cool_per_c_overheat = _parse_nonneg_float(
             raw.get('min_cool_per_c_overheat', 0.12), 'min_cool_per_c_overheat', max_value=2.0
@@ -294,6 +392,10 @@ def load_agent_config(config_path, cli_overrides=None):
         )
         clear_open_loop_floor_when_under_setpoint = _parse_bool(
             raw.get('clear_open_loop_floor_when_under_setpoint', False), default=False
+        )
+        # 环境层「DHW 储能修复」开关（2026-10-15）：默认 False ⇒ 与上游 CityLearn 逐位一致
+        dhw_storage_fix = _parse_bool(
+            raw.get('dhw_storage_fix', False), default=False
         )
         use_lagged_dynamics_indoor = _parse_bool(
             raw.get('use_lagged_dynamics_indoor', True), default=True
@@ -344,6 +446,9 @@ def load_agent_config(config_path, cli_overrides=None):
         price_aware_battery_enabled = _parse_bool(
             raw.get('price_aware_battery_enabled', True), default=True
         )
+        price_band_tie_strict = _parse_bool(
+            raw.get('price_band_tie_strict', False), default=False
+        )
         price_high_quantile = _parse_nonneg_float(
             raw.get('price_high_quantile', 0.75), 'price_high_quantile', max_value=0.99
         )
@@ -384,7 +489,7 @@ def load_agent_config(config_path, cli_overrides=None):
         resmarl_enabled = _parse_bool(raw.get('resmarl_enabled', raw.get('residual_enabled', False)))
         residual_alpha = _parse_residual_alpha(raw.get('residual_alpha', raw.get('resmarl_alpha', 0.0)))
         residual_action_mask = _parse_residual_mask(raw.get('residual_action_mask'))
-        resmarl_after_safety = _parse_bool(raw.get('resmarl_after_safety', True), default=True)
+        resmarl_after_safety = _parse_bool(raw.get('resmarl_after_safety', False), default=False)
         marl_mode = raw.get('marl_mode')
         if marl_mode is not None:
             marl_mode = _parse_marl_mode(marl_mode)
@@ -426,6 +531,7 @@ def load_agent_config(config_path, cli_overrides=None):
         post_outage_tmp_ramp = True
         post_outage_tmp_stagger = True
         price_aware_battery_enabled = True
+        price_band_tie_strict = False
         price_high_quantile = 0.75
         price_low_quantile = 0.25
         price_history_min_steps = 48
@@ -443,7 +549,7 @@ def load_agent_config(config_path, cli_overrides=None):
         resmarl_enabled = False
         residual_alpha = 0.0
         residual_action_mask = dict(DEFAULT_RESIDUAL_MASK)
-        resmarl_after_safety = True
+        resmarl_after_safety = False
         marl_mode = None
         multi_agent_train_epochs = 20
         multi_agent_explore = False
@@ -463,6 +569,15 @@ def load_agent_config(config_path, cli_overrides=None):
         'B_low': b_low,
         'B_high': b_high,
         'TMP_max_reduction_percent': tmp_max_reduction,
+        'peak_trigger_mode': peak_trigger_mode,
+        'ns_spike_mult': ns_spike_mult,
+        'rebound_window': rebound_window,
+        'rebound_cap': rebound_cap,
+        'peak_battery_discharge_enabled': peak_battery_discharge_enabled,
+        'peak_battery_discharge_ele': peak_battery_discharge_ele,
+        'peak_cut_graded_enabled': peak_cut_graded_enabled,
+        'peak_cut_graded_m_lo': peak_cut_graded_m_lo,
+        'peak_cut_graded_m_hi': peak_cut_graded_m_hi,
         'min_cool_per_c_overheat': min_cool_per_c_overheat,
         'min_cool_per_c_outdoor_gap': min_cool_per_c_outdoor_gap,
         'outdoor_gap_deadband_c': outdoor_gap_deadband_c,
@@ -471,6 +586,7 @@ def load_agent_config(config_path, cli_overrides=None):
         'demand_feedforward_only_when_overheat': demand_feedforward_only_when_overheat,
         'outdoor_floor_allow_when_under_setpoint': outdoor_floor_allow_when_under_setpoint,
         'clear_open_loop_floor_when_under_setpoint': clear_open_loop_floor_when_under_setpoint,
+        'dhw_storage_fix': dhw_storage_fix,
         'use_lagged_dynamics_indoor': use_lagged_dynamics_indoor,
         'lagged_indoor_only_when_hotter': lagged_indoor_only_when_hotter,
         'lagged_indoor_hotter_margin_c': lagged_indoor_hotter_margin_c,
@@ -486,6 +602,7 @@ def load_agent_config(config_path, cli_overrides=None):
         'post_outage_tmp_ramp': post_outage_tmp_ramp,
         'post_outage_tmp_stagger': post_outage_tmp_stagger,
         'price_aware_battery_enabled': price_aware_battery_enabled,
+        'price_band_tie_strict': price_band_tie_strict,
         'price_high_quantile': price_high_quantile,
         'price_low_quantile': price_low_quantile,
         'price_history_min_steps': price_history_min_steps,
@@ -534,13 +651,23 @@ def apply_resmarl_cli_overrides(agent_config, args):
     if getattr(args, 'multi_agent_checkpoint', None):
         cfg['multi_agent_checkpoint'] = str(args.multi_agent_checkpoint).strip()
     if getattr(args, 'resmarl_after_safety', None) is not None:
-        cfg['resmarl_after_safety'] = _parse_bool(args.resmarl_after_safety, default=True)
+        cfg['resmarl_after_safety'] = _parse_bool(args.resmarl_after_safety, default=False)
     if getattr(args, 'residual_action_mask', None):
         # 字符串 / dict / [{key,value}] 三种写法都由 _parse_residual_mask 统一吃下
         # （原先这里自己 json.loads，遇到配置弹窗的 [{key,value}] 形状会静默退回默认掩码）
         cfg['residual_action_mask'] = _parse_residual_mask(args.residual_action_mask)
     if getattr(args, 'multi_agent_explore', None) is not None:
         cfg['multi_agent_explore'] = _parse_bool(args.multi_agent_explore, default=False)
+    # 残差层（安全投影 / P0 门控）的开关也要落进 agent_config：只停在 argparse ⇒
+    # 既没进 chesca_agent_config.json（审计缺一列 ✗），也没进残差器 params（一律吃默认值 ✗）。
+    for key in RESIDUAL_LAYER_BOOL_KEYS:
+        value = getattr(args, key, None)
+        if value is not None:
+            cfg[key] = _parse_bool(value, default=bool(DEFAULT_RESIDUAL_LAYER_BOOLS[key]))
+    for key in RESIDUAL_LAYER_FLOAT_KEYS:
+        value = getattr(args, key, None)
+        if value is not None:
+            cfg[key] = float(value)
     return cfg
 
 
@@ -566,6 +693,16 @@ AGENT_PARAM_KEYS = (
     'B_low',
     'B_high',
     'TMP_max_reduction_percent',
+    # 片区削峰「结构层」（2026-10-11 P2 接入；默认值与 checa/agent.py default_params 逐字一致 ✓）
+    'peak_trigger_mode',
+    'ns_spike_mult',
+    'rebound_window',
+    'rebound_cap',
+    'peak_battery_discharge_enabled',
+    'peak_battery_discharge_ele',
+    'peak_cut_graded_enabled',
+    'peak_cut_graded_m_lo',
+    'peak_cut_graded_m_hi',
     'min_cool_per_c_overheat',
     'min_cool_per_c_outdoor_gap',
     'outdoor_gap_deadband_c',
@@ -589,6 +726,7 @@ AGENT_PARAM_KEYS = (
     'post_outage_tmp_ramp',
     'post_outage_tmp_stagger',
     'price_aware_battery_enabled',
+    'price_band_tie_strict',
     'price_high_quantile',
     'price_low_quantile',
     'price_history_min_steps',

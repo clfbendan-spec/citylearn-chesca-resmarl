@@ -150,6 +150,22 @@ public class BaseDataService implements SystemConfig {
     /** 断点进度文件名（与 Multi-agent.py 的 CKPT_PROGRESS 一致）。 */
     private static final String MARL_CKPT_PROGRESS_FILE = "train_progress.json";
 
+    /**
+     * 全局兜底断点目录（相对 {@code citylearnpy}）：任务目录里找不到断点时按顺序再找这几个。
+     *
+     * <p>都是「所有任务共用」的老目录 —— 早期训练脚本不接收 {@code --checkpoint-dir}，
+     * 把模型写在了全局目录里（互相覆盖，无法区分是哪一次训练的）：
+     * <ul>
+     *   <li>{@code checkpoints/multi_agent_sac} —— 2026-10-09 实测 0efa38cb 等「只训练」简易任务写在这里；</li>
+     *   <li>{@code checkpoints/multi_agent_resume} —— 脚本 {@code DEFAULT_CHECKPOINT_DIR} 的当前默认值。</li>
+     * </ul>
+     * 兜底只让历史记录「看得见、可选」，加载到的是该目录里最后写入的那一版模型。
+     */
+    private static final String[] MARL_GLOBAL_CKPT_REL_DIRS = {
+            "checkpoints/multi_agent_sac",
+            "checkpoints/multi_agent_resume",
+    };
+
     /** 统一的 Python 任务包装器（位于 citylearnpy 下），负责转发脚本并把退出码落盘。 */
     private static final String TASK_RUNNER_FILE = "_task_runner.py";
 
@@ -531,21 +547,29 @@ public class BaseDataService implements SystemConfig {
     private static final Set<String> ALGORITHM_VALUE_TYPES =
             new HashSet<>(Arrays.asList("num", "text", "bool", "ratio", "multiple", "map", "special"));
 
-    /**
-     * 各脚本「算法配置 → 命令行参数」的白名单：值 = 该脚本 argparse 里<b>接受值</b>的选项名。
+    /*
+     * ============================================================================
+     * 2026-10-10：【算法配置 -> 命令行参数】的白名单机制已**整体取消**
+     * ============================================================================
+     * 原机制
+     *   ALGORITHM_CONFIG_CLI_WHITELIST（key = 脚本文件名小写，value = 允许传的选项名集合）
+     *   + buildAlgorithmConfigCliWhitelist()。只有登记过的脚本、且登记在名单里的选项，
+     *   才允许把「配置」弹窗里的值翻成 `--选项名 值`。初衷是防「配置里残留了脚本 argparse
+     *   不认的参数 => unrecognized arguments => 脚本 exit 2」。
      *
-     * <p>只登记「有值」的选项：{@code action='store_true'} 的开关（--resume / --no-trace …）
-     * 没法用「参数名=值」表达；其中 --resume / --checkpoint-dir 由后端按代码编辑器的
-     * 「续训」开关统一管理。
+     * 现在
+     *   **界面配置了什么就传什么**，不再按脚本裁剪。语义简单、可预期：
+     *   谁配错，谁就能在 output.log 里看到 argparse 报错（exit 2），自己回去删掉那条配置。
+     *   仍会跳过的只剩三类：未命名 / 无值 / 值是不可当 CLI 传的数组或对象（map、multiple）。
      *
-     * <p>2026-10-08 起 <b>CHESCA 也已登记</b>（见下方 {@code chesca.py}）：它的配置改由代码编辑器
-     * 「配置」弹窗挂到脚本上，与 Multi-agent 系列同一套；CHESCA.py 的 argparse 已按同一张表登记
-     * （参数名统一下划线 ⇒ 表里的名字就是命令行名字 ✓ 无需别名 ✓）⇒ 不会再 "unrecognized arguments"。取值优先级为
-     * 「命令行 &gt; 配置 JSON（--min-soc-config）&gt; 内置默认」，配置弹窗里填的覆盖配置页写的。
-     * <p>{@code CHESCA_ResMARL.py} <b>仍不登记</b>：它只认自己那 10 个参数，硬传会崩 ✗。
+     * 守卫改由脚本侧承担
+     *   各入口用 argparse.parse_known_args()：不认识的选项打一行日志后忽略，不中断运行
+     *   （CHESCA.py、以及 district_marl 的 District_MARL_train.py / District_MARL_eval.py 均已如此）。
+     *
+     * 注：RESUME_SUPPORTED_SCRIPTS（下方）保留 —— 那是「续训」开关的能力表，
+     *     与本次取消的参数白名单不是一回事。
+     * ============================================================================
      */
-    private static final Map<String, Set<String>> ALGORITHM_CONFIG_CLI_WHITELIST =
-            buildAlgorithmConfigCliWhitelist();
 
     /**
      * 声明了 {@code --resume}（断点续训）的脚本文件名（小写）。
@@ -561,117 +585,6 @@ public class BaseDataService implements SystemConfig {
      */
     private static final Set<String> RESUME_SUPPORTED_SCRIPTS = new HashSet<>();
 
-    private static Map<String, Set<String>> buildAlgorithmConfigCliWhitelist() {
-        Map<String, Set<String>> map = new HashMap<>();
-        // 与各脚本的 argparse 保持一致：脚本增删参数时这里要同步（否则配置里的新参数会被跳过）
-        // 2026-10-01：评估期早停已从 Python 侧整块移除（EARLY_STOP_* 常量、
-        //   --no-early-stop / --early-stop-pct / --early-stop-after 三个参数），
-        //   此处同步删掉 "early-stop-pct" / "early-stop-after" —— 留着的话，
-        //   配置页里若还残留这两项，就会被翻译成 CLI 参数传给脚本，
-        //   而脚本的 argparse 已不认 ⇒ 直接 "unrecognized arguments" 崩掉 ✗
-        // 2026-10-05：`--trace-every` 已从 Python 侧整块移除（落盘间隔固定为
-        //   DECISION_TRACE_EVERY = 144；判决见 DECISIONS §17）⇒ 此处同步删掉
-        //   "trace-every"。留着的话，配置页里若还残留该项，就会被翻译成 CLI 参数传给
-        //   脚本，而脚本的 argparse 已不认 ⇒ 直接 "unrecognized arguments" 崩掉 ✗
-        //   （与 2026-10-01 移除早停三参数时同一处理 ✓；注意脚本自身的参数表已更新 ✓）
-        /*
-         * 2026-10-07：按三个脚本的当前 argparse 再核一遍（脚本重新生成过一次，参数表变了）。
-         * 核对结论与处理：
-         *   · `--max-train-epochs` 已从 Python 侧移除 —— train / 一体脚本现在都只有
-         *     `--train-epochs`（它本身就是硬上限）⇒ 从名单删掉。留着的话，配置页里那条
-         *     「最大训练轮数」会被翻成 `--max-train-epochs 60` 传给 Multi-agent-train.py，
-         *     argparse 直接 "unrecognized arguments: --max-train-epochs 60" 退出
-         *     （2026-10-07 实际踩到，配置里填 60 就跑不起来）。
-         *   · `--env-runners` 同样已移除 ⇒ 删掉。
-         *   · 新增了奖励/代价权重一族：--bat-weight / --cost-weight / --p4-hinge-w /
-         *     --p4-hinge-target / --bat-loss（三个 Multi-agent 脚本都有）⇒ 登记进来，
-         *     单变量扫描可以直接在配置页里配。
-         *   · eval 脚本当前只认 --eval-schema / --checkpoint。`--train-task-id`（编排任务
-         *     评估步骤的「训练模型」）随脚本重新生成丢失了，这里先摘掉以免评估子任务
-         *     崩在 unrecognized arguments；要恢复编排任务的按任务 id 加载模型，
-         *     需在 Multi-agent-eval.py（及其生成器模板）里重新加回该参数。
-         */
-        final Set<String> marlCommon = new HashSet<>(Arrays.asList(
-                "train-schema", "eval-schema", "train-epochs", "min-train-epochs",
-                "checkpoint-dir", "seed",
-                "bat-weight", "cost-weight", "p4-hinge-w", "p4-hinge-target", "bat-loss"));
-        map.put("multi-agent.py", marlCommon);
-        map.put("multi-agent-train.py", new HashSet<>(marlCommon));
-        map.put("multi-agent-eval.py", new HashSet<>(Arrays.asList(
-                "eval-schema", "checkpoint")));
-        map.put("multi-agent_copy.py", new HashSet<>(Collections.singletonList("train-epochs")));
-        /*
-         * CHESCA（2026-10-08 新增）：配置改由**代码编辑器「配置」弹窗**挂到脚本上，
-         * 与 Multi-agent 系列同一套机制 —— 执行时翻成 `--参数名 值` 传给脚本。
-         *
-         * <p>参数名 = CHESCA 配置文件 chesca_agent_config.json 的字段名
-         * （tau / balance_type / B_low / min_cool_per_c_overheat / price_* …），
-         * 与 db/algorithm_param_config_chesca_*.sql 登记的 param_name 逐字一致；
-         * B_low/b_low、B_high/b_high、TMP_max_reduction_percent/tmp_* 两种大小写都登记，
-         * 因为配置文件里两种写法历史上都出现过（脚本的读取逻辑本来就都认）。
-         *
-         * <p>脚本侧 CHESCA.py 的 parse_args 已按同一张表登记（参数名统一下划线 ⇒ 表里的名字就是命令行名字 ✓ 无需别名 ✓），
-         * 且取值优先级为「命令行 > 配置 JSON（--min-soc-config）> 内置默认」
-         * ⇒ 配置弹窗里填的会覆盖配置页写的，与 Multi-agent 的语义一致。
-         *
-         * <p>2026-10-08 起 {@code CHESCA_ResMARL.py} <b>也已登记</b>（见下方 {@code chesca_resmarl.py}）：
-         * 它已改造成与 CHESCA.py <b>同构</b>的入口 —— 同一套 CHESCA 参数，外加
-         * {@code --train-task-id} / {@code --residual_alpha} / {@code --residual_action_mask} /
-         * {@code --resmarl_after_safety}，配置同样由「配置」弹窗挂到脚本上、执行时翻成命令行。
-         * 它原来「只认 10 个参数 + 靠 --min-soc-config 读 JSON」的老路已废除。
-         *
-         * <p>2026-10-08 再改（与 Python 侧同步）：CHESCA.py 已把 ResMARL 参数**整体移出**
-         * （--marl_mode / --resmarl_enabled / --resmarl_after_safety / --multi_agent_train_epochs /
-         * --multi_agent_explore / --multi_agent_checkpoint / --residual_alpha /
-         * --residual_action_mask 全部删掉，只留在 CHESCA_ResMARL.py）
-         * ⇒ 本名单同步删掉这 8 个，保持"名单 == 脚本 argparse"这条规矩。
-         * 注：CHESCA.py 现在用 parse_known_args()，漏删也不会崩（只会打一行"忽略未识别参数"），
-         * 但那样等于让用户填了不生效 ⇒ 必须同步删。
-         * 纯 CHESCA 的配置组见 db/algorithm_param_config_chesca_groups2.sql（7 组 / 45 参数）。
-         */
-        final Set<String> chescaCommon = new HashSet<>(Arrays.asList(
-                "min_soc_per_hour", "max_soc_normal", "max_soc_outage", "max_soc_reduction_in_outage",
-                "B_low", "b_low", "B_high", "b_high", "TMP_max_reduction_percent",
-                "tmp_max_reduction_percent", "min_cool_per_c_overheat", "min_cool_per_c_outdoor_gap",
-                "outdoor_gap_deadband_c", "outdoor_floor_max_overheat_c",
-                "cooling_demand_feedforward_frac", "demand_feedforward_only_when_overheat",
-                "outdoor_floor_allow_when_under_setpoint", "clear_open_loop_floor_when_under_setpoint",
-                "use_lagged_dynamics_indoor", "lagged_indoor_only_when_hotter",
-                "lagged_indoor_hotter_margin_c", "post_outage_soft_charge_enabled",
-                "post_outage_relax_steps", "post_outage_waive_min_soc", "post_outage_max_ele_charge",
-                "post_outage_forbid_charge_when_overheat", "post_outage_overheat_c",
-                "post_outage_tmp_cap_enabled", "post_outage_tmp_cap_steps",
-                "post_outage_tmp_max_start", "post_outage_tmp_ramp", "post_outage_tmp_stagger",
-                "price_aware_battery_enabled", "price_high_quantile", "price_low_quantile",
-                "price_history_min_steps", "price_high_soc_threshold", "price_high_forbid_charge",
-                "price_high_force_discharge", "price_high_discharge_ele", "price_min_reserve_soc",
-                "price_global_reserve_enabled", "price_low_target_soc", "price_low_charge_ele",
-                "price_low_search_boost", "tau", "balance_type",
-                // CHESCA.py 以 --eval_schema 为准；这里把「配置」弹窗里可能选到的
-                // 「评估数据集 eval-schema」（Multi-agent 那条，中划线）也放进来 ——
-                // 脚本侧已把 --eval-schema 作为 --eval_schema 的别名接收；
-                // 不放的话会被白名单静默跳过、脚本回落到默认 720 步数据集（2026-10-08 实际踩到）
-                "eval_schema", "eval-schema"));
-        map.put("chesca.py", chescaCommon);
-        // CHESCA-ResMARL：CHESCA 的全套参数 + 残差三项 + 模型来源（训练任务 id / 直接路径）
-        //   · 与 CHESCA.py 同构 ⇒ 直接继承 chescaCommon（含 eval_schema 两种写法）；
-        //   · 残差三项与 marl_mode 由 db/algorithm_param_config_chesca_resmarl.sql 登记，
-        //     在「配置」弹窗里挂到 CHESCA_ResMARL.py 上；
-        //   · train-task-id：任务管理页评估卡「训练模型」那行的固定注入（值 = 父任务 id），
-        //     脚本据此去 <任务id>-train/checkpoints/multi_agent_resume 找模型；
-        //     multi_agent_checkpoint 是它的显式替代（配置页手填绝对路径）。
-        //     下划线 / 中划线两种写法都登记：平台注入的是中划线，配置页字段是下划线风格。
-        final Set<String> chescaResmarl = new HashSet<>(chescaCommon);
-        chescaResmarl.addAll(Arrays.asList(
-                "marl_mode", "resmarl_enabled",
-                "residual_alpha", "residual-alpha",
-                "residual_action_mask", "residual-action-mask",
-                "resmarl_after_safety", "resmarl-after-safety",
-                "multi_agent_checkpoint", "multi-agent-checkpoint",
-                "train_task_id", "train-task-id"));
-        map.put("chesca_resmarl.py", chescaResmarl);
-        return map;
-    }
 
     /**
      * 取本次执行要用的脚本配置 JSON：**优先任务级配置**（{@code py_task.config}，编排任务的
@@ -709,10 +622,12 @@ public class BaseDataService implements SystemConfig {
      * citylearn_dataset.id，这里换成 schema 目录名再传；值不是合法 id（历史数据可能直接存了
      * schema 名）就原样透传。值是数组/对象的（map、multiple 这类）当不了 CLI 值，跳过。
      *
-     * <p>白名单外的参数一律不传，只记一条日志 —— 见 {@link #ALGORITHM_CONFIG_CLI_WHITELIST}。
+     * <p>2026-10-10 起<b>不再按脚本裁剪</b>：配置里配了什么就翻成什么命令行
+     * （原来的「按脚本白名单过滤」机制已取消）。
+     * 仍会跳过的只有三类：未命名、无值、值是不可当 CLI 传的数组/对象（map / multiple）。
      *
      * @param pyFileId   脚本 id
-     * @param pyFileName 脚本文件名（取白名单用）
+     * @param pyFileName 脚本文件名（仅用于日志）
      * @param resume     本次是否续训；为 true 时 checkpoint-dir 由后端钉死（固定断点目录），
      *                   配置里的同名参数忽略，避免续训找不到断点
      * @return flag → value，保持参数项在配置里的顺序；同一参数出现多次以最后一次为准
@@ -724,12 +639,7 @@ public class BaseDataService implements SystemConfig {
         if (isBlank(configJson)) {
             return result;
         }
-        String key = pyFileName == null ? "" : pyFileName.trim().toLowerCase();
-        Set<String> allowed = ALGORITHM_CONFIG_CLI_WHITELIST.get(key);
-        if (allowed == null) {
-            log.info("{} 未登记「算法配置 → 命令行参数」白名单，本次不传配置参数", pyFileName);
-            return result;
-        }
+        // 2026-10-10：白名单机制已取消 —— 界面配置了什么就传什么（见上方字段注释）。
         JSONArray array;
         try {
             // 用上面 resolveConfigJsonForTask 的结果：**任务级配置优先**（编排任务两张卡），
@@ -758,8 +668,8 @@ public class BaseDataService implements SystemConfig {
             String flag = (def != null && !isBlank(def.getParamName()))
                     ? def.getParamName().trim()
                     : (param.getString("param_name") == null ? "" : param.getString("param_name").trim());
-            if (isBlank(flag) || !allowed.contains(flag)) {
-                skipped.add(flag.isEmpty() ? "(未命名)" : flag);
+            if (isBlank(flag)) {
+                skipped.add("(未命名)");
                 continue;
             }
             String value = resolveAlgorithmConfigValue(def, param.get("value"));
@@ -775,7 +685,7 @@ public class BaseDataService implements SystemConfig {
             result.remove("--checkpoint-dir");
         }
         if (!skipped.isEmpty()) {
-            log.info("{} 的算法配置里这些参数不按命令行传入（不在白名单 / 无值 / 值不可传）: {}",
+            log.info("{} 的算法配置里这些参数不按命令行传入（未命名 / 无值 / 值不可传）: {}",
                     pyFileName, skipped);
         }
         return result;
@@ -2792,7 +2702,22 @@ public class BaseDataService implements SystemConfig {
         String target = isReuseTrainModelValue(chosen, parentId)
                 ? chosen.trim()
                 : PyTaskVO.subTaskIdOf(parentId, PyTaskVO.SUB_TASK_SUFFIX_TRAIN);
-        return getTaskDir(target).resolve(MARL_CKPT_REL_DIR).toAbsolutePath().toString();
+        Path dir = getTaskDir(target).resolve(MARL_CKPT_REL_DIR);
+        if (!isUsableCheckpointDir(dir)) {
+            /*
+             * 目标任务目录里没有断点 —— 典型场景：复用的是「只训练」的简易任务，
+             * 它当年把模型写进了全局目录（那时后端还没给简易任务注入任务级 --checkpoint-dir）。
+             * 按全局兜底目录再找一次：找到就用它，评估仍能跑起来；
+             * 找不到仍返回任务目录，让脚本报出「checkpoint 不存在」的明确错误。
+             */
+            Path global = resolveGlobalMarlCkptDir();
+            if (global != null) {
+                log.info("评估子任务：任务 {} 目录无断点，回退全局兜底目录 {}",
+                        target, global);
+                return global.toAbsolutePath().toString();
+            }
+        }
+        return dir.toAbsolutePath().toString();
     }
 
     /**
@@ -3610,7 +3535,7 @@ public class BaseDataService implements SystemConfig {
              * CHESCA 系列（2026-10-08 起两条入口同一套）：
              *   · CHESCA.py（纯 CHESCA）与 CHESCA_ResMARL.py（CHESCA + SAC 残差）
              *     参数都改由代码编辑器「配置」弹窗挂到脚本上、执行时翻成命令行传入
-             *     （见 ALGORITHM_CONFIG_CLI_WHITELIST 的 chesca.py / chesca_resmarl.py 条目）。
+             *     （2026-10-10 起不再过白名单，配置里配了什么就传什么）。
              *   · 都不再传 --min-soc-config（那条老路已废除）。
              *     为了任务详情页仍能查到"当时的配置是什么"，JSON 快照照写（**仅存档，脚本不读它**）。
              */
@@ -3729,30 +3654,30 @@ public class BaseDataService implements SystemConfig {
                     extraArgs.add("--eval-schema");
                     extraArgs.add(multiAgentEvalSchema.trim());
                 }
-                // 编排任务的训练子任务：断点固定写进「本任务目录」，
-                // 后面的评估子任务才能凭任务 id 到 <任务id>-train 目录里找到模型
-                // （见 Multi-agent-eval.py 的 --train-task-id）。放在 resMarl 的
-                // checkpoint-dir 之后追加，同名参数以最后一个为准。
-                if ((isMarlFull || isMarlTrain) && PyTaskVO.isTrainSubTask(taskId)) {
-                    Path subCkptDir = getTaskDir(taskId).resolve(MARL_CKPT_REL_DIR);
+                // 训练任务（只训练 Multi-agent-train.py）的断点一律固定写进「本任务目录」：
+                //   output/outkpis/<taskId>/checkpoints/multi_agent_resume
+                // 简易任务与编排子任务都有稳定的 taskId（getTaskDir 不区分两者），
+                // 统一落到任务目录后「训练写 → 评估读 → 任务管理查」三处才对得上；
+                // 评估子任务/任务管理都靠任务 id 定位（见 Multi-agent-eval.py 的 --train-task-id）。
+                // 放在 resMarl 的 checkpoint-dir 之后追加，同名参数以最后一个为准。
+                if (isMarlTrain) {
+                    Path trainCkptDir = getTaskDir(taskId).resolve(MARL_CKPT_REL_DIR);
                     extraArgs.add("--checkpoint-dir");
-                    extraArgs.add(subCkptDir.toAbsolutePath().toString());
-                    log.info("训练子任务：断点目录固定为 {}（供评估子任务按任务 id 定位）", subCkptDir);
+                    extraArgs.add(trainCkptDir.toAbsolutePath().toString());
+                    log.info("训练任务：断点目录固定为 {}（供评估与任务管理按任务 id 定位）", trainCkptDir);
                 }
                 // checkpoint：只训练写、只评估读；一体化仍沿用旧逻辑（不传）。
-                // 编排任务的训练 / 评估子任务一律**按任务 id 定位**，不用配置页那个全局目录 ——
-                // 全局目录是所有任务共用的，写进去会互相覆盖，也会让「复用历史训练模型」
-                // 定位不到对应任务的模型（2026-10-08 实测：8 个训练子任务全写进了同一个目录）。
+                // 训练任务一律**按任务 id 定位**（上面已把 --checkpoint-dir 钉进本任务目录），
+                // 不再用配置页那个全局目录 —— 它是所有任务共用的，写进去会互相覆盖，
+                // 也会让「复用历史训练模型」定位不到对应任务的模型
+                // （2026-10-08 实测：8 个训练子任务全写进同一个目录；
+                //   2026-10-09 实测：只训练的简易任务也被这个字段写进了全局目录）。
                 String checkpoint = resMarl.getMultiAgentCheckpoint();
                 boolean hasCheckpoint = checkpoint != null && !checkpoint.trim().isEmpty();
                 if (isMarlTrain && hasCheckpoint) {
-                    if (PyTaskVO.isTrainSubTask(taskId)) {
-                        log.info("训练子任务：忽略配置页的 multi_agent_checkpoint={}，"
-                                + "断点留在本任务目录（评估侧按任务 id 定位）", checkpoint.trim());
-                    } else {
-                        extraArgs.add("--checkpoint-dir");
-                        extraArgs.add(checkpoint.trim());
-                    }
+                    log.info("训练任务：忽略配置页的 multi_agent_checkpoint={}"
+                                    + "（该值只用于评估侧读取），断点写入本任务目录（供按任务 id 定位）",
+                            checkpoint.trim());
                 } else if (isMarlEval) {
                     String subCkpt = resolveSubTaskEvalCheckpoint(taskId);
                     if (subCkpt != null) {
@@ -3765,7 +3690,7 @@ public class BaseDataService implements SystemConfig {
                         extraArgs.add(checkpoint.trim());
                     } else {
                         log.warn("Multi-agent-eval.py 未配置 multi_agent_checkpoint，"
-                                + "将回退脚本默认目录 citylearnpy/checkpoints/multi_agent_sac");
+                                + "将回退脚本内置的默认断点目录（DEFAULT_CHECKPOINT_DIR）");
                     }
                 }
                 // 同步写入配置快照，便于任务目录追溯
@@ -3887,6 +3812,54 @@ public class BaseDataService implements SystemConfig {
     }
 
     /**
+     * 「历史训练任务」的展示名，兜底顺序：
+     * <b>父任务名（训练）→ 任务自己的名字 → 脚本名（训练）→ 短任务 id（训练）</b>；
+     * 四者都取不到才返回 null（调用方显示占位）。
+     *
+     * <p>2026-10-09 按使用者要求给**老记录也补名字**：早期从代码编辑器直接跑的训练任务没有
+     * {@code task_name}，以前只显示时间，续训表里整整一列都是「—」，不好认。现在退到脚本名
+     * （如「Multi-agent（训练）」），再退到短 id。
+     * ⚠️ 仍然**不放 32 位完整任务 id**（界面上放不下）—— 只用前 8 位，与前端 {@code shortTaskId} 同款 ✓。
+     *
+     * <p>规则只有这一份实现：评估卡的「复用历史成功训练任务」下拉
+     * （{@link #getTrainModelTaskList()}）与代码编辑器「续训」来源任务表
+     * （{@link #getResumableTaskList()}）共用，免得两处展示名各改一半、越走越远。
+     *
+     * @param t          任务本体（可为 null）
+     * @param parent     它的父任务（编排任务）；没有父任务时传 null
+     * @param scriptName 该次训练跑的脚本名（如 {@code Multi-agent-train.py}），可空
+     */
+    private String trainTaskDisplayName(PyTask t, PyTask parent, String scriptName) {
+        /*
+         * ① show_name（仪表盘「展示名称」，用户在记录页给执行记录起的名字 —— 如 seed1/seed2/seed3）
+         *    最优先：这是使用者**显式**起的名字，比任何自动推断都可信（2026-10-09 使用者指出）
+         *    ⇒ 老记录也没有名字的问题随之消失：type=1 简易任务直接用它 ✓
+         *    写入入口：POST /updatePyTaskShowName（已有的仪表盘改名接口，不新增 UI ✓）
+         */
+        if (t != null && !isBlank(t.getShowName())) {
+            return t.getShowName().trim();
+        }
+        if (parent != null && !isBlank(parent.getTaskName())) {
+            return parent.getTaskName() + "（训练）";
+        }
+        if (t != null && !isBlank(t.getTaskName())) {
+            return t.getTaskName();
+        }
+        if (!isBlank(scriptName)) {
+            String s = scriptName.trim();
+            if (s.toLowerCase().endsWith(".py")) {
+                s = s.substring(0, s.length() - 3);      // 去扩展名：Multi-agent-train.py → Multi-agent-train
+            }
+            return s + "（训练）";
+        }
+        if (t != null && !isBlank(t.getId())) {
+            String id = t.getId().trim();
+            return (id.length() > 8 ? id.substring(0, 8) : id) + "（训练）";
+        }
+        return null;
+    }
+
+    /**
      * 列出「可用于续训」的任务：任务目录下存在
      * {@code checkpoints/multi_agent_resume/train_progress.json} 的任务。
      *
@@ -3945,6 +3918,12 @@ public class BaseDataService implements SystemConfig {
                     item.put("updated", json.getString("updated"));
                     item.put("curvePoints", hist == null ? 0 : hist.size());
                     PyTask meta = taskMeta.get(taskId);
+                    // 任务名（父任务名（训练）优先，其次自己的名字；老记录为 null）
+                    //   ⇒ 前端「续训」来源任务表新增的「任务名称」列直接读 displayName ✓
+                    String parentOfMeta = meta == null ? null : PyTaskVO.parentTaskIdOf(meta.getId());
+                    item.put("displayName", trainTaskDisplayName(
+                            meta, parentOfMeta == null ? null : taskMeta.get(parentOfMeta), scriptName));
+                    item.put("taskName", meta == null ? null : meta.getTaskName());
                     item.put("taskStartTime", meta == null ? null : meta.getCreateTime());
                     result.add(item);
                 } catch (Exception e) {
@@ -3986,8 +3965,15 @@ public class BaseDataService implements SystemConfig {
      *   <li>返回的 {@code taskId} 可直接填进评估卡的 {@code train-task-id}
      *       （脚本侧同时认 {@code <id>} 与 {@code <id>-train} 两种写法）。</li>
      * </ul>
+     *
+     * @param trainPyId 只列「由这个训练脚本（{@code py_file.id}）产出」的任务记录；
+     *                  留空则不按脚本过滤（老调用方与独立页面仍拿全量）。
+     *                  <p>为什么要有它：评估卡的「复用历史成功训练任务」下拉在编排任务里
+     *                  属于某张具体的训练卡 —— 不按脚本过滤时，选了"区域级 MARL 训练"
+     *                  也会把 Multi-agent / CHESCA 的训练记录全列出来，既噪音大、又可能
+     *                  选到口径不匹配的模型（观测维度/奖励语义对不上，评估直接报错）。
      */
-    public List<Map<String, Object>> getTrainModelTaskList() {
+    public List<Map<String, Object>> getTrainModelTaskList(String trainPyId) {
         List<Map<String, Object>> result = new ArrayList<>();
         List<PyTask> all;
         try {
@@ -4028,23 +4014,38 @@ public class BaseDataService implements SystemConfig {
             if (!trainTask) {
                 continue;
             }
+            // 按「训练脚本」过滤：只留由指定脚本 id 跑出来的记录（编排子任务的 pyId
+            // 就是训练卡选的脚本；简易任务就是代码编辑器里跑的那个脚本）。
+            // 这样评估卡的「复用历史成功训练任务」下拉只显示左边所选训练脚本下的历史任务。
+            if (!isBlank(trainPyId)
+                    && !trainPyId.trim().equalsIgnoreCase(
+                            t.getPyId() == null ? "" : t.getPyId().trim())) {
+                continue;
+            }
             Path ckptDir = getTaskDir(t.getId()).resolve(MARL_CKPT_REL_DIR);
             /*
              * 模型还在不在都列出来（2026-10-08 使用者要求「下拉里要能看到自己训练过的子任务」）：
-             *   · 模型在   → 可直接复用；
-             *   · 模型不在 → 早期流水线训练把模型写进了当时的全局目录、互相覆盖丢了 ⇒
-             *                仍然列出来（记录要看得见），但 modelReady=false，
-             *                前端显示「（模型已丢失）」并禁选，避免选了加载不了。
+             *   · 本任务目录里有 → 可直接复用（训练已统一写进
+             *     <任务id>/checkpoints/multi_agent_resume，简易任务与编排子任务一致）；
+             *   · 本任务目录里没有 → 再按全局兜底目录找一次（早期训练不接收任务级
+             *     --checkpoint-dir，把模型写进了全局目录）：
+             *       找得到 → modelReady=true（复用那版共享模型，checkpointDir 指向它）；
+             *       找不到 → modelReady=false，前端显示「（模型已丢失）」并禁选。
              */
             boolean modelReady = isUsableCheckpointDir(ckptDir);
+            Path globalCkptDir = modelReady ? null : resolveGlobalMarlCkptDir();
+            if (globalCkptDir != null) {
+                modelReady = true;
+            }
+            Path effectiveCkptDir = globalCkptDir != null ? globalCkptDir : ckptDir;
             String parentId = PyTaskVO.parentTaskIdOf(t.getId());
             PyTask parent = parentId == null ? null : taskById.get(parentId);
             // 展示名一律不带 32 位任务 id（界面上放不下）：优先「父任务名（训练）」，
             // 其次任务自己的名字；老记录（代码编辑器直接跑的训练任务，taskName 为空）
             // 留空 —— 前端那时只显示时间（时间本身就是区分它们的信息）
-            String displayName = parent != null && !isBlank(parent.getTaskName())
-                    ? parent.getTaskName() + "（训练）"
-                    : (isBlank(t.getTaskName()) ? null : t.getTaskName());
+            // 展示名规则与「续训」来源任务表共用同一份实现（见 trainTaskDisplayName ✓）；
+            //   scriptName 作为老记录（无 task_name）的兜底名字 ✓
+            String displayName = trainTaskDisplayName(t, parent, scriptName);
 
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("taskId", t.getId());
@@ -4053,7 +4054,7 @@ public class BaseDataService implements SystemConfig {
             item.put("parentTaskId", parentId);
             item.put("scriptName", scriptName);
             item.put("createTime", parent != null ? parent.getCreateTime() : t.getCreateTime());
-            Path progress = ckptDir.resolve(MARL_CKPT_PROGRESS_FILE);
+            Path progress = effectiveCkptDir.resolve(MARL_CKPT_PROGRESS_FILE);
             if (Files.isRegularFile(progress)) {
                 try {
                     JSONObject json = JSON.parseObject(Files.readString(progress, StandardCharsets.UTF_8));
@@ -4067,8 +4068,10 @@ public class BaseDataService implements SystemConfig {
                     log.warn("解析训练断点失败（只影响展示）: {}", progress, e);
                 }
             }
-            item.put("checkpointDir", ckptDir.toAbsolutePath().toString());
+            item.put("checkpointDir", effectiveCkptDir.toAbsolutePath().toString());
             item.put("modelReady", modelReady);
+            // 模型来自全局兜底目录（不是本任务自己的）：前端据此提示"历史任务共用同一个模型"
+            item.put("modelFromGlobal", globalCkptDir != null);
             /*
              * 排序 / 展示用同一个时间：优先训练断点的 updated（= 模型最后写盘时间，最贴近
              * "这条记录"），没有断点进度才用任务创建时间。
@@ -4093,6 +4096,25 @@ public class BaseDataService implements SystemConfig {
                     : String.valueOf(a.get("taskId")).compareTo(String.valueOf(b.get("taskId")));
         });
         return result;
+    }
+
+    /**
+     * 在全局兜底目录（见 {@link #MARL_GLOBAL_CKPT_REL_DIRS}）里找第一个带可用模型的那个。
+     *
+     * @return 命中的目录绝对路径；都没命中返回 {@code null}
+     */
+    private Path resolveGlobalMarlCkptDir() {
+        String root = fileResourceProperties.getPythonFilePath();
+        if (isBlank(root)) {
+            return null;
+        }
+        for (String rel : MARL_GLOBAL_CKPT_REL_DIRS) {
+            Path dir = Paths.get(root.trim()).resolve(rel).toAbsolutePath().normalize();
+            if (isUsableCheckpointDir(dir)) {
+                return dir;
+            }
+        }
+        return null;
     }
 
     /** 任务目录里的模型是否可用：目录存在，且带训练断点或 RLlib 的 checkpoint 标记。 */

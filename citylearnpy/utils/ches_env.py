@@ -58,6 +58,30 @@ class WrapperEnv:
         # 转发到底层 CityLearnEnv.buildings，供高温不适等 KPI 口径读取动力学室温。
         return self.unwrapped.buildings
 
+# 按数据集名定位本地 schema.json（CityLearn 缓存目录 / 包内 datasets）。找不到返回 None ✓
+def resolve_local_schema_file(schema: str):
+    roots = [
+        Path.home() / 'AppData' / 'Local' / 'intelligent-environments-lab' / 'citylearn',
+        Path.home() / '.citylearn',
+    ]
+    for root in roots:
+        try:
+            if Path(root).is_dir():
+                hits = sorted(Path(root).glob(f'**/{schema}/schema.json'))
+                if hits:
+                    return hits[-1]
+        except Exception:
+            pass
+    try:
+        import citylearn
+        cand = Path(citylearn.__file__).resolve().parent / 'datasets' / schema / 'schema.json'
+        if cand.is_file():
+            return cand
+    except Exception:
+        pass
+    return None
+
+
 def create_citylearn_env(config, reward_function, schema=None, episode_time_steps=None):
     # 根据配置创建 CityLearn 仿真环境。
     # 参数 schema：可选，覆盖 config.SCHEMA（训测分离时传入 eval_schema）。
@@ -85,6 +109,12 @@ def create_citylearn_env(config, reward_function, schema=None, episode_time_step
         env_kwargs['render_directory'] = getattr(config, 'RENDER_DIR', DEFAULT_OUTPUT_DIR)
         env_kwargs['render_session_name'] = getattr(config, 'RENDER_SESSION', DEFAULT_RENDER_SESSION)
 
-    env = CityLearnEnv(schema, **env_kwargs)
+    # schema 名 → 本地 schema.json 的绝对路径（绕开 CityLearn 的 GitHub 数据集清单查询 ✓）
+    schema_arg = schema
+    if isinstance(schema, str):
+        _schema_file = resolve_local_schema_file(schema)
+        if _schema_file is not None:
+            schema_arg = str(_schema_file)
+    env = CityLearnEnv(schema_arg, **env_kwargs)
     wrapper_env = WrapperEnv(env)
     return env, wrapper_env

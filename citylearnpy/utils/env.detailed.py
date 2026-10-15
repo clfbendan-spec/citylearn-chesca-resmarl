@@ -1113,3 +1113,70 @@ from typing import Any
 
 
 _STATUS = 'not_installed'
+
+# ============================================================================
+# ==== 段：统一随机停电种子（2026-10-09 新增 ✓）====
+# [详注-BEGIN]（生成简版时整段删除）
+# 目的
+# ----
+#   让 Multi-agent（训练 / 评估 / 中期评估）与 CHESCA / CHESCA-ResMARL 跑在**同一个停电场景**上 ✓。
+#   对照实验里 cost / 韧性类 KPI 只有在停电时刻完全相同时才可比 ✓ ——
+#   否则比出来的是"场景差 + 策略差"的混合，结论无效 ✗。
+#
+# 背景（2026-10-09 实测 ✓）
+# ------------------------
+#   · 评估数据集 schema **自带随机停电**且自带种子 ✓：
+#       building['power_outage'] = {simulate_power_outage: true, stochastic_power_outage: true,
+#         stochastic_power_outage_model: {attributes: {random_seed: 43791, saifi: 1.436, caidi: 331.2}}}
+#   · 该种子进 `ReliabilityMetricsPowerOutage.get_signals` 里的
+#     `np.random.RandomState(self.random_seed)` ✓
+#     ⇒ **给定种子，整条停电序列完全可复现** ✓；换种子 ⇒ 换一套停电场景 ✓。
+#   · `CHESCA.py` 每回合前把种子**覆盖**成 90000 ✗
+#     （`update_power_outage_random_seed(env, 90000)`，在 `env.reset()` 之前调用 ✓）；
+#     而 Multi-agent 侧**从不覆盖** ⇒ 一直用 schema 的 43791 ⇒ 两边场景不同 ✗
+#     （实测：`power_outage_normalized_unserved_energy_total` CHESCA 系 0.28~0.85 vs MARL 0.55~0.61，
+#      分不清是策略差还是场景差 ✗）。
+#
+# 做法
+# ----
+#   与动作钩子同一套路，挂在**基类** `RLlibMultiAgentEnv.reset` 上 ✓：
+#     · 子类 `ContextRLlibEnv` 的 `super().reset()` 也会走到 ✓；
+#     · `OBS_CONTEXT_ENABLE=False`（直接用库里那个类）时同样生效 ✓；
+#     · 训练 / 评估 / 中期评估三处都靠 `env.reset()` ⇒ 这里是**唯一**的公共拦截点 ✓。
+#   只写 `random_seed` 一个字段 ✗、不改任何信号值 ⇒ 仿真动力学与既有 KPI 口径不变 ✓。
+#
+# ⚠️ 一致性约束（改这里前必读 ✓）
+# ------------------------------
+#   `POWER_OUTAGE_SEED` **必须**与 `CHESCA.py` 里那个 `90000` 取同一个值 ✗
+#   ⇒ 改一处就要改两处，否则对照矩阵立刻失效 ✗✗。
+#
+# ⚠️ 作用范围（有意如此 ✓）
+#   · 训练侧也会一起被钉住（每轮 reset 都是同一停电场景）——
+#     原行为（schema 的 43791）**本来就是固定场景** ✗ ⇒ 这里只是"换一个固定场景"，
+#     并没有引入新的随机性 ✓；
+#   · 已有 checkpoint（seed 1/2/3）是在 43791 场景下训出来的 ⇒ 重训前请留意这一点 ✓。
+# [详注-END]
+POWER_OUTAGE_SEED = 90000
+
+
+# 把每栋楼的随机停电模型种子钉成固定值（必须在 env.reset() **之前**调用 ✓）
+def set_power_outage_seed(env: Any, seed: int = POWER_OUTAGE_SEED) -> Any:
+    citylearn_env = unwrap_citylearn_env(env)
+    for b in getattr(citylearn_env, 'buildings', None) or []:
+        model = getattr(b, 'stochastic_power_outage_model', None)
+        if model is not None:
+            model.random_seed = int(seed)
+    return env
+
+
+# 包装基类 reset：先钉种子，再走原 reset（原 reset 就是 CityLearn 生成停电序列的时刻 ✓）
+# 幂等安装 ⇒ 模块被重复 import 也不会叠加包装 ✓
+if not getattr(RLlibMultiAgentEnv.reset, '_power_outage_seed_hooked', False):
+    _ORIG_RESET = RLlibMultiAgentEnv.reset
+
+    def _reset_with_fixed_power_outage(self, *args, **kwargs):
+        set_power_outage_seed(self)
+        return _ORIG_RESET(self, *args, **kwargs)
+
+    _reset_with_fixed_power_outage._power_outage_seed_hooked = True
+    RLlibMultiAgentEnv.reset = _reset_with_fixed_power_outage

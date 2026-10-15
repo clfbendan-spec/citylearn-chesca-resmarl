@@ -36,13 +36,13 @@
   "tau": 1,
   "balance_type": "C",
   "resmarl_enabled": false,
-  "marl_mode": "none",
   "residual_alpha": 0.0,
   "residual_action_mask": {
     "dhw": false,
     "ele": true,
     "tmp": false
   },
+  "resmarl_policy_path": null,
   "resmarl_after_safety": true,
   "_ablation_name": "chesca_baseline",
   "_ablation_label": "纯 CHESCA"

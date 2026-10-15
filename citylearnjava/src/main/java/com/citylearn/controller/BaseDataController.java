@@ -338,11 +338,16 @@ public class BaseDataController {
      *
      * <p>只收 status=1-执行完成、且磁盘上确实有可用模型的任务；返回的 taskId 可直接填进
      * 评估卡的 {@code train-task-id}。选它时该任务只跑评估子任务（不再训练）。
+     *
+     * @param pyFileId 可选的训练脚本 id：只列由该脚本产出的训练记录
+     *                 （编排任务里评估卡的「复用」下拉据此只显示左边所选训练脚本下的历史任务）；
+     *                 不传则返回全部训练记录。
      */
     @RequestMapping(value = "/getTrainModelTaskList", method = RequestMethod.GET)
-    public Result<List<Map<String, Object>>> getTrainModelTaskList() {
+    public Result<List<Map<String, Object>>> getTrainModelTaskList(
+            @RequestParam(value = "pyFileId", required = false) String pyFileId) {
         try {
-            return Result.success(baseDataService.getTrainModelTaskList());
+            return Result.success(baseDataService.getTrainModelTaskList(pyFileId));
         } catch (Exception e) {
             e.printStackTrace();
             return Result.fail(e.getMessage());
@@ -729,9 +734,20 @@ public class BaseDataController {
             config.setPriceLowTargetSoc(param.getPriceLowTargetSoc());
             config.setPriceLowChargeEle(param.getPriceLowChargeEle());
             config.setPriceLowSearchBoost(param.getPriceLowSearchBoost());
+            config.setPriceBandTieStrict(param.getPriceBandTieStrict());
             config.setTau(param.getTau());
             config.setBalanceType(param.getBalanceType());
             config.setEvalSchema(param.getEvalSchema());
+            // 片区尖峰削峰「结构层」（2026-10-11 P2）
+            config.setPeakTriggerMode(param.getPeakTriggerMode());
+            config.setNsSpikeMult(param.getNsSpikeMult());
+            config.setReboundWindow(param.getReboundWindow());
+            config.setReboundCap(param.getReboundCap());
+            config.setPeakBatteryDischargeEnabled(param.getPeakBatteryDischargeEnabled());
+            config.setPeakBatteryDischargeEle(param.getPeakBatteryDischargeEle());
+            config.setPeakCutGradedEnabled(param.getPeakCutGradedEnabled());
+            config.setPeakCutGradedMLo(param.getPeakCutGradedMLo());
+            config.setPeakCutGradedMHi(param.getPeakCutGradedMHi());
             batteryMinSocConfigService.saveConfig(config);
             return Result.success();
         } catch (Exception e) {

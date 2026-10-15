@@ -140,6 +140,9 @@ public class BatteryMinSocConfigParam implements Serializable {
     /** 低价时是否抬高树搜索 SOC 下限以促使补电 */
     private Boolean priceLowSearchBoost;
 
+    /** 价格分位并列（≤2 档电价）时是否按退化处理并改严格比较（默认 false = 旧行为） */
+    private Boolean priceBandTieStrict;
+
     /** 预测/优化向前看的步数（1~3） */
     private Integer tau;
 
@@ -148,4 +151,33 @@ public class BatteryMinSocConfigParam implements Serializable {
 
     /** CHESCA 仿真/KPI 评估数据集 schema */
     private String evalSchema;
+
+    // ---- 片区尖峰削峰「结构层」（2026-10-11 P2 接入）----
+
+    /** 削峰触发信号口径：net / ns_spike / district_spike */
+    private String peakTriggerMode;
+
+    /** 尖峰判据倍数 */
+    private Double nsSpikeMult;
+
+    /** 削峰后回弹抑制窗口步数（0 = 关闭） */
+    private Integer reboundWindow;
+
+    /** 回弹窗口内制冷动作限幅系数（1.0 = 不限） */
+    private Double reboundCap;
+
+    /** 触发步是否把各楼电池拉到最大放电 */
+    private Boolean peakBatteryDischargeEnabled;
+
+    /** 触发步电池 ELE 动作幅度（-1 = 单步最大放电） */
+    private Double peakBatteryDischargeEle;
+
+    /** 是否用分级削峰替代 0/1 硬削 */
+    private Boolean peakCutGradedEnabled;
+
+    /** 分级带宽下沿 */
+    private Double peakCutGradedMLo;
+
+    /** 分级带宽上沿 */
+    private Double peakCutGradedMHi;
 }

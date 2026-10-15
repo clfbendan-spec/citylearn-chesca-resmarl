@@ -10,9 +10,10 @@
 --
 --   注 1：界面也支持手填「自定义参数」（type=extra，如现在库里那两条 max/min-train-epochs），
 --         效果与本文件加目录项完全一样；进目录的好处是有简介、num 类型只允许填数字。
---   注 2：--output-dir 不进目录：它由后端固定传「任务输出目录」，配置里填了也会被白名单过滤掉。
---   注 3：白名单在 BaseDataService#ALGORITHM_CONFIG_CLI_WHITELIST 里维护；
---         脚本新增参数时，这里（参数目录）与那里（白名单）都要补。
+--   注 2：--output-dir 不进目录：它由后端固定传「任务输出目录」，
+--         配置里再配一份会**覆盖**它（2026-10-10 白名单取消后，同名以配置为准）。
+--   注 3：2026-10-10 起白名单机制已取消（原 BaseDataService#ALGORITHM_CONFIG_CLI_WHITELIST 已删除）：
+--         配置里配了什么就传什么 ⇒ 脚本新增参数**只需**在这里登记目录项即可。
 --
 -- 执行方式（本项目手工执行 db/*.sql，无自动迁移）
 --   mysql -uroot -p000000 citylearn < algorithm_param_config_marl_cli.sql

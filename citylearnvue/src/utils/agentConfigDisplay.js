@@ -16,6 +16,61 @@ export const AGENT_CONFIG_FIELDS = [
     group: 'balance',
     hint: 'Refine 减负荷时 TMP 最大削减比例'
   },
+  // 片区尖峰削峰「结构层」（2026-10-11 P2）
+  {
+    key: 'peak_trigger_mode',
+    label: '削峰触发口径',
+    group: 'peak',
+    hint: 'net / ns_spike / district_spike（推荐）'
+  },
+  {
+    key: 'ns_spike_mult',
+    label: '尖峰判据倍数',
+    group: 'peak',
+    hint: '不可调负荷 > 该倍数 × 历史均值即触发'
+  },
+  {
+    key: 'rebound_window',
+    label: '回弹抑制窗口',
+    group: 'peak',
+    hint: '触发后限幅制冷动作的步数；0 = 关闭'
+  },
+  {
+    key: 'rebound_cap',
+    label: '回弹限幅系数',
+    group: 'peak',
+    hint: '限幅 = 触发前动作 × 该系数；1.0 = 不限'
+  },
+  {
+    key: 'peak_battery_discharge_enabled',
+    label: '触发步电池满放',
+    group: 'peak',
+    hint: '触发步把所有楼电池拉到最大放电'
+  },
+  {
+    key: 'peak_battery_discharge_ele',
+    label: '满放 ELE 幅度',
+    group: 'peak',
+    hint: '-1 = 单步最大放电'
+  },
+  {
+    key: 'peak_cut_graded_enabled',
+    label: '分级削峰',
+    group: 'peak',
+    hint: '用连续分级替代 0/1 硬削'
+  },
+  {
+    key: 'peak_cut_graded_m_lo',
+    label: '分级带宽下沿',
+    group: 'peak',
+    hint: 'r ≤ 下沿不削峰（本数据集拐点 5.0）'
+  },
+  {
+    key: 'peak_cut_graded_m_hi',
+    label: '分级带宽上沿',
+    group: 'peak',
+    hint: 'r ≥ 上沿满削（电池同此门槛满放）'
+  },
   {
     key: 'min_cool_per_c_overheat',
     label: '过热保底系数',
@@ -210,6 +265,12 @@ export const AGENT_CONFIG_FIELDS = [
     label: '低价树搜索促补电',
     group: 'battery'
   },
+  {
+    key: 'price_band_tie_strict',
+    label: '价格分位退化修法',
+    group: 'battery',
+    hint: '默认关；开启后分位数并列（≤2 档电价）时不判高价，并改严格比较'
+  },
   { key: 'max_soc_normal', label: '正常 SOC 上限', group: 'battery' },
   { key: 'max_soc_outage', label: '停电 SOC 上限', group: 'battery' },
   {
@@ -252,10 +313,11 @@ export const AGENT_CONFIG_FIELDS = [
 const GROUP_META = {
   forecast: { title: '预测层', order: 1 },
   balance: { title: '负荷平衡 / Refine', order: 2 },
-  cooling: { title: '冷机开环保底', order: 3 },
-  battery: { title: '电池 SOC 约束', order: 4 },
-  resmarl: { title: 'CHESCA-ResMARL', order: 5 },
-  other: { title: '其它参数', order: 6 }
+  peak: { title: '片区尖峰削峰', order: 3 },
+  cooling: { title: '冷机开环保底', order: 4 },
+  battery: { title: '电池 SOC 约束', order: 5 },
+  resmarl: { title: 'CHESCA-ResMARL', order: 6 },
+  other: { title: '其它参数', order: 7 }
 }
 
 const KNOWN_KEYS = new Set([

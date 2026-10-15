@@ -1,5 +1,5 @@
 -- ============================================================================
--- 把「CHESCA-ResMARL 配置 → 电价感知电池」整节的 13 个参数登记进算法参数目录
+-- 把「CHESCA-ResMARL 配置 → 电价感知电池」整节的 14 个参数登记进算法参数目录
 -- （algorithm_param_config）
 -- ----------------------------------------------------------------------------
 -- 字段来源：BatteryMinSocConfig.vue 的「电价感知电池」小节（第 500~679 行）
@@ -21,13 +21,14 @@
 --   低价补电目标 SOC         price_low_target_soc            num          0.80
 --   低价补电幅度             price_low_charge_ele            num          0.25
 --   低价树搜索促补电         price_low_search_boost          ratio        开启
+--   价格分位退化修法         price_band_tie_strict           ratio        关闭   ← P0-2 新增
 --
 -- 说明
 --   · 开关类（el-switch）统一按「单选」登记，候选项固定为 开启/关闭，
 --     对应 key 是字符串 "true" / "false"（与 JSON 布尔值一一对应，下游 str 比较即可）。
 --   · 数字类（el-input-number）按「数字」登记，只允许输入数字。
 --   · if_system = 1（系统预置）：参数配置页打「系统」标识，只能改简介、不能删。
---   · 只登记「参数定义」，不写 algorithm_config 里的取值 —— 那 13 个值仍由
+--   · 只登记「参数定义」，不写 algorithm_config 里的取值 —— 那 14 个值仍由
 --     「CHESCA-ResMARL 配置」页维护，两边互不影响。
 --   · 可重复执行：用 派生表 + WHERE NOT EXISTS 一次插入多行，已存在的 param_name
 --     会被跳过；已存在的行不会被覆盖（想改定义请走「参数配置」页）。
@@ -78,7 +79,29 @@ WHERE NOT EXISTS (
     SELECT 1 FROM `algorithm_param_config` `p` WHERE `p`.`param_name` = `t`.`param_name`
 );
 
--- 校验：确认这一节的 13 个参数都已登记
+-- ---------------------------------------------------------------------------
+-- P0-2（2026-10-11）：价格分位退化门控
+--   `_price_band()` 的 `>=` 在 ≤2 档电价（quantile(0.75)==quantile(0.25)）下退化为
+--   "绝大多数步被判高价" ⇒ 线上数据集电池被禁充锁死。该开关打开后：
+--     ① 分位数并列（退化）⇒ 本步判 mid、交回树搜索；② 比较改严格 > / <。
+--   默认关闭 ⇒ 逐位等于旧行为（零侵入）；与 checa/agent.py / ches_config.py 逐字一致。
+--   组归属：「电价感知电池」组用 `param_name LIKE 'price\_%'` 收录 ⇒ 无需单独改组。
+-- ---------------------------------------------------------------------------
+INSERT INTO `algorithm_param_config`
+    (`name`, `param_name`, `value_type`, `default_value`, `if_system`, `desc`, `create_time`)
+SELECT '价格分位退化修法', 'price_band_tie_strict', 'ratio',
+       '[{"key":"true","value":"开启"},{"key":"false","value":"关闭"}]',
+       1,
+       '价格分位判定退化修法（默认关闭 = 旧行为）。开启后：当高价/低价分位数并列'
+       '（电价只有 ≤2 档时 quantile(0.75)==quantile(0.25)，会让 `>=` 把绝大多数步判成'
+       '「高价」而全程禁充、把线上电池锁死）⇒ 本步按「中价」处理交回树搜索，'
+       '并把比较改为严格大于/小于。线上数据集：峰值 16.442→16.320、电池活跃步 2.7%→99.9%；'
+       'local（3 档）会改变分类，按需使用。',
+       NOW()
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM `algorithm_param_config` WHERE `param_name` = 'price_band_tie_strict');
+
+-- 校验：确认这一节的 14 个参数都已登记
 SELECT `id`, `name`, `param_name`, `value_type`, `if_system`
 FROM `algorithm_param_config`
 WHERE `param_name` LIKE 'price\_%'

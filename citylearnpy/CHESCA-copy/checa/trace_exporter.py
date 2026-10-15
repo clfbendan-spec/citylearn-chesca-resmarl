@@ -111,6 +111,8 @@ TRACE_COLUMNS = [
     'residual_final_dhw',
     'residual_final_ele',
     'residual_final_tmp',
+    'residual_gated',
+    'residual_gate_reason',
 ]
 
 PHASE_NAMES = {
@@ -1214,6 +1216,12 @@ class ChescaTraceRecorder:
                 row['residual_final_dhw'] = _vec_at(final_vec, 0)
                 row['residual_final_ele'] = _vec_at(final_vec, 1)
                 row['residual_final_tmp'] = _vec_at(final_vec, 2)
+            # P0 门控埋点（逐楼栋）：gated=True ⇒ 本步该楼栋 α=0、残差未施加
+            gate_vec = residual_meta.get('gate') or []
+            if gate_vec:
+                row['residual_gate_ele'] = _vec_at(gate_vec, 1)
+                row['residual_gated'] = bool(_vec_at(gate_vec, 1) < 0.5)
+                row['residual_gate_reason'] = residual_meta.get('gate_reason', 'none')
 
             step_rows.append(row)
 
@@ -1440,6 +1448,8 @@ class ChescaTraceRecorder:
                                 'ele': r.get('residual_final_ele'),
                                 'tmp': r.get('residual_final_tmp'),
                             },
+                            'gated': r.get('residual_gated'),
+                            'gate_reason': r.get('residual_gate_reason'),
                         },
                     })
                     for r in step_rows

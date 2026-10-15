@@ -3,6 +3,7 @@
 # 导入库
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -77,6 +78,25 @@ def parse_args():
                         help='温度控制的最大降额比例（默认 0.0）')
     parser.add_argument('--tmp_max_reduction_percent', type=float, default=DEFAULTS.get('tmp_max_reduction_percent'),
                         help='同上（历史小写写法，两种都认）')
+    parser.add_argument('--peak_trigger_mode', type=str, default=DEFAULTS.get('peak_trigger_mode'),
+                        help='削峰触发信号口径：net（净负荷，旧行为）/ ns_spike（单栋实测不可调负荷尖峰）'
+                             '/ district_spike（片区不可调负荷尖峰，推荐）')
+    parser.add_argument('--ns_spike_mult', type=float, default=DEFAULTS.get('ns_spike_mult'),
+                        help='尖峰判据倍数：实测不可调负荷 > 该倍数 × 历史均值即触发')
+    parser.add_argument('--rebound_window', type=int, default=DEFAULTS.get('rebound_window'),
+                        help='削峰触发后抑制回弹过调的步数（0 = 关闭）')
+    parser.add_argument('--rebound_cap', type=float, default=DEFAULTS.get('rebound_cap'),
+                        help='回弹窗口内制冷动作相对「触发前基准」的限幅系数（1.0 = 不限）')
+    parser.add_argument('--peak_battery_discharge_enabled', type=str, default=DEFAULTS.get('peak_battery_discharge_enabled'),
+                        help='district_spike 触发步是否把各楼电池拉到最大放电（true/false）')
+    parser.add_argument('--peak_battery_discharge_ele', type=float, default=DEFAULTS.get('peak_battery_discharge_ele'),
+                        help='触发步电池 ELE 动作幅度（-1 = 单步最大放电）')
+    parser.add_argument('--peak_cut_graded_enabled', type=str, default=DEFAULTS.get('peak_cut_graded_enabled'),
+                        help='是否用分级削峰替代 0/1 硬削（true/false）')
+    parser.add_argument('--peak_cut_graded_m_lo', type=float, default=DEFAULTS.get('peak_cut_graded_m_lo'),
+                        help='分级带宽下沿：r ≤ m_lo 不削峰（r = 片区当步 NS / 其运行均值）')
+    parser.add_argument('--peak_cut_graded_m_hi', type=float, default=DEFAULTS.get('peak_cut_graded_m_hi'),
+                        help='分级带宽上沿：r ≥ m_hi 满削（电池同此门槛满放）')
     parser.add_argument('--min_cool_per_c_overheat', type=float, default=DEFAULTS.get('min_cool_per_c_overheat'),
                         help='每超设定点 1°C 至少开多少制冷（冷机开环保底）')
     parser.add_argument('--min_cool_per_c_outdoor_gap', type=float, default=DEFAULTS.get('min_cool_per_c_outdoor_gap'),
@@ -93,6 +113,8 @@ def parse_args():
                         help='true/false：室内已低于设定点时，还允许室外触发的保底吗')
     parser.add_argument('--clear_open_loop_floor_when_under_setpoint', type=str, default=DEFAULTS.get('clear_open_loop_floor_when_under_setpoint'),
                         help='true/false：低于设定点时是否清掉开环保底')
+    parser.add_argument('--dhw_storage_fix', type=str, default=DEFAULTS.get('dhw_storage_fix'),
+                        help='true/false：是否修复上游 DHW 储能 bug（默认 false，逐位等于上游）')
     parser.add_argument('--use_lagged_dynamics_indoor', type=str, default=DEFAULTS.get('use_lagged_dynamics_indoor'),
                         help='true/false：室内温度是否用带滞后的动力学来估')
     parser.add_argument('--lagged_indoor_only_when_hotter', type=str, default=DEFAULTS.get('lagged_indoor_only_when_hotter'),
@@ -123,6 +145,8 @@ def parse_args():
                         help='true/false：各楼栋错峰放开')
     parser.add_argument('--price_aware_battery_enabled', type=str, default=DEFAULTS.get('price_aware_battery_enabled'),
                         help='true/false：启用看电价决定充放电')
+    parser.add_argument('--price_band_tie_strict', type=str, default=DEFAULTS.get('price_band_tie_strict'),
+                        help='true/false：价格分位并列（≤2 档电价）时按退化处理并改严格比较，默认关')
     parser.add_argument('--price_high_quantile', type=float, default=DEFAULTS.get('price_high_quantile'),
                         help='高价分位点（0~1，默认 0.75）')
     parser.add_argument('--price_low_quantile', type=float, default=DEFAULTS.get('price_low_quantile'),
@@ -175,8 +199,34 @@ def parse_args():
                         help='逐维掩码，如 {"dhw":false,"ele":true,"tmp":false}；'
                              '为 false 的维度保持 CHESCA 原值')
     parser.add_argument('--resmarl_after_safety', '--resmarl-after-safety',
-                        dest='resmarl_after_safety', type=str, default='true',
+                        dest='resmarl_after_safety', type=str, default='false',
                         help='true/false：是否在安全审查（动作边界裁剪）之后才叠加残差')
+    # P0 门控：命中「停电 / SOC 触界」的楼栋本步 α=0（α_eff = α · gate）。
+    # 这里的字面默认值与 checa.residual.config.ResidualConfig 保持一致（那里是唯一权威 ✓）。
+    parser.add_argument('--residual_gate_enabled', '--residual-gate-enabled',
+                        dest='residual_gate_enabled', type=str, default='true',
+                        help='true/false：门控总开关（默认 true）')
+    parser.add_argument('--residual_gate_outage', '--residual-gate-outage',
+                        dest='residual_gate_outage', type=str, default='true',
+                        help='true/false：停电期间关掉该楼栋残差（默认 true）')
+    parser.add_argument('--residual_gate_soc_bound', '--residual-gate-soc-bound',
+                        dest='residual_gate_soc_bound', type=str, default='true',
+                        help='true/false：SOC 触到电池上下边界时关掉该楼栋残差（默认 true）')
+    parser.add_argument('--residual_gate_soc_margin', '--residual-gate-soc-margin',
+                        dest='residual_gate_soc_margin', type=float, default=0.02,
+                        help='SOC 触界余量（0~1，默认 0.02）')
+    # 安全投影（action_safety_projection）的开关与停电放电幅度：
+    # 默认值仍由 SafetyProjectionConfig 决定（那里是唯一权威 ✓），这里不写 default ⇒ 不传就不覆盖。
+    parser.add_argument('--safety_projection_enabled', '--safety-projection-enabled',
+                        dest='safety_projection_enabled', type=str, default=None,
+                        help='true/false：温控/停电硬投影总开关（默认 true；false ⇒ 残差合成后只做边界裁剪）')
+    parser.add_argument('--outage_discharge_action', '--outage-discharge-action',
+                        dest='outage_discharge_action', type=float, default=None,
+                        help='停电时安全投影强制放电的动作幅度（负=放电，默认 -0.35；0 表示不强制放电）')
+    parser.add_argument('--outage_cooling_floor', '--outage-cooling-floor',
+                        dest='outage_cooling_floor', type=float, default=None,
+                        help='停电期"过热强制制冷"下限的封顶（默认 0.0 = 停电期不强制制冷，'
+                             '让位给 CHESCA 的保供逻辑；>0 表示允许的预算内制冷）')
     # 与 CHESCA.py 同一策略：容忍未识别参数并提示，而不是 exit 2 崩掉
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -237,6 +287,14 @@ def main():
     # 残差开关与三项参数（marl_mode != multi_agent 时它会把残差整体关掉）
     agent_config = apply_resmarl_cli_overrides(agent_config, args)
     marl_mode = str(agent_config.get('marl_mode') or 'multi_agent')
+
+    # 环境层「DHW 储能修复」开关（2026-10-15）：必须在环境构造之前设好 ——
+    #   citylearn/building.py::update_dhw_storage 每步实时读 os.environ['CITYLEARN_DHW_STORAGE_FIX']。
+    #   默认关 ⇒ 逐位等于上游 CityLearn，零侵入 ✓。
+    if agent_config.get('dhw_storage_fix'):
+        os.environ['CITYLEARN_DHW_STORAGE_FIX'] = '1'
+    else:
+        os.environ.pop('CITYLEARN_DHW_STORAGE_FIX', None)
 
     # 模型：先 --multi-agent-checkpoint，再 --train-task-id
     ckpt, source = resolve_checkpoint(args.multi_agent_checkpoint, args.train_task_id, output_dir)
