@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,6 +36,15 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+# ---- 确定性引导：必须写在任何重依赖 import 之前 ------------------------------
+#   PYTHONHASHSEED 只在**解释器启动时**读取一次；进程内赋值无效（老坑）。
+#   未设置时这里把自己重启一次把种子钉住，换取"同 config+同 seed 逐位可复现"。
+#   仅当以脚本方式运行（__main__）时触发；作为库被 import 时是 no-op。
+#   关闭方式：--hashseed random 或环境变量 DISTRICT_HASHSEED=random。
+if __name__ == '__main__':
+    from district_marl._hashseed import ensure_hashseed
+    ensure_hashseed()
+
 # ---- Ray 启动前的环境准备：必须写在 import ray 之前 --------------------------
 from utils.base import log_console, prepare_ray_env
 
@@ -43,10 +53,14 @@ prepare_ray_env()
 import numpy as np
 
 from district_marl import district_config as dc
+from district_marl import district_acceptance as dacc
 from district_marl.district_env import (
     DISTRICT_ENV_CONFIG_KEY,
     DistrictContextRLlibEnv,
 )
+
+#: 验收统计量可选值（供 argparse choices 使用）
+_ACCEPT_STATS = dacc.ACCEPT_STATS
 
 
 # =============================================================================
@@ -345,12 +359,16 @@ def write_train_progress(
     train_epochs_target: int,
     best_score: Optional[float] = None,
     best_epoch: Optional[int] = None,
+    accept: Optional[Mapping[str, Any]] = None,
 ) -> None:
     """把训练进度写进断点目录的 train_progress.json（失败只提示，不打断训练）。
 
     平台（Java 侧 BaseDataService.isUsableCheckpointDir / getTrainModelTaskList）靠这个文件
     判断「该任务的模型可用」并展示进度；字段名与 utils/train.py 的 CkptManager.write_progress
     保持一致，前端可复用同一套解析（epochs_done / train_epochs_target / best_score / updated）。
+
+    `accept`（可选）：验收口径摘要（见 district_acceptance.summarize）。**新增字段**，
+    旧前端会忽略未知键 ⇒ 零破坏；`best_score` 语义与位置保持不变。
     """
     try:
         ckpt_dir = Path(ckpt_dir)
@@ -363,6 +381,12 @@ def write_train_progress(
             'best_metric': str(dc.DISTRICT_BEST_METRIC),
             'updated': time.strftime('%Y-%m-%d %H:%M:%S'),
         }
+        if accept:
+            payload['accept_stat'] = str(accept.get('stat') or '')
+            payload['accept_metric'] = str(accept.get('metric') or '')
+            _av = accept.get('value')
+            payload['accept_score'] = (None if _av is None else float(_av))
+            payload['accept_n_used'] = int(accept.get('n_used') or 0)
         (ckpt_dir / dc.DISTRICT_CKPT_PROGRESS_FILE).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     except Exception as exc:
@@ -400,6 +424,29 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help='【方案 1】按贡献分摊区域惩罚的强度（0=均摊, 1=严格按份额）')
     p.add_argument('--peak-anchored', type=float, default=dc.DISTRICT_PEAK_ANCHORED,
                    help='【方案 2】峰值-锚定：接近/超过本局峰值的步放大惩罚（0=关, 1=开）')
+    # 【方案 5】峰前储能预留（默认 0 = 关 ⇒ 与升级前逐位一致）
+    p.add_argument('--soc-reserve-weight', type=float,
+                   default=dc.DISTRICT_SOC_RESERVE_WEIGHT,
+                   help='【方案 5】傍晚窗内低 SOC 惩罚权重（0=关，默认）。'
+                        '单步最大缺口=目标−0.2=0.4，A/B 档位建议 60 / 150。')
+    p.add_argument('--soc-reserve-hours', type=str,
+                   default=','.join(f'{float(v):g}' for v in dc.DISTRICT_SOC_RESERVE_HOURS),
+                   help='【方案 5】预留窗口的 hour 闭区间，如 "17,22"（hour 取值 1..24）')
+    p.add_argument('--soc-reserve-target', type=float,
+                   default=dc.DISTRICT_SOC_RESERVE_TARGET,
+                   help='【方案 5】窗口内的 SOC 水位目标（低于它才罚；默认 0.60）')
+    # 【方案 6】尖峰步豁免（默认 0 = 关 ⇒ 与方案 5 原样逐位一致）
+    p.add_argument('--soc-reserve-ns-gate', type=float,
+                   default=dc.DISTRICT_SOC_RESERVE_NS_GATE,
+                   help='【方案 6】尖峰步豁免阈值（kW）：社区不可移负荷超过它时本步豁免预留罚。'
+                        '0=关（默认）。建议 6.0 —— 实测命中 #669(15.39) 与 #643(9.10)。')
+    # 【方案 7】尖峰步充放计价（默认 0 = 关 ⇒ 与方案 6 原样逐位一致）
+    p.add_argument('--soc-reserve-spike-weight', type=float,
+                   default=dc.DISTRICT_SOC_RESERVE_SPIKE_WEIGHT,
+                   help='【方案 7】尖峰(豁免)步的电池流计价权重：豁免步 '
+                        'r_i -= w × electrical_storage_electricity_consumption_i '
+                        '（充为正⇒罚 / 放为负⇒奖），堵住"尖峰步反充自己抬新峰"。'
+                        '0=关（默认）。flow 上限≈3.32 kWh ⇒ 建议 60 / 150。')
     # 【方案 3】结构化动作空间
     p.add_argument('--peak-action-dim', type=int, default=dc.DISTRICT_PEAK_ACTION_DIM,
                    help='【方案 3】结构化削峰动作维数（0=关，动作空间保持 3 维；'
@@ -429,6 +476,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help='【方案 4】n-step return。1=单步 TD（默认，= v4）。'
                         '>1 = 多步回报（3 = v4n）。注：>1 需 rollout_fragment_length >= n_step。')
     p.add_argument('--best-metric', type=str, default=dc.DISTRICT_BEST_METRIC)
+    # ---- 验收口径（不影响训练与断点，只影响"报告哪个数"）----
+    p.add_argument('--accept-stat', type=str, default=dc.DISTRICT_ACCEPT_STAT,
+                   choices=list(_ACCEPT_STATS),
+                   help='主验收统计量（默认 mean_last3）。best = 旧的 min-over-epochs 口径。')
+    p.add_argument('--accept-tail', type=int, default=int(dc.DISTRICT_ACCEPT_TAIL),
+                   help='mean_last3 的窗口（默认 3）；仅 mean_last3/mean_last 用得到。')
+    # 确定性协议：值取 random/none/off 表示不干预；在解释器重启时生效（预扫描 argv）
+    p.add_argument('--hashseed', type=str,
+                   default=os.environ.get('DISTRICT_HASHSEED', '0'),
+                   help='固定 PYTHONHASHSEED 以保证同 config+同 seed 逐位可复现'
+                        '（默认 0；random = 不干预）。')
     # nargs='?'：Java 侧对某些脚本会追加**裸** `--resume`（不带值），这里要能兼容
     p.add_argument('--resume', nargs='?', const='', default=None,
                    help='从 checkpoint 目录续训；不带值 = 用本次默认断点目录')
@@ -480,6 +538,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log_console(f'  区域奖励      : 尖峰权重={args.peak_weight:g} '
                 f'团队混合={args.team_share:g} 错峰={args.stagger_weight:g} '
                 f'分摊={args.attribution:g} 峰锚={args.peak_anchored:g}')
+    _res_w = float(args.soc_reserve_weight)
+    if _res_w > 0.0:
+        _gate = float(getattr(args, 'soc_reserve_ns_gate', 0.0) or 0.0)
+        log_console(f'  峰前储能预留  : 权重={_res_w:g} '
+                    f'窗口=[{args.soc_reserve_hours}]h 水位目标={args.soc_reserve_target:g}'
+                    f'（窗内 r -= w × max(0, 目标 − SOC)）')
+        log_console(f'  尖峰步豁免    : ' + (
+            f'开（社区不可移负荷 > {_gate:g} kW 时本步豁免上面那项）'
+            if _gate > 0.0 else '关闭（ns_gate=0）'))
+        _spike_w = float(getattr(args, 'soc_reserve_spike_weight', 0.0) or 0.0)
+        log_console(f'  尖峰充放计价  : ' + (
+            f'开（豁免步 r -= {_spike_w:g} × 本栋电池流；充⇒罚、放⇒奖）'
+            if (_gate > 0.0 and _spike_w > 0.0) else
+            ('关闭（权重 0）' if _gate > 0.0 else '未启用（需先开 ns_gate）')))
+    else:
+        log_console('  峰前储能预留  : 关闭（权重 0）')
     if int(args.peak_action_dim) > 0:
         log_console(f'  结构化动作    : 动作 3→{3 + int(args.peak_action_dim)} 维 '
                     f'(a_peak_resp∈[0,1]) 制冷降额×{args.peak_resp_cool_frac:g} '
@@ -488,18 +562,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         log_console('  结构化动作    : 关闭（动作空间 3 维）')
     log_console(f'  best 选点指标 : {args.best_metric}（次选 {dc.DISTRICT_BEST_TIEBREAK}）')
+    log_console(f'  验收口径      : {args.accept_stat}'
+                f'（主指标 {args.best_metric}，尾窗 {int(args.accept_tail)}；'
+                f'best 保留作参考）')
+    try:
+        from district_marl import _hashseed as _hs
+        log_console(f'  可复现性      : {_hs.describe()}')
+    except Exception:
+        pass
     log_console(f'  输出目录      : {output_dir}')
     log_console(f'  断点目录      : {ckpt_dir}（供评估按任务 id 定位）')
 
     # ---- einsum-free 覆盖：把命令行值写回 district_config 的模块级开关 ----
     dc.DISTRICT_SHARED_POLICY = not args.no_shared_policy
     dc.DISTRICT_BEST_METRIC = str(args.best_metric)
+    # 【验收口径】只影响"报告/比较哪个数"，不影响训练与 best-checkpoint 挑选
+    dc.DISTRICT_ACCEPT_STAT = str(args.accept_stat)
+    dc.DISTRICT_ACCEPT_TAIL = int(args.accept_tail)
     # 奖励参数（CLI → 模块常量 → district_reward_kwargs() 才会用到）
     dc.DISTRICT_PEAK_WEIGHT = float(args.peak_weight)
     dc.DISTRICT_TEAM_SHARE = float(args.team_share)
     dc.DISTRICT_STAGGER_WEIGHT = float(args.stagger_weight)
     dc.DISTRICT_ATTRIBUTION = float(args.attribution)
     dc.DISTRICT_PEAK_ANCHORED = float(args.peak_anchored)
+    # 【方案 5】峰前储能预留（0 = 关 ⇒ 奖励侧整段不执行，与升级前逐位一致）
+    dc.DISTRICT_SOC_RESERVE_WEIGHT = float(args.soc_reserve_weight)
+    dc.DISTRICT_SOC_RESERVE_TARGET = float(args.soc_reserve_target)
+    # 【方案 6】尖峰步豁免阈值（0 = 关 ⇒ 与方案 5 原样逐位一致）
+    dc.DISTRICT_SOC_RESERVE_NS_GATE = float(getattr(args, 'soc_reserve_ns_gate', 0.0) or 0.0)
+    # 【方案 7】尖峰步充放计价（0 = 关 ⇒ 与方案 6 原样逐位一致）
+    dc.DISTRICT_SOC_RESERVE_SPIKE_WEIGHT = float(
+        getattr(args, 'soc_reserve_spike_weight', 0.0) or 0.0)
+    _res_hours = [float(x) for x in str(args.soc_reserve_hours).replace('，', ',').split(',')
+                  if str(x).strip() != '']
+    dc.DISTRICT_SOC_RESERVE_HOURS = (tuple(_res_hours[:2]) if len(_res_hours) >= 2
+                                     else tuple(dc.DISTRICT_SOC_RESERVE_HOURS))
     # 【方案 3】结构化动作维（0 = 关；>0 = 动作空间扩维）
     dc.DISTRICT_PEAK_ACTION_DIM = int(args.peak_action_dim)
     dc.DISTRICT_PEAK_RESP_COOL_FRAC = float(args.peak_resp_cool_frac)
@@ -645,6 +742,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         row.update(metrics)
         rows.append(row)
 
+        # 验收口径（主口径 = 末 K 个评估点均值；best 一并保留作参考）。
+        # 只用于"报告/比较"，不影响上面的 best-checkpoint 挑选与落盘。
+        accept = dacc.summarize(
+            rows, args.best_metric, tail=int(args.accept_tail),
+            tiebreak=dc.DISTRICT_BEST_TIEBREAK, stat=str(args.accept_stat))
+
         score = _score(metrics)
         tag = ''
         if score is not None:
@@ -657,22 +760,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 best_score, best_epoch = score, epoch
                 # 每次刷新 best 都同步进度文件 ⇒ 任务管理页随时能看到「模型可用」
                 write_train_progress(ckpt_dir, epochs_done, int(args.train_epochs),
-                                     score[0], epoch)
+                                     score[0], epoch, accept=accept)
                 tag = f'  ← best（已存 {Path(saved).name}）'
 
+        _acc_v = accept.get('value')
+        _best_v = accept.get('best')
         log_console(
             f'[district-marl] 第 {epoch:>4}/{args.train_epochs} 轮 | '
             f'社区峰值(原始)={metrics.get("district_peak_raw", float("nan")):.3f} '
             f'all_time_peak={metrics.get("all_time_peak_average", float("nan")):.4f} '
             f'daily_peak={metrics.get("daily_peak_average", float("nan")):.4f} '
-            f'cost={metrics.get("cost_total", float("nan")):.4f}{tag}')
+            f'cost={metrics.get("cost_total", float("nan")):.4f} | '
+            f'{args.accept_stat}={("nan" if _acc_v is None else format(_acc_v, ".4f"))} '
+            f'best={("nan" if _best_v is None else format(_best_v, ".4f"))}{tag}')
 
     # ---- 收尾：导出 ----
     _write_metrics_csv(output_dir / 'district_metrics.csv', rows)
+    # 最终验收口径（主口径 = 末 K 个评估点均值；best/final/mean_all 一并留档）
+    acceptance = dacc.summarize(
+        rows, args.best_metric, tail=int(args.accept_tail),
+        tiebreak=dc.DISTRICT_BEST_TIEBREAK, stat=str(args.accept_stat))
     # 训练结束补一次进度文件：覆盖「全程没有刷新过 best」的情形（此时断点目录里
     # 还没有任何 checkpoint 子目录，下面会把末次权重直接存进去，评估才能解析到它）。
     write_train_progress(ckpt_dir, epochs_done, int(args.train_epochs),
-                         best_score[0] if best_score else None, best_epoch)
+                         best_score[0] if best_score else None, best_epoch,
+                         accept=acceptance)
     # 末次权重：有 best 时存到兄弟子目录 final（避免盖掉评估要用的 best），
     # 从未刷新过 best 时直接存进断点目录根（否则根目录里一个 checkpoint 都没有，
     # 评估端 resolve 会找不到可加载的断点）。
@@ -706,9 +818,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             'seed': int(args.seed),
             'train_schema': str(args.schema),
             'eval_schema': str(args.eval_schema),
+            # 验收口径（只影响报告，不影响训练）
+            'accept_stat': str(args.accept_stat),
+            'accept_tail': int(args.accept_tail),
+            'pythonhashseed': (os.environ.get('PYTHONHASHSEED') or ''),
         },
         'best_epoch': best_epoch,
         'best_score': list(best_score) if best_score else None,
+        # ★验收口径块：主口径 `acceptance.value`（默认 mean_last3），`best` 保留作参考。
+        #   旧脚本读 `best_score` 仍然有效；新脚本优先读 `acceptance.value`
+        #   （兼容读法见 district_acceptance.accept_value）。
+        'acceptance': acceptance,
         'history': rows,
         'final_metrics': {k: float(v) for k, v in final.items()
                           if isinstance(v, (int, float))},
@@ -720,6 +840,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log_console('=' * 72)
     log_console(f'[district-marl] 训练结束：{summary["elapsed_s"]}s，'
                 f'best 轮={best_epoch}，best 分数={best_score}')
+    _acc_v = acceptance.get('value')
+    _acc_n = int(acceptance.get('n_used') or 0)
+    log_console(f'  验收（主口径）: {acceptance.get("stat")}'
+                f'（{acceptance.get("metric")}，用 {_acc_n} 个评估点'
+                f'{acceptance.get("epochs")}）= '
+                f'{("nan" if _acc_v is None else format(_acc_v, ".6f"))}') 
+    log_console(f'  参考          : best={acceptance.get("best")}'
+                f'@{acceptance.get("best_epoch")} / '
+                f'final={acceptance.get("final")}@{acceptance.get("final_epoch")} / '
+                f'mean_all={acceptance.get("mean_all")}')
     log_console(f'  区域曲线 : {output_dir / "district_metrics.csv"}')
     log_console(f'  汇总     : {output_dir / "district_summary.json"}')
     if kpi_path:

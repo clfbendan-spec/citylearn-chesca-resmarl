@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -33,6 +34,14 @@ from typing import Dict, List, Optional, Sequence
 _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+# ---- 确定性引导：必须写在任何重依赖 import 之前 ------------------------------
+#   评估虽不学习，但同一 checkpoint 的复评也要求逐位可比（RAM/缓冲区的哈希序同样影响
+#   文本键 dict 的遍历次序）⇒ 与训练入口用同一套协议。
+#   仅当以脚本方式运行（__main__）时触发；作为库被 import 时是 no-op。
+if __name__ == '__main__':
+    from district_marl._hashseed import ensure_hashseed
+    ensure_hashseed()
 
 from utils.base import log_console, prepare_ray_env
 
@@ -248,6 +257,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument('--steps', '--eval-steps', dest='steps', type=int, default=0,
                    help='评估段长；0/不填 = 用数据集自带长度（整段），填值 = 只跑这么多步')
     p.add_argument('--seed', type=int, default=dc.DISTRICT_SEED)
+    # 确定性协议：值取 random/none/off 表示不干预；在解释器重启时生效（预扫描 argv）
+    p.add_argument('--hashseed', type=str,
+                   default=os.environ.get('DISTRICT_HASHSEED', '0'),
+                   help='固定 PYTHONHASHSEED 以保证复评逐位可比（默认 0；random = 不干预）。')
     p.add_argument('--no-district-obs', action='store_true',
                    help='若 checkpoint 是"无区域观测"训练出来的，评估也要关掉')
     p.add_argument('--peak-weight', type=float, default=dc.DISTRICT_PEAK_WEIGHT)
@@ -320,6 +333,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log_console(f'  checkpoint : {checkpoint}')
     log_console(f'  来源       : {ckpt_source}')
     log_console(f'  schema     : {args.schema}    区域观测: {not args.no_district_obs}')
+    try:
+        from district_marl import _hashseed as _hs
+        log_console(f'  可复现性   : {_hs.describe()}')
+    except Exception:
+        pass
     if train_task and str(args.checkpoint or '').strip():
         log_console(f'  提示       : 已按 --train-task-id 定位模型，'
                     f'忽略配置的 checkpoint={str(args.checkpoint).strip()}')

@@ -178,12 +178,32 @@ def _bare_reward(**overrides):
     r.district_team_share = float(overrides.get('district_team_share', 0.0))
     r.district_stagger_weight = float(overrides.get('district_stagger_weight', 0.0))
     r.district_stagger_soc_target = float(overrides.get('district_stagger_soc_target', 0.85))
+    # ---- 方案 1/2：分摊 / 峰值-锚定（默认 0 = 关，与"零侵入"默认一致）----
+    r.district_attribution = float(overrides.get('district_attribution', 0.0))
+    r.district_peak_anchored = float(overrides.get('district_peak_anchored', 0.0))
+    # ---- 方案 5/6/7：峰前预留 / 尖峰豁免 / 尖峰充放计价（默认全关）----
+    r.district_soc_reserve_weight = float(overrides.get('district_soc_reserve_weight', 0.0))
+    r.district_soc_reserve_hours = tuple(overrides.get('district_soc_reserve_hours', (17.0, 22.0)))
+    r.district_soc_reserve_target = float(overrides.get('district_soc_reserve_target', 0.6))
+    r.district_soc_reserve_ns_gate = float(overrides.get('district_soc_reserve_ns_gate', 0.0))
+    r.district_soc_reserve_spike_weight = float(
+        overrides.get('district_soc_reserve_spike_weight', 0.0))
     r._dm_peak = None
     r._dm_peak_sum = 0.0
     r._dm_over_steps = 0
     r._dm_over_amount = 0.0
     r._dm_steps = 0
     r._dm_last_district_net = 0.0
+    r._dm_reserve_steps = 0
+    r._dm_reserve_deficit_sum = 0.0
+    r._dm_reserve_soc_sum = 0.0
+    r._dm_reserve_exempt_steps = 0
+    r._dm_reserve_exempt_ns_sum = 0.0
+    r._dm_reserve_exempt_ns_max = 0.0
+    r._dm_reserve_spike_steps = 0
+    r._dm_reserve_spike_flow_sum = 0.0
+    r._dm_reserve_spike_chg_steps = 0
+    r._dm_reserve_spike_dis_steps = 0
     return r, dr
 
 
@@ -210,10 +230,34 @@ def test_peak_penalty_only_above_target():
         obs = [{'net_electricity_consumption': 1.0}] * 3      # 社区 3.0 < 6.0
         assert np.allclose(r.calculate(obs), [0.0, 0.0, 0.0])
         obs2 = [{'net_electricity_consumption': 3.0}] * 3     # 社区 9.0 > 6.0
-        # 罚 = 2.0 × (9 − 6) = 6.0
-        assert np.allclose(r.calculate(obs2), [-6.0, -6.0, -6.0])
+        # 罚总额 = 2.0 × (9 − 6) = 6.0。
+        # district_attribution=0 ⇒ 旧口径"均摊" ⇒ 每栋承担 6.0 / 3 = 2.0。
+        # （⚠️ 2026-10-15 方案 1 引入分摊后，语义从"每栋各罚满额"改为"均摊"，
+        #   本断言随之更新；按份额分摊见 test_attribution_splits_by_share。）
+        assert np.allclose(r.calculate(obs2), [-2.0, -2.0, -2.0])
         assert r._dm_over_steps == 1
         assert np.isclose(r._dm_over_amount, 3.0)
+    finally:
+        dr.CustomComfortReward.calculate = original
+
+
+def test_attribution_splits_by_share():
+    """方案 1：attribution=1 ⇒ 严格按 own_net_i / dist_net 分摊集体惩罚。"""
+    r, dr = _bare_reward(district_peak_weight=2.0, district_peak_target=6.0,
+                         district_attribution=1.0)
+    original, _ = _patch_parent(dr)
+    try:
+        obs = [{'net_electricity_consumption': 1.0},
+               {'net_electricity_consumption': 1.0},
+               {'net_electricity_consumption': 7.0}]          # 社区 9.0 > 6.0
+        out = np.asarray(r.calculate(obs), dtype=float)
+        # 总罚守恒（= 2.0 × 3.0 = 6.0），但不再均分
+        assert np.isclose(out.sum(), -6.0)
+        # 贡献大的楼承担更多（严格按份额 ⇒ 与 own_net 成比例）
+        assert out[2] < out[0]
+        assert np.isclose(out[0], out[1])
+        # own/dist = 1/9,1/9,7/9 ⇒ 每栋 −6 × own/9
+        assert np.allclose(out, [-6.0 * 1 / 9, -6.0 * 1 / 9, -6.0 * 7 / 9])
     finally:
         dr.CustomComfortReward.calculate = original
 
