@@ -63,6 +63,16 @@ for _p in (str(Path(__file__).resolve().parent), str(ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# ---- 确定性引导（★平台路径的唯一生效点）----------------------------------
+#   `PYTHONHASHSEED` 只在**解释器启动时**读一次，进程内赋值无效 ⇒ 必须"发现不一致就
+#   把自己重启一次"。district_train.py 里那份 bootstrap 写在它自己的 `__main__` 下，
+#   而平台是从**本文件**以 `__main__` 身份启动、再 import 那个模块的
+#   ⇒ `__name__` 是 'district_marl.district_train'，那份 bootstrap **永不触发**
+#   （实测：历史全部平台任务的 district_summary.json 里 pythonhashseed 都是 ""）。
+#   所以引导必须放在这里，且必须在 import 重依赖（ray/torch）之前完成。
 if __name__ == '__main__':
+    from district_marl._hashseed import ensure_hashseed
+    ensure_hashseed()
+
     from district_marl.district_train import main
     sys.exit(main())

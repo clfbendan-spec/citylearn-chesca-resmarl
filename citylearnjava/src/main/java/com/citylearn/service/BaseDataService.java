@@ -4465,6 +4465,19 @@ public class BaseDataService implements SystemConfig {
         env.put("PYTHONIOENCODING", "utf-8");
         env.put("PYTHONUTF8", "1");
         env.put("NO_COLOR", "1");
+        /*
+         * 【可复现性】District-MARL 必须由父进程固定 PYTHONHASHSEED。
+         *   Python 只在**解释器启动时**读一次该变量，进程内 os.environ 赋值完全无效
+         *   ⇒ 只能在这里（启动子进程前）给。未固定时 str 哈希每进程不同 ⇒ 裸 set / 文本键
+         *   dict 的迭代次序被置换 ⇒ 观测与动作次序错位；实测同 config + 同 seed 复跑 8 次
+         *   std=0.039 / range=0.089，**大于全部 A/B 对比的效应量**（≤0.053）。
+         *   仅对 District_MARL_* 生效：其它脚本保持原样，避免改变既有实验的可比性。
+         *   （Python 侧 District_MARL_train.py / District_MARL_eval.py 还有一层
+         *     "未设置就自我重启一次"的兜底，两处任一生效即可。）
+         */
+        if (scriptPath != null && scriptPath.contains("District_MARL")) {
+            env.put("PYTHONHASHSEED", "0");
+        }
 
         List<String> consoleList = taskId != null ? CONSOLE_MAP.get(taskId) : null;
 

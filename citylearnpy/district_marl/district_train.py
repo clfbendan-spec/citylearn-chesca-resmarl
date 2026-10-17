@@ -10,6 +10,25 @@
            而既有流水线是"纯舒适"（P4_COST_WEIGHT=0）
   5) 记录：每 DISTRICT_EVAL_EVERY 轮跑一次贪心评估，落 district_metrics.csv
 
+诊断埋点（2026-10-17 新增，全部为**只读观测**，不改变训练轨迹）
+---------------------------------------------------------------
+  起因：只靠 district_metrics.csv 无法判断"某轮 KPI 突然变好"是真收敛还是
+  单次 rollout 的离群点（实测 320 轮 all_time_peak 从 0.968~0.976 平台突降到 0.9305，
+  同轮 ramping 破 1.0、power_outage_nue 由 0.67 掉到 0.41 —— 与长趋势矛盾）。
+  为此补四类埋点（详见「四·五、诊断埋点」节与
+  `District-MARL-诊断埋点与不适曲线早停.md`）：
+    · district_rl_diag.csv           —— `algo.train()` 返回的 RL 内部指标（原实现整个丢弃）
+                                        实测路径 `info.learner.<policy>.learner_stats.*`
+    · district_reward_breakdown.csv  —— `district_stats()` 区域七项 + 【方案 5/6/7】预留审计
+                                        + 基类 `stats_snapshot()` 的 30+ 项触发/收支
+                                        （这些方法此前**全仓库零调用**）
+    · district_discomfort_curve.*    —— 「不适曲线」：逐栋 hot/cold 比例 + 五条早停判据运行态
+                                        （移植自 utils/train.py 的中期评估机制）
+    · district_trace_ep*.npz         —— 逐时步轨迹（社区净用电 / 逐 agent 奖励、动作、SOC），
+                                        `district_trace_final.npz` 始终落盘，事后复盘离群点用
+  开关：--no-diag（关全部埋点，产物回到改造前）· --discomfort-stop（启用 ①~⑤ 早停，
+  默认只记录不干预）· --min-train-epochs（默认 160）· --trace-every N（默认 0）
+
 与"零改动"的关系
 ----------------
   本文件**只读**原模块（utils.env / utils.train / utils.config），不修改任何原文件。
@@ -19,6 +38,9 @@
   python district_marl/district_train.py --train-epochs 320 --output-dir <dir>
   python district_marl/district_train.py --quick            # 冒烟：3 轮 + 每 1 轮评估
   python district_marl/district_train.py --no-shared-policy # 独立策略对照
+  python district_marl/district_train.py --no-diag          # 关掉全部诊断埋点
+  python district_marl/district_train.py --discomfort-stop  # 开①~⑤早停判据
+  python district_marl/district_train.py --trace-every 20   # 每 20 轮多落一份轨迹
 """
 
 from __future__ import annotations
@@ -221,6 +243,8 @@ def rollout_district(
     deterministic: bool = True,
     max_steps: int = 0,
     export_dir: Optional[Path] = None,
+    trace_out: Optional[Dict[str, Any]] = None,
+    diag_out: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """贪心跑一整段评估，返回区域 KPI 字典。
 
@@ -232,9 +256,30 @@ def rollout_district(
     export_dir 非空时，顺手把官方 KPI 表写成 exported_kpis.csv。
     ⚠️ 必须在**本段评估刚跑完、尚未 reset 之前**导出 —— reset 会清空仿真状态，
        之后再 evaluate() 得到的是"无控制基线"（多为 1.0）。所以导出与评估同环境。
+
+    trace_out 非空 ⇒ 顺手记逐时步轨迹（社区净用电 / 逐 agent 奖励·动作·SOC）。
+    diag_out  非空 ⇒ 顺手把奖励分解（district_stats）与逐栋不适比例（kpi_snapshot）填进去。
+    两者默认 None ⇒ 行为与改前逐位一致（旧调用方无需改动）。
     """
     env = env_cls(env_config)
     metrics: Dict[str, float] = {}
+    _watch = trace_out is not None
+    _tr_net: List[float] = []
+    _tr_rew: List[List[float]] = []
+    _tr_act: List[List[float]] = []
+    _tr_soc: List[List[float]] = []
+    # ---- [埋点 D] SOC 读数：仅当 diag_out 非空时逐时步采（零侵入：默认 None 不采）----
+    _soc_steps: List[List[float]] = []
+    _need_soc = bool(_watch or (diag_out is not None))
+    _hours: Optional[np.ndarray] = None
+    if diag_out is not None:
+        # hour 挂在**每栋建筑的** energy_simulation 上（CityLearnEnv 本身没有该属性，
+        # district_building_microgrid 上也没有）⇒ 取第 1 栋的整段 hour 作为时间轴。
+        try:
+            _b0 = list(getattr(_unwrap_citylearn_env(env), 'buildings', []) or [])[0]
+            _hours = np.asarray(_b0.energy_simulation.hour, dtype=float).reshape(-1)
+        except Exception:
+            _hours = None
     try:
         obs, _info = env.reset()
         keys = list(getattr(env, '_agent_ids', None) or obs.keys())
@@ -250,7 +295,23 @@ def rollout_district(
                     obs[k], policy_id=policy_id_fn(k), explore=not deterministic)
                 actions[k] = _unwrap_action(raw)
             obs, _rew, terminated, truncated, _info = env.step(actions)
-            series.append(district_net_now(env))
+            _net_now = district_net_now(env)
+            series.append(_net_now)
+            if _watch:
+                # 逐时步轨迹：与 metrics 同源，只是**不丢弃**中间过程（原先算完 max/mean 即扔）
+                _tr_net.append(float(_net_now))
+                _tr_rew.append([float(_rew.get(k, float('nan')))
+                                if isinstance(_rew, Mapping) else float('nan') for k in keys])
+                _tr_act.append([float(np.asarray(actions.get(k, [float('nan')]),
+                                                 dtype=float).reshape(-1)[0])
+                                for k in keys])
+            if _need_soc:
+                # 一次读取同时喂两条出口：轨迹（_watch）与 SOC 诊断（diag_out）
+                _soc_now = _soc_by_agent(env, keys)
+                if _watch:
+                    _tr_soc.append(_soc_now)
+                if diag_out is not None:
+                    _soc_steps.append(_soc_now)
             steps += 1
             done = _all_done(terminated, truncated)
             if max_steps and steps >= max_steps:
@@ -271,12 +332,190 @@ def rollout_district(
         metrics.update(official_district_kpis(cle))
         if export_dir is not None:
             export_kpis_csv(cle, Path(export_dir))
+        # ---- 诊断出口（必须在 reset 之前读：reset 会清空累计状态）----
+        if _watch:
+            trace_out['agent_ids'] = np.asarray(keys, dtype=str)
+            trace_out['step'] = np.arange(1, len(_tr_net) + 1, dtype=np.int32)
+            trace_out['district_net'] = np.asarray(_tr_net, dtype=float)
+            trace_out['reward'] = _rows_to_matrix(_tr_rew, len(keys))
+            trace_out['action_cool'] = _rows_to_matrix(_tr_act, len(keys))
+            trace_out['soc'] = _rows_to_matrix(_tr_soc, len(keys))
+        if diag_out is not None:
+            diag_out.update(env_diagnostics(env, keys))
+            # [埋点 D] 电池 SOC 读数（"有没有被学成峰值储备"）；无电池时返回空 ⇒ 不加键
+            _soc_stats = _soc_summary(
+                _rows_to_matrix(_soc_steps, len(keys)), series, _hours)
+            if _soc_stats:
+                diag_out['soc'] = _soc_stats
     finally:
         try:
             env.close()
         except Exception:
             pass
     return metrics
+
+
+def _soc_by_agent(env, keys: Sequence[str]) -> List[float]:
+    """逐楼电池 SOC（读不到给 nan）。顺序与 `keys` 一致。"""
+    cle = _unwrap_citylearn_env(env)
+    out: List[float] = []
+    for k in keys:
+        v = float('nan')
+        try:
+            idx = int(str(k).rsplit('_', 1)[-1])
+            b = cle.buildings[idx]
+            st = getattr(b, 'electrical_storage', None)
+            if st is not None:
+                arr = np.asarray(st.soc, dtype=float).reshape(-1)
+                if arr.size:
+                    v = float(arr[-1])
+        except Exception:
+            pass
+        out.append(v)
+    return out
+
+
+def _rows_to_matrix(rows: Sequence[Sequence[float]], width: int) -> np.ndarray:
+    """把逐时步的 list-of-list 转成 (T, width) 的 float 数组（缺项 = nan）。"""
+    if not rows:
+        return np.zeros((0, max(int(width), 0)), dtype=float)
+    out = np.full((len(rows), int(width)), np.nan, dtype=float)
+    for t, r in enumerate(rows):
+        for i in range(min(len(r), int(width))):
+            try:
+                out[t, i] = float(r[i])
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _safe_nanmean_rows(mat: np.ndarray) -> np.ndarray:
+    """逐行忽略 nan 求均值；整行全 nan 时该行为 nan（不产生任何 warning）。"""
+    if mat is None or getattr(mat, 'size', 0) == 0:
+        return np.zeros(0, dtype=float)
+    m = np.asarray(mat, dtype=float)
+    ok = np.isfinite(m)
+    cnt = ok.sum(axis=1)
+    out = np.full(m.shape[0], np.nan, dtype=float)
+    nz = cnt > 0
+    if nz.any():
+        out[nz] = np.where(ok, m, 0.0)[nz].sum(axis=1) / cnt[nz]
+    return out
+
+
+def _soc_summary(soc: np.ndarray, net: Sequence[float],
+                 hours: Optional[np.ndarray] = None) -> Dict[str, float]:
+    """把逐时步 SOC 压成"电池有没有被学成峰值储备"的读数量（仅诊断，不参与任何选点）。
+
+    【为什么要它】此前的 history / district_metrics.csv 里**没有任何 SOC 列**
+    （`soc_avg` 只在 `district_rl_diag.csv` 的 RL 内部统计里，且是策略侧的采样均值），
+    于是"进 #669 峰步时电池 SOC 只剩 0.20"这类结论只能靠事后拆 npz 轨迹，
+    无法在训练过程中逐轮观察。这里补 6 个区域级读数：
+
+      soc_avg          —— 全程平均 SOC
+      soc_min          —— 全程最低（区域平均口径）
+      soc_at_peak      —— 社区净负荷最大那一步的 SOC（"进峰时还剩多少电"）
+      soc_pre_peak_2h  —— 峰步前 24 步（2 h）的平均 SOC（"峰前有没有提前存电"）
+      soc_evening_min  —— hour∈[17,22] 窗口内最低 SOC（傍晚水位，方案 5 的目标量）
+      soc_evening_avg  —— 同上窗口均值
+
+    口径说明：**先跨 agent 取均值、再跨步取极值**（区域级），与
+    `District-MARL平台跑通验证与指标诊断.md` 里"进 #669 时 0.199/0.200/0.362"
+    那种逐栋读法不同 —— 两者不可互相替代，逐栋明细仍看 `district_trace_*.npz`。
+    无电池 / 读不到时返回空字典（history 行不会多出全 nan 列）。
+    """
+    out: Dict[str, float] = {}
+    if soc is None or getattr(soc, 'size', 0) == 0 or soc.shape[1] == 0:
+        return out
+    region = _safe_nanmean_rows(soc)
+    finite = region[np.isfinite(region)]
+    if finite.size == 0:
+        return out
+    out['soc_avg'] = float(finite.mean())
+    out['soc_min'] = float(finite.min())
+
+    net_arr = np.asarray(list(net), dtype=float).reshape(-1) if len(net) else np.zeros(0)
+    n = int(min(region.size, net_arr.size))
+    if n > 0 and np.isfinite(net_arr[:n]).any():
+        idx = int(np.nanargmax(net_arr[:n]))
+        if np.isfinite(region[idx]):
+            out['soc_at_peak'] = float(region[idx])
+        seg = region[max(0, idx - 24):idx + 1]
+        seg = seg[np.isfinite(seg)]
+        if seg.size:
+            out['soc_pre_peak_2h'] = float(seg.mean())
+
+    if hours is not None and getattr(hours, 'size', 0) >= region.size:
+        h = np.asarray(hours, dtype=float).reshape(-1)[:region.size]
+        with np.errstate(invalid='ignore'):
+            mask = (h >= 17.0) & (h <= 22.0)
+        seg = region[mask]
+        seg = seg[np.isfinite(seg)]
+        if seg.size:
+            out['soc_evening_min'] = float(seg.min())
+            out['soc_evening_avg'] = float(seg.mean())
+    return out
+
+
+def env_diagnostics(env, keys: Sequence[str]) -> Dict[str, Any]:
+    """评估收尾前从 env 抽取诊断量（纯读取，不改变仿真状态）。
+
+    返回：
+      · `reward`          —— DistrictPeakReward.district_stats()：奖励各项分解 + 全部审计计数器
+      · `reward_summary`  —— district_summary() 的一行式可读摘要（挂日志用）
+      · `reward_stats`    —— 基类 stats_snapshot()：过热保底/过吹/过冷关冷/电费/电池流等触发统计
+      · `discomfort`      —— KPI 口径逐栋 hot/cold **比例**（与 utils/train.py 的中期评估同源）
+    """
+    out: Dict[str, Any] = {}
+    cle = _unwrap_citylearn_env(env)
+    rf = getattr(cle, 'reward_function', None) if cle is not None else None
+
+    # ① 区域奖励分解（district_stats 此前全仓库零调用 ⇒ 七项分解与审计计数器白算）
+    try:
+        if rf is not None and hasattr(rf, 'district_stats'):
+            out['reward'] = {str(k): float(v) for k, v in rf.district_stats().items()}
+    except Exception as exc:
+        log_console(f'[district-marl] district_stats 读取失败（忽略）: {exc}')
+    try:
+        if rf is not None and hasattr(rf, 'district_summary'):
+            out['reward_summary'] = str(rf.district_summary())
+    except Exception:
+        pass
+
+    # ② 基类奖励统计（触发次数 / 电量 / 成本原值 / 电池流）
+    try:
+        if rf is not None and hasattr(rf, 'stats_snapshot'):
+            out['reward_stats'] = {
+                str(k): (float(v) if isinstance(v, (int, float)) else v)
+                for k, v in rf.stats_snapshot().items()}
+    except Exception:
+        pass
+
+    # ③ 不适曲线：奖励侧 KPI 累计（主动读数）⇒ 逐栋 hot/cold 比例
+    try:
+        if rf is not None and hasattr(rf, 'kpi_snapshot'):
+            snap = rf.kpi_snapshot()
+            hot = [float(v) for v in (snap.get('hot') or [])]
+            cold = [float(v) for v in (snap.get('cold') or [])]
+            occ = [float(v) for v in (snap.get('occ') or [])]
+            n = max(len(hot), len(cold), len(occ), len(keys))
+            r_hot: List[float] = []
+            r_cold: List[float] = []
+            for i in range(n):
+                d = occ[i] if i < len(occ) else 0.0
+                r_hot.append((hot[i] / d) if (i < len(hot) and d > 0) else float('nan'))
+                r_cold.append((cold[i] / d) if (i < len(cold) and d > 0) else float('nan'))
+            out['discomfort'] = {
+                'hot': r_hot,
+                'cold': r_cold,
+                'occ': occ,
+                'steps_run': int(snap.get('t_cnt') or 0),
+                'mean_T': (float(snap.get('t_sum') or 0.0) / float(snap.get('t_cnt') or 1))
+                          if int(snap.get('t_cnt') or 0) else float('nan'),
+            }
+    except Exception as exc:
+        log_console(f'[district-marl] kpi_snapshot 读取失败（忽略）: {exc}')
+    return out
 
 
 # =============================================================================
@@ -394,6 +633,516 @@ def write_train_progress(
 
 
 # =============================================================================
+# 四·五、诊断埋点（RL 内部指标 / 奖励分解 / 不适曲线 / 轨迹）
+# =============================================================================
+#
+# 为什么要有这一节
+# ----------------
+#   只靠 district_metrics.csv 只能看到"KPI 是什么"，看不到"为什么"：
+#   · `algo.train()` 的返回值原实现**整个丢弃** ⇒ loss / entropy / grad_norm / td_error /
+#     lr / alpha 一条没留 ⇒ 无法区分"某轮 KPI 突变"是真收敛、还是发散/崩坏后的偶然解。
+#   · `DistrictPeakReward.district_stats()/district_summary()` 事先写好了整套奖励分解与
+#     审计计数器，但**全仓库零调用** ⇒ 每次都白算。
+#   · `rollout_district` 把逐时步序列压成 max/mean 就扔 ⇒ 无法事后复盘某个离群点。
+#   · 没有「不适曲线」（Multi-agent-train 的 utils/train.py 有）⇒ 看不到逐栋舒适度的
+#     训练轨迹，也没有基于它的早停判据。
+#
+# 「不适曲线」的含义
+# ------------------
+#   移植自 utils/train.py 的中期评估机制（`mid_eval_history`）：每轮评估记一次**逐栋**
+#   高温/低温比例，串成曲线。用途与那边一致：判断缺口是"随训练下降（训练量不够）"
+#   还是"平着不动（收敛到错的点）"。默认**只记录不干预** —— 早停判据要显式开
+#   `--discomfort-stop` 才生效（零侵入：关时训练轨迹与改前逐位一致）。
+
+# ---- 「不适曲线」早停判据阈值（与 utils/config.py 同源同值）------------------
+_DIS_TARGET_HOT = 0.10          # ① 达标线：逐栋高温比例
+_DIS_TARGET_COLD = 0.10         # ① 达标线：逐栋低温比例
+_DIS_VOTE_RATIO = 0.6           # ② 优于上次的楼数占比 ≥ 该值 = 仍在进步（3 栋 → 2 栋）
+_DIS_VOTE_PATIENCE = 5          # ② 连续多少次"未过投票线"才判停滞
+_DIS_WORSEN_MARGIN = 0.10       # ③ 某栋合计高于「自身历史最优」多少算恶化
+_DIS_WORSEN_PATIENCE = 3        # ③ 连续多少次才算"该栋在恶化"
+_DIS_CONVERGE_SUM = 0.07        # ④ 该栋"高温+低温"合计低于此值算这一段收敛
+_DIS_CONVERGE_PATIENCE = 3      # ④ 连续多少次低于阈值才算"该栋已收敛"
+_DIS_SAT_MAX_HOT = 0.90         # ⑤ 崩坏：单侧饱和线（高温，策略几乎不制冷）
+_DIS_SAT_MAX_COLD = 0.80        # ⑤ 崩坏：单侧饱和线（低温，策略一直制冷）
+_DIS_SAT_EPOCH = 100            # ⑤ 只在该轮体检一次（太早会误杀：第 50 轮连可用模型都高）
+
+# ---- RLlib 结果的实测结构（2026-10-17 在 cl2 环境 dump 过，见 _probe_rl_result.py）----
+# 跑法：加载一个 checkpoint，连续 train() 到 `num_env_steps_trained > 0`
+#   （MIN_SAMPLE_BEFORE_LEARN=512，每轮采样 100 ⇒ **第 5 轮**才开始真正学习）。
+# 实测路径（RLlib 2.4x + RLModule）：
+#   info.learner.<policy_id>.learner_stats.<name>   ← 损失 / alpha / 梯度 / Q 值
+#   info.learner.<policy_id>.<name>                 ← td_error / 训练步数
+#   info.<name>                                     ← SAC target-net 更新计数
+#   顶层 <name>                                      ← 回报 / 采样步数 / 计时
+#
+#: 逐策略 learner_stats 标量（**取 mean 汇总**；见 _RL_MAX_OF_KEYS 另取 max）
+_RL_LEARNER_STATS_KEYS: Tuple[str, ...] = (
+    'actor_loss', 'critic_loss', 'alpha_loss', 'alpha_value', 'log_alpha_value',
+    'grad_gnorm', 'target_entropy', 'policy_t', 'mean_q', 'max_q', 'min_q',
+)
+#: `info.learner.<policy_id>.<name>`（比 learner_stats 高一层）
+_RL_POLICY_LEVEL_KEYS: Tuple[str, ...] = (
+    'mean_td_error', 'num_agent_steps_trained', 'num_grad_updates_lifetime',
+)
+#: 顶层与策略无关的训练进度 / 回报
+_RL_TOP_LEVEL_KEYS: Tuple[str, ...] = (
+    'episode_reward_mean', 'episode_reward_min', 'episode_reward_max',
+    'episode_len_mean', 'episodes_total', 'timesteps_total',
+    'num_env_steps_sampled', 'num_env_steps_trained',
+    'num_agent_steps_sampled', 'num_agent_steps_trained',
+    'num_env_steps_trained_this_iter', 'time_this_iter_s',
+)
+#: `info.<name>` 下的标量（SAC target-net 软更新计数 —— 判"到底有没有在学"的旁证）
+_RL_INFO_KEYS: Tuple[str, ...] = ('num_target_updates', 'last_target_update_ts')
+#: 在 mean 之外再记一份「跨策略 max」的指标（探测"某个 agent 独自发散"）
+_RL_MAX_OF_KEYS: Tuple[str, ...] = ('actor_loss', 'critic_loss', 'grad_gnorm',
+                                    'mean_td_error')
+#: 兜底递归查找时**必须跳过**的子树。
+#: 实测 `config.*` 里挂着 `initial_alpha` / `lr` / `entropy_learning_rate` 这类
+#: **配置值**，不加过滤会被 `find_metric` 当成运行时指标收走 —— 历史 bug：
+#: `district_rl_diag.csv` 里 `rl_alpha` 恒等于 1，命中的正是 `config.initial_alpha`。
+_RL_SKIP_SUBTREES: Tuple[str, ...] = ('config', 'env_config')
+#: 全部尝试提取的指标名（兜底递归用）
+_RL_METRIC_KEYS: Tuple[str, ...] = (
+    _RL_LEARNER_STATS_KEYS + _RL_POLICY_LEVEL_KEYS + _RL_TOP_LEVEL_KEYS + _RL_INFO_KEYS
+)
+
+#: 不适曲线文件名（CSV = 曲线本体；JSON = 供续训继承与前端画图）
+_DIS_CURVE_CSV = 'district_discomfort_curve.csv'
+_DIS_CURVE_JSON = 'district_discomfort_curve.json'
+
+
+def _f(v: Any) -> float:
+    """尽力转 float；转不了或非有限 ⇒ nan（CSV/JSON 里一律写成空）。"""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return float('nan')
+    return f if np.isfinite(f) else float('nan')
+
+
+def _csv_cell(v: Any) -> str:
+    """把任意值转成一个 CSV 单元格（NaN/None → 空；含逗号/引号 → 加引号）。"""
+    if v is None:
+        return ''
+    if isinstance(v, str):
+        s = v.replace('\n', ' ').replace('\r', ' ')
+        return ('"' + s.replace('"', "'") + '"') if (',' in s or '"' in s) else s
+    f = _f(v)
+    return '' if not np.isfinite(f) else ('%g' % f)
+
+
+def _numeric_only(d: Mapping[str, Any]) -> Dict[str, float]:
+    """只保留可转 float 的键 —— 诊断 CSV 里不落字符串，避免重建表头时被逗号切坏。"""
+    out: Dict[str, float] = {}
+    for k, v in d.items():
+        if isinstance(v, (bool, str)) or v is None:
+            continue
+        if isinstance(v, (int, float)):
+            out[str(k)] = float(v)
+    return out
+
+
+def trace_steps(trace: Mapping[str, Any]) -> int:
+    """轨迹步数。
+
+    ⚠️ 不能写成 `len(trace.get('step') or [])` —— `step` 是 ndarray，
+    `arr or []` 会走 Python 真值判断 ⇒ numpy 抛
+    「truth value of an array with more than one element is ambiguous」。
+    """
+    try:
+        return int(len(trace.get('step')))
+    except Exception:
+        return 0
+
+
+def append_csv_row(path: Path, row: Mapping[str, Any]) -> None:
+    """把一行诊断指标**追加**进 CSV；列在首次写入时固定，之后新出现的列会补进表头。
+
+    与 `_write_metrics_csv` 的区别：那个是训练收尾一次性覆盖写（列 = 所有行键的并集），
+    本函数是**流式追加** ⇒ 训练中途被 kill 也不会丢掉已经跑出来的诊断曲线。
+    """
+    try:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        header: List[str] = []
+        body: List[str] = []
+        if path.is_file():
+            lines = path.read_text(encoding='utf-8').splitlines()
+            if lines:
+                header = lines[0].split(',')
+                body = lines[1:]
+        missing = [str(k) for k in row if str(k) not in header]
+        if missing:
+            old_header = list(header)
+            header = header + missing
+            rebuilt: List[str] = []
+            for ln in body:
+                cells = ln.split(',')
+                old = dict(zip(old_header, cells))
+                rebuilt.append(','.join(old.get(str(c), '') for c in header))
+            body = rebuilt
+            path.write_text(','.join(header) + '\n' + ''.join(x + '\n' for x in body),
+                            encoding='utf-8')
+        with path.open('a', encoding='utf-8', newline='') as fh:
+            fh.write(','.join(_csv_cell(row.get(c)) for c in header) + '\n')
+    except Exception as exc:
+        log_console(f'[district-marl] 诊断 CSV 写入失败（忽略）: {exc}')
+
+
+# -----------------------------------------------------------------------------
+# RL 内部指标：`algo.train()` 的返回值（原实现整个丢弃）
+# -----------------------------------------------------------------------------
+def _strip_config(obj: Any) -> Any:
+    """递归剔除 `config` / `env_config` 子树（兜底递归查找前先过一遍）。"""
+    if isinstance(obj, Mapping):
+        return {k: _strip_config(v) for k, v in obj.items()
+                if str(k) not in _RL_SKIP_SUBTREES}
+    if isinstance(obj, (list, tuple)):
+        return [_strip_config(v) for v in obj]
+    return obj
+
+
+def _rl_num(v: Any) -> Optional[float]:
+    """数值 → float（非有限/非数值 ⇒ None）。
+
+    ⚠️ 必须显式接受 `np.floating` / `np.integer`：RLlib 的 learner_stats 多为
+    `np.float32`，而 `isinstance(np.float32(1), float)` 是 **False** ⇒ 只写
+    `(int, float)` 会把真正的 loss 全部漏掉（旧版就是这么漏的）。
+    """
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float, np.integer, np.floating)):
+        f = float(v)
+        return f if np.isfinite(f) else None
+    return None
+
+
+def rl_stats_from_result(result: Any) -> Dict[str, float]:
+    """从 RLlib `algo.train()` 的返回里抽出 RL 内部指标（**只读观测**）。
+
+    取数顺序：**精确路径优先**（实测版式，见 `_RL_LEARNER_STATS_KEYS` 上方注释），
+    再对没取到的名字做一次「剔除 config 子树后的递归兜底」（抗 RLlib 版本漂移）。
+    取不到就不写该列 —— 不会伪造 0。
+
+    ⚠️ 两点实测坑：
+      · `info.learner.<policy_id>.td_error` 是**数组**（逐样本），不是标量 ⇒ 不取，
+        只取同层的 `mean_td_error`。
+      · 前 `MIN_SAMPLE_BEFORE_LEARN`(=512) 步之前 learner 子树**本来就是空的**
+        （还没开始学）⇒ 那几轮只有顶层指标，属正常现象，不是埋点故障。
+    """
+    out: Dict[str, float] = {}
+    if not isinstance(result, Mapping):
+        return out
+
+    # ---- 1) 逐策略 learner 指标（跨策略取 mean；损失/梯度类再加一份 max）----
+    info = result.get('info')
+    info = info if isinstance(info, Mapping) else {}
+    learner = info.get('learner')
+    learner = learner if isinstance(learner, Mapping) else {}
+
+    buckets: Dict[str, List[float]] = {}
+    n_pol = 0
+    for _pid, pdata in learner.items():
+        if not isinstance(pdata, Mapping):
+            continue
+        n_pol += 1
+        stats = pdata.get('learner_stats')
+        stats = stats if isinstance(stats, Mapping) else {}
+        for name in _RL_LEARNER_STATS_KEYS:
+            v = _rl_num(stats.get(name))
+            if v is not None:
+                buckets.setdefault(name, []).append(v)
+        for name in _RL_POLICY_LEVEL_KEYS:
+            v = _rl_num(pdata.get(name))
+            if v is not None:
+                buckets.setdefault(name, []).append(v)
+    for name, vals in buckets.items():
+        out['rl_' + name] = float(np.mean(vals))
+        if name in _RL_MAX_OF_KEYS and len(vals) > 1:
+            out['rl_' + name + '_max'] = float(np.max(vals))
+    if n_pol:
+        out['rl_n_policies'] = float(n_pol)
+
+    # ---- 2) info 层标量 ----
+    for name in _RL_INFO_KEYS:
+        v = _rl_num(info.get(name))
+        if v is not None:
+            out['rl_' + name] = v
+
+    # ---- 3) 顶层标量 ----
+    for name in _RL_TOP_LEVEL_KEYS:
+        v = _rl_num(result.get(name))
+        if v is not None:
+            out['rl_' + name] = v
+
+    # ---- 4) 兜底递归（仅在精确路径没取全时执行，避免每轮白白深拷贝整份 result）----
+    missing = [n for n in _RL_METRIC_KEYS if ('rl_' + n) not in out]
+    if missing:
+        try:
+            from utils.train import find_metric
+            clean = _strip_config(result)
+            for name in missing:
+                v = _rl_num(find_metric(clean, name))
+                if v is not None:
+                    out['rl_' + name] = v
+        except Exception:
+            pass
+    return out
+
+
+# -----------------------------------------------------------------------------
+# 不适曲线：逐栋 hot/cold 比例的拍平 / 打印 / 持久化 / 早停判据
+# -----------------------------------------------------------------------------
+def flatten_discomfort(epoch: int, diag: Mapping[str, Any]) -> Dict[str, Any]:
+    """把一次评估的逐栋不适比例拍平成一行（`hot_b1..N` / `cold_b1..N` / `sum_b1..N` / `max_*`）。"""
+    d = diag.get('discomfort') or {}
+    hot = [_f(v) for v in (d.get('hot') or [])]
+    cold = [_f(v) for v in (d.get('cold') or [])]
+    n = max(len(hot), len(cold))
+    row: Dict[str, Any] = {'epoch': int(epoch)}
+    sums: List[float] = []
+    for i in range(n):
+        h = hot[i] if i < len(hot) else float('nan')
+        c = cold[i] if i < len(cold) else float('nan')
+        row[f'hot_b{i + 1}'] = h
+        row[f'cold_b{i + 1}'] = c
+        s = h + c
+        row[f'sum_b{i + 1}'] = s
+        if np.isfinite(s):
+            sums.append(s)
+    fin_h = [v for v in hot if np.isfinite(v)]
+    fin_c = [v for v in cold if np.isfinite(v)]
+    row['max_hot'] = max(fin_h) if fin_h else float('nan')
+    row['max_cold'] = max(fin_c) if fin_c else float('nan')
+    row['sum_all'] = float(np.sum(sums)) if sums else float('nan')
+    row['mean_T'] = _f(d.get('mean_T'))
+    row['steps_run'] = int(d.get('steps_run') or 0)
+    return row
+
+
+def _pct(v: Any) -> str:
+    """比例 → '12.3%'；无效 → ' na '（与 utils/train.py 的 _pct 同款）。"""
+    f = _f(v)
+    return ' na ' if not np.isfinite(f) else f'{f:5.1%}'
+
+
+def format_discomfort_line(epoch: int, row: Mapping[str, Any], tag: str = '') -> str:
+    """一行式不适曲线打印（`B1:高温/低温 … 逐栋合计`），格式对齐中期评估行。"""
+    parts: List[str] = []
+    sums: List[str] = []
+    i = 1
+    while f'hot_b{i}' in row:
+        parts.append(f'B{i}:{_pct(row[f"hot_b{i}"])}/{_pct(row.get(f"cold_b{i}"))}')
+        sums.append(f'B{i} {_pct(row.get(f"sum_b{i}"))}')
+        i += 1
+    return (f'[不适曲线] 第 {epoch} 轮 | 高温/低温 ' + ' '.join(parts)
+            + ' | 逐栋合计 ' + ' / '.join(sums)
+            + f' | max 高温={_pct(row.get("max_hot"))} 低温={_pct(row.get("max_cold"))}'
+            + (f' | {tag}' if tag else ''))
+
+
+def format_curve_overview(
+    curve: Sequence[Mapping[str, Any]], head: int = 8, tail: int = 8,
+) -> List[str]:
+    """把不适曲线打成多行「训练曲线」摘要（首尾各 N 点，中间省略）。"""
+    if not curve:
+        return []
+    lines = ['[不适曲线] 训练曲线（逐栋 高温/低温，KPI 口径；完整数据见 CSV/JSON）']
+    idx = list(range(len(curve)))
+    show = idx if len(curve) <= head + tail else (idx[:head] + [-1] + idx[-tail:])
+    for i in show:
+        if i == -1:
+            lines.append(f'  … 省略 {len(curve) - head - tail} 个评估点 …')
+            continue
+        row = curve[i]
+        lines.append('  ' + format_discomfort_line(int(row.get('epoch') or 0), row))
+    return lines
+
+
+def save_discomfort_curve(
+    paths: Sequence[Path],
+    curve: Sequence[Mapping[str, Any]],
+    state: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """把不适曲线（+ 早停判据运行态）写盘，供续训继承与前端画图。
+
+    写成 `{"curve": [...], "stop_state": {...}}` 而不是裸 list —— 早停判据的
+    `prev_sums / best_sums / worsen / conv / vote_stale` 也要跨续训继承，
+    否则续训后判据会从零开始（与 utils/train.py 修复过的 P19-1 是同一类坑）。
+    """
+    try:
+        payload = json.dumps(
+            {'curve': list(curve),
+             'stop_state': (dict(state) if isinstance(state, Mapping) else {})},
+            ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        return
+    for p in paths:
+        try:
+            p = Path(p)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(payload, encoding='utf-8')
+        except Exception as exc:
+            log_console(f'[district-marl] 不适曲线写盘失败（忽略）: {exc}')
+
+
+def load_discomfort_curve(
+    paths: Sequence[Path],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """读回 `(曲线, 早停判据运行态)`（旧格式裸 list 也兼容）。
+
+    与 utils/train.py 的 P19-1 同一个坑：续训时**绝不能**用空数组覆盖已有曲线 ——
+    这里只在"读到非空曲线"时才返回，调用方也只在该返回值非空时才覆盖运行态。
+    """
+    for p in paths:
+        try:
+            p = Path(p)
+            if not p.is_file():
+                continue
+            data = json.loads(p.read_text(encoding='utf-8'))
+            if isinstance(data, dict):
+                curve = [d for d in (data.get('curve') or []) if isinstance(d, dict)]
+                state = data.get('stop_state')
+                state = state if isinstance(state, dict) else {}
+            elif isinstance(data, list):          # 兼容旧格式（裸 list）
+                curve, state = [d for d in data if isinstance(d, dict)], {}
+            else:
+                continue
+            if curve:
+                log_console(f'[district-marl] 不适曲线：从 {p} 继承 {len(curve)} 个历史点'
+                            f'（早停判据运行态 {len(state)} 项）')
+                return curve, state
+        except Exception as exc:
+            log_console(f'[district-marl] 不适曲线读取失败（忽略）: {exc}')
+    return [], {}
+
+
+def discomfort_stop_check(
+    log,
+    epoch: int,
+    row: Mapping[str, Any],
+    state: Dict[str, Any],
+    min_train_epochs: int,
+    enabled: bool,
+) -> Optional[str]:
+    """「不适曲线」早停判据（移植自 utils/train.py 中期评估的 ①~⑤）。
+
+    ① 达标     —— 全部楼 高温 ≤10% 且 低温 ≤10%
+    ② 投票停滞 —— 连续 5 次"优于上次"的楼数 < 60%
+    ③ 单栋恶化 —— 某栋连续 3 次高于「自身历史最优 +10%」
+    ④ 全楼收敛 —— 逐栋「高温+低温」连续 3 次 < 7%
+    ⑤ 崩坏止损 —— 只在第 100 轮体检一次：某栋高温 >90% 或 低温 >80%
+
+    返回非 None = 应停训（值为原因）；`enabled=False` 时只更新 `state`、永不返回原因
+    ⇒ 训练轨迹与改前逐位一致（判据只在显式开启时生效）。
+    """
+    hot = [_f(row.get(f'hot_b{i + 1}')) for i in range(64)]
+    cold = [_f(row.get(f'cold_b{i + 1}')) for i in range(64)]
+    sums = [_f(row.get(f'sum_b{i + 1}')) for i in range(64)]
+    # 截到实际存在的栋数（后面全是 nan）
+    n_b = 0
+    for i in range(64):
+        if f'sum_b{i + 1}' not in row:
+            break
+        n_b = i + 1
+    hot, cold, sums = hot[:n_b], cold[:n_b], sums[:n_b]
+
+    if n_b == 0 or not all(np.isfinite(v) for v in sums):
+        state['usable'] = False
+        log_console(f'[不适曲线][警告] 第 {epoch} 轮探针数据不可用（n={n_b}，比例=na）→ '
+                    f'该行不能用于判断模型好坏（检查占用人数读取 / kpi_snapshot 是否为空）')
+        return None
+    state['usable'] = True
+
+    # ---- ② 投票：本次「高温+低温」合计是否优于上次 ----
+    prev = state.get('prev_sums')
+    need = max(1, int(np.ceil(_DIS_VOTE_RATIO * n_b)))
+    if prev is not None and len(prev) == n_b:
+        better = [k for k in range(n_b) if sums[k] < prev[k]]
+        state['vote_stale'] = (0 if len(better) >= need
+                               else int(state.get('vote_stale') or 0) + 1)
+        state['vote_txt'] = (f'优于上次 {len(better)}/{n_b} 栋（需≥{need}）'
+                             f' 未过线计数 {state["vote_stale"]}/{_DIS_VOTE_PATIENCE}')
+    else:
+        state['vote_txt'] = '首次评估（无对比基线）'
+    state['prev_sums'] = list(sums)
+
+    # ---- ③ 单栋恶化：逐栋跟踪自身历史最优 ----
+    best = state.get('best_sums')
+    if best is None or len(best) != n_b:
+        best = list(sums)
+        worsen = [0] * n_b
+    else:
+        worsen = list(state.get('worsen') or [0] * n_b)
+        for k in range(n_b):
+            if sums[k] < best[k]:
+                best[k] = float(sums[k])
+                worsen[k] = 0
+            elif sums[k] > best[k] + _DIS_WORSEN_MARGIN:
+                worsen[k] += 1
+            else:
+                worsen[k] = 0
+    state['best_sums'] = list(best)
+    state['worsen'] = worsen
+    state['worsen_txt'] = ('单栋最优 ' + ' / '.join(f'B{k + 1} {best[k]:.1%}' for k in range(n_b))
+                           + ' | 恶化计数 ' + ' / '.join(
+                               f'B{k + 1} {worsen[k]}/{_DIS_WORSEN_PATIENCE}' for k in range(n_b)))
+
+    # ---- ④ 逐栋收敛标记 ----
+    conv = list(state.get('conv') or [0] * n_b)
+    if len(conv) != n_b:
+        conv = [0] * n_b
+    for k in range(n_b):
+        conv[k] = (conv[k] + 1) if sums[k] < _DIS_CONVERGE_SUM else 0
+    state['conv'] = conv
+    state['conv_txt'] = (' / '.join(
+        f'B{k + 1} {"已收敛" if conv[k] >= _DIS_CONVERGE_PATIENCE else "未收敛"}'
+        f'({sums[k]:.1%},连续 {conv[k]}/{_DIS_CONVERGE_PATIENCE})' for k in range(n_b))
+        + f'（阈值 合计<{_DIS_CONVERGE_SUM:.0%}）')
+
+    if not enabled:
+        return None
+
+    # ---- ⑤ 崩坏止损（只体检一次，不受最小轮数限制）----
+    if epoch == _DIS_SAT_EPOCH:
+        sat: List[str] = []
+        for k in range(n_b):
+            if np.isfinite(hot[k]) and hot[k] > _DIS_SAT_MAX_HOT:
+                sat.append(f'B{k + 1} 高温 {hot[k]:.1%} > {_DIS_SAT_MAX_HOT:.0%}')
+            if np.isfinite(cold[k]) and cold[k] > _DIS_SAT_MAX_COLD:
+                sat.append(f'B{k + 1} 低温 {cold[k]:.1%} > {_DIS_SAT_MAX_COLD:.0%}')
+        if sat:
+            return f'崩坏止损（第 {epoch} 轮体检）：策略已饱和在单一极端 —— ' + '；'.join(sat)
+
+    if epoch < int(min_train_epochs):
+        return None
+
+    # ---- ① 达标即停 ----
+    if (all(np.isfinite(v) for v in hot + cold)
+            and max(hot) <= _DIS_TARGET_HOT and max(cold) <= _DIS_TARGET_COLD):
+        return (f'达标：全部楼 高温≤{_DIS_TARGET_HOT:.0%} 且 低温≤{_DIS_TARGET_COLD:.0%}'
+                f'（最差 高温 {max(hot):.1%} / 低温 {max(cold):.1%}）')
+    # ---- ④ 全楼稳定收敛 ----
+    if all(c >= _DIS_CONVERGE_PATIENCE for c in conv):
+        return (f'全楼稳定收敛：逐栋「高温+低温」合计连续 {_DIS_CONVERGE_PATIENCE} 次低于 '
+                f'{_DIS_CONVERGE_SUM:.0%}（当前 '
+                + ' / '.join(f'B{k + 1} {sums[k]:.1%}' for k in range(n_b)) + '）')
+    # ---- ② 投票停滞 ----
+    if int(state.get('vote_stale') or 0) >= _DIS_VOTE_PATIENCE:
+        return (f'停滞（投票制）：连续 {state["vote_stale"]} 次评估里"优于上一次"的楼数'
+                f'都没到 {need}/{n_b} 栋')
+    # ---- ③ 单栋恶化 ----
+    bad = [k for k in range(n_b) if worsen[k] >= _DIS_WORSEN_PATIENCE]
+    if bad:
+        return ('单栋恶化：' + '、'.join(f'B{k + 1}' for k in bad)
+                + f' 连续 {_DIS_WORSEN_PATIENCE} 次高于「自身历史最优 +{_DIS_WORSEN_MARGIN:.0%}」'
+                + '（避免用更差的模型去跑正式评估）')
+    return None
+
+
+# =============================================================================
 # 四、命令行
 # =============================================================================
 
@@ -492,6 +1241,36 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help='从 checkpoint 目录续训；不带值 = 用本次默认断点目录')
     p.add_argument('--quick', action='store_true',
                    help='冒烟模式：3 轮 + 每轮评估 + 短评估段')
+    # ---- 诊断埋点（2026-10-17；见文首「诊断埋点」与「四·五」节）------------
+    #   默认**全开**：它们只写额外文件，不改 `algo.train()` / 评估 / 选点 / 断点任何一步。
+    p.add_argument('--no-diag', action='store_true',
+                   help='关闭全部诊断埋点（RL 内部指标 / 奖励分解 / 不适曲线 / 轨迹 / SOC 读数）'
+                        '⇒ 产物回到旧行为：只写 district_metrics.csv / district_summary.json'
+                        '/ exported_kpis.csv。⚠️ summary.json 仍会多 `early_stop` 块与 '
+                        '`config.peak_stop_patience` 两个键；要连这两个也回到旧字节，'
+                        '再加 `--peak-stop-patience 0`。训练轨迹始终逐位一致')
+    p.add_argument('--discomfort-stop', action='store_true',
+                   help='开启「不适曲线」早停判据（①达标 ②投票停滞 ③单栋恶化 ④收敛 ⑤崩坏）。'
+                        '默认**关** ⇒ 只记录曲线、不干预训练（零侵入）；'
+                        '开启后训练会提前结束，但收尾的正式评估照常跑')
+    p.add_argument('--min-train-epochs', type=int, default=160,
+                   help='早停判据 ①②③④ 的生效率前最小轮数（默认 160）。'
+                        '⑤崩坏止损只体检一次、受 _DIS_SAT_EPOCH=100 控制，不受此限制')
+    p.add_argument('--peak-stop-patience', type=int,
+                   default=int(getattr(dc, 'DISTRICT_PEAK_STOP_PATIENCE', 0) or 0),
+                   help='【峰值早停】连续 N 轮未刷新 best（epoch − best_epoch ≥ N）即提前收工'
+                        '（默认 40；0 = 关）。best-checkpoint 在停之前已保存 ⇒ 收尾评估'
+                        '用的仍是最优权重、产物格式不变。'
+                        'v4 的 best_epoch=60/100/100，在 100 轮任务下不会触发；'
+                        '320 轮任务通常能省掉后 40%~50% 的时间，并避免末窗落到更差的评估点。')
+    p.add_argument('--peak-stop-min-epochs', type=int,
+                   default=int(getattr(dc, 'DISTRICT_PEAK_STOP_MIN_EPOCHS', 0) or 0),
+                   help='【峰值早停】最早轮数下限（默认 100；0 = 自动取 min(轮数,100)）。'
+                        '与 patience 是「且」关系。默认值保证 100 轮任务**永远跑满** ⇒ '
+                        'v4 口径分毫不动；320 轮任务仍能省掉后半段。')
+    p.add_argument('--trace-every', type=int, default=0,
+                   help='每 N 次评估额外落一份逐时步轨迹 district_trace_ep<轮>.npz'
+                        '（0 = 不额外落；**最终评估始终**落 district_trace_final.npz）')
     # parse_known_args：平台可能追加本脚本不认识的 flag（例如 Multi-agent 系列专用参数），
     # 认识不了就忽略并提示，避免因一个无关参数直接 argparse 退出（exit 2）。
     args, unknown = p.parse_known_args(argv)
@@ -572,6 +1351,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         pass
     log_console(f'  输出目录      : {output_dir}')
     log_console(f'  断点目录      : {ckpt_dir}（供评估按任务 id 定位）')
+    diag_on = not bool(getattr(args, 'no_diag', False))
+    _stop_on = bool(getattr(args, 'discomfort_stop', False))
+    log_console('  诊断埋点      : ' + (
+        '关闭（--no-diag）⇒ 只写 district_metrics.csv'
+        if not diag_on else
+        '开（district_rl_diag.csv / district_reward_breakdown.csv / '
+        'district_discomfort_curve.* / district_trace_ep*.npz）'))
+    log_console('  不适曲线早停  : ' + (
+        f'开（最小轮数 {int(getattr(args, "min_train_epochs", 160) or 160)}；'
+        f'①达标②投票停滞③单栋恶化④收敛⑤崩坏）'
+        if (_stop_on and diag_on) else
+        ('关（仅记录曲线，不干预训练）' if diag_on else '不可用（诊断埋点已关）')))
+    _peak_patience_log = int(getattr(args, 'peak_stop_patience', 0) or 0)
+    _peak_min_log = int(getattr(args, 'peak_stop_min_epochs', 0) or 0) or min(
+        int(args.train_epochs), 100)
+    log_console('  峰值早停      : ' + (
+        f'开（≥{_peak_min_log} 轮且连续 {_peak_patience_log} 轮未刷新 best 即停；'
+        f'停前 best-checkpoint 已保存）'
+        if _peak_patience_log > 0 else '关（跑满设定轮数）'))
 
     # ---- einsum-free 覆盖：把命令行值写回 district_config 的模块级开关 ----
     dc.DISTRICT_SHARED_POLICY = not args.no_shared_policy
@@ -724,23 +1522,119 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     epochs_done = 0
     t0 = time.perf_counter()
 
+    # ---- 诊断埋点的运行态（diag_on=False ⇒ 下面全为空，行为与改前逐位一致）----
+    _curve_paths = [output_dir / _DIS_CURVE_JSON, ckpt_dir / _DIS_CURVE_JSON]
+    _rl_csv = output_dir / 'district_rl_diag.csv'
+    _reward_csv = output_dir / 'district_reward_breakdown.csv'
+    _curve_csv = output_dir / _DIS_CURVE_CSV
+    _trace_final_npz = output_dir / 'district_trace_final.npz'
+    _curve: List[Dict[str, Any]] = []
+    _stop_state: Dict[str, Any] = {}
+    _stop_min_epochs = int(getattr(args, 'min_train_epochs', 160) or 160)
+    _stop_on = bool(diag_on and getattr(args, 'discomfort_stop', False))
+    # 【峰值早停】与"不适曲线早停"是两个独立机制：前者按**区域峰值 best 停滞**判定，
+    # 不依赖诊断埋点（--no-diag 也能用）；0 = 关。
+    _peak_patience = int(getattr(args, 'peak_stop_patience', 0) or 0)
+    # 最早轮数下限：0/未给 ⇒ min(总轮数, 100) ⇒ 100 轮任务永远跑满（旧口径不动）
+    _peak_min_epochs = int(getattr(args, 'peak_stop_min_epochs', 0) or 0)
+    if _peak_min_epochs <= 0:
+        _peak_min_epochs = min(int(args.train_epochs), 100)
+    _stopped_reason: Optional[str] = None
+    _pending_stop: Optional[str] = None      # 本轮判出的停训原因（延迟到选点之后再停）
+    _n_rl_rows = 0
+    _n_reward_rows = 0
+    _n_trace_files = 0
+    if diag_on:
+        # 续训：继承已有曲线与早停判据基线（utils/train.py 的 P19-1 同一个坑：
+        #   绝不能拿空数组覆盖已有曲线 ⇒ load 只在读到非空时才返回）
+        _curve, _stop_state = load_discomfort_curve(_curve_paths)
+
     for epoch in range(1, int(args.train_epochs) + 1):
         try:
-            algo.train()
+            _result = algo.train()
         except Exception as exc:
             log_console(f'[district-marl] 第 {epoch} 轮训练异常，提前收工: {exc}')
             break
         epochs_done = epoch
 
+        # ---- [埋点 P0-①] RL 内部指标：**每轮**都记（不受 --eval-every 影响）----
+        #   粒度必须逐轮 —— loss / entropy / grad_norm 曲线要能看出"KPI 突变"之前
+        #   有没有发散前兆；原实现把 `algo.train()` 返回值整个丢弃，等于零观测。
+        if diag_on:
+            _rl_row: Dict[str, Any] = {
+                'epoch': epoch,
+                'elapsed_s': round(time.perf_counter() - t0, 1),
+            }
+            _rl_row.update(rl_stats_from_result(_result))
+            if len(_rl_row) > 2:
+                append_csv_row(_rl_csv, _rl_row)
+                _n_rl_rows += 1
+
         if epoch % max(1, int(args.eval_every)) != 0 and epoch != int(args.train_epochs):
             continue
 
+        # ---- [埋点 P0-②/③] 评估顺带取奖励分解与不适曲线；轨迹按 --trace-every ----
+        _diag_out: Dict[str, Any] = {}
+        _trace: Dict[str, Any] = {}
+        _every = int(getattr(args, 'trace_every', 0) or 0)
+        _want_trace = bool(diag_on and _every and (epoch % _every == 0))
         metrics = rollout_district(
             algo, DistrictContextRLlibEnv, eval_env_config, policy_id_fn,
-            deterministic=True, max_steps=int(args.eval_steps or 0))
+            deterministic=True, max_steps=int(args.eval_steps or 0),
+            trace_out=(_trace if _want_trace else None),
+            diag_out=(_diag_out if diag_on else None))
         row: Dict[str, Any] = {'epoch': epoch, 'elapsed_s': round(time.perf_counter() - t0, 1)}
         row.update(metrics)
+        # [埋点 D] SOC 读数并入本轮行 ⇒ 同时进 district_summary.history 与
+        # district_metrics.csv；--no-diag 时 _diag_out 为空 ⇒ 不多键（旧产物逐字节一致）
+        if diag_on and _diag_out.get('soc'):
+            row.update(_diag_out['soc'])
         rows.append(row)
+
+        if diag_on:
+            # ---- 奖励分解落盘（district_stats/district_summary 此前全仓库零调用）----
+            if _diag_out.get('reward'):
+                # tag 区分两种评估：loop = 循环内（每 --eval-every 轮）/ final = 收尾正式评估。
+                # 末轮两者会各写一行（同一批权重、数值应当基本一致）—— 加 tag 后
+                # 一眼能看出"这是同一次评估的重复记录"，而不是两次结果打架。
+                _rw_row: Dict[str, Any] = {'epoch': epoch, 'tag': 'loop'}
+                _rw_row.update(_numeric_only(_diag_out['reward']))
+                _rw_row.update({('stats_' + k): v for k, v in
+                                _numeric_only(_diag_out.get('reward_stats') or {}).items()})
+                append_csv_row(_reward_csv, _rw_row)
+                _n_reward_rows += 1
+                if _diag_out.get('reward_summary'):
+                    log_console('  ' + str(_diag_out['reward_summary']))
+
+            # ---- 不适曲线（移植自 Multi-agent-train 的中期评估机制）----
+            _dis_row = flatten_discomfort(epoch, _diag_out)
+            _curve.append(_dis_row)
+            append_csv_row(_curve_csv, _dis_row)
+            _stop_reason = discomfort_stop_check(
+                log_console, epoch, _dis_row, _stop_state,
+                min_train_epochs=_stop_min_epochs, enabled=_stop_on)
+            _tag = str(_stop_state.get('vote_txt') or '')
+            if _stop_on:
+                _tag = ' | '.join(x for x in (_tag, _stop_state.get('worsen_txt'),
+                                              _stop_state.get('conv_txt')) if x)
+                if _tag:
+                    log_console('  [不适曲线] ' + _tag)
+            log_console(format_discomfort_line(epoch, _dis_row, tag='' if _stop_on else _tag))
+            save_discomfort_curve(_curve_paths, _curve, _stop_state)
+
+            if _want_trace and _trace:
+                _tp = output_dir / f'district_trace_ep{epoch}.npz'
+                try:
+                    np.savez_compressed(_tp, **_trace)
+                    _n_trace_files += 1
+                    log_console(f'  轨迹     : {_tp.name}（{trace_steps(_trace)} 步）')
+                except Exception as exc:
+                    log_console(f'[district-marl] 轨迹落盘失败（忽略）: {exc}')
+
+            # ⚠️ 这里**只记原因、不 break** —— 必须让下面「best-checkpoint 保存」
+            #   先跑完再停（utils/train.py 的 P1-B 同一个修复：早停判据若抢在选点之前，
+            #   最后一轮的更优权重就不会被存下来，收尾评估反而用不到它）。
+            _pending_stop = _stop_reason
 
         # 验收口径（主口径 = 末 K 个评估点均值；best 一并保留作参考）。
         # 只用于"报告/比较"，不影响上面的 best-checkpoint 挑选与落盘。
@@ -763,6 +1657,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                      score[0], epoch, accept=accept)
                 tag = f'  ← best（已存 {Path(saved).name}）'
 
+        # ---- 峰值早停（B）：best 之后连续 patience 轮无改善即收工 ----
+        #   ① 放在 best 保存**之后** ⇒ 停之前最优权重一定已落盘，收尾评估用得到它；
+        #   ② 与"不适曲线早停"共用同一个 _pending_stop 通道，break 统一在日志之后执行；
+        #   ③ 只在"已有 best"时生效：前 patience 轮本来就该让它先找到第一个 best。
+        if (_peak_patience > 0 and best_epoch is not None and score is not None
+                and _pending_stop is None):
+            _stale = epoch - int(best_epoch)
+            if _stale >= _peak_patience and epoch >= _peak_min_epochs:
+                _pending_stop = (
+                    f'峰值早停：best={best_score[0]:.6f}@{best_epoch}，'
+                    f'连续 {_stale} 轮未刷新（patience={_peak_patience}，'
+                    f'最早轮数={_peak_min_epochs}）')
+
         _acc_v = accept.get('value')
         _best_v = accept.get('best')
         log_console(
@@ -773,6 +1680,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f'cost={metrics.get("cost_total", float("nan")):.4f} | '
             f'{args.accept_stat}={("nan" if _acc_v is None else format(_acc_v, ".4f"))} '
             f'best={("nan" if _best_v is None else format(_best_v, ".4f"))}{tag}')
+
+        # ---- 早停：上面 best-checkpoint 的保存/比较已跑完 ⇒ 现在才真正停训 ----
+        if _pending_stop:
+            _stopped_reason = str(_pending_stop)
+            _pending_stop = None
+            log_console(f'[早停] 第 {epoch} 轮 {_stopped_reason} '
+                        f'→ 提前结束训练（收尾的正式评估照常跑，用的是已保存的最优权重）')
+            break
 
     # ---- 收尾：导出 ----
     _write_metrics_csv(output_dir / 'district_metrics.csv', rows)
@@ -795,10 +1710,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         log_console(f'[district-marl] 末次权重保存失败（忽略）: {exc}')
 
     # 最终区域评估 + 官方 KPI 导出（同一次 rollout 内完成，避免 reset 后读数失真）
+    #   [埋点 P0-③] 这一段**始终**落逐时步轨迹 —— 事后想复盘"某轮 KPI 突变"
+    #   一定是从最终评估这条轨迹开始看的（--trace-every 只是额外多落几份）。
+    _final_diag: Dict[str, Any] = {}
+    _final_trace: Dict[str, Any] = {}
     final = rollout_district(algo, DistrictContextRLlibEnv, eval_env_config,
                              policy_id_fn, deterministic=True,
                              max_steps=int(args.eval_steps or 0),
-                             export_dir=output_dir)
+                             export_dir=output_dir,
+                             trace_out=(_final_trace if diag_on else None),
+                             diag_out=(_final_diag if diag_on else None))
+    if diag_on and _final_trace:
+        try:
+            np.savez_compressed(_trace_final_npz, **_final_trace)
+            _n_trace_files += 1
+            log_console(f'  最终轨迹 : {_trace_final_npz.name}'
+                        f'（{trace_steps(_final_trace)} 步，'
+                        f'键={sorted(k for k in _final_trace)})')
+        except Exception as exc:
+            log_console(f'[district-marl] 最终轨迹落盘失败（忽略）: {exc}')
+    if diag_on and _final_diag.get('reward'):
+        _rw_row = {'epoch': int(epochs_done), 'tag': 'final'}
+        _rw_row.update(_numeric_only(_final_diag['reward']))
+        _rw_row.update({('stats_' + k): v for k, v in
+                        _numeric_only(_final_diag.get('reward_stats') or {}).items()})
+        append_csv_row(_reward_csv, _rw_row)
+        _n_reward_rows += 1
+        if _final_diag.get('reward_summary'):
+            log_console('  ' + str(_final_diag['reward_summary']))
     kpi_path = output_dir / 'exported_kpis.csv'
     if not kpi_path.is_file():
         kpi_path = None
@@ -821,6 +1760,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # 验收口径（只影响报告，不影响训练）
             'accept_stat': str(args.accept_stat),
             'accept_tail': int(args.accept_tail),
+            # 峰值早停：0 = 关；>0 = 连续 N 轮未刷新 best 即停（见 early_stop 块）
+            'peak_stop_patience': int(_peak_patience),
+            'peak_stop_min_epochs': int(_peak_min_epochs),
             'pythonhashseed': (os.environ.get('PYTHONHASHSEED') or ''),
         },
         'best_epoch': best_epoch,
@@ -829,11 +1771,42 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         #   旧脚本读 `best_score` 仍然有效；新脚本优先读 `acceptance.value`
         #   （兼容读法见 district_acceptance.accept_value）。
         'acceptance': acceptance,
+        # ★早停块：`epochs_done < train_epochs` 表示没跑满。`reason` 与诊断埋点的
+        #   `stopped_reason` 同源（两者可能是"峰值早停"或"不适曲线早停"）。
+        'early_stop': {
+            'enabled': bool(_peak_patience > 0 or _stop_on),
+            'patience': int(_peak_patience),
+            'min_epochs': int(_peak_min_epochs),
+            'reason': _stopped_reason,
+            'epochs_done': int(epochs_done),
+            'epochs_target': int(args.train_epochs),
+            'best_epoch': best_epoch,
+        },
         'history': rows,
         'final_metrics': {k: float(v) for k, v in final.items()
                           if isinstance(v, (int, float))},
         'elapsed_s': round(time.perf_counter() - t0, 1),
     }
+    # ---- 诊断埋点块（2026-10-17）----
+    #   ⚠️ 只在 diag_on 时才**追加**这三个键：`--no-diag` 下 district_summary.json
+    #   与改造前**逐字节一致**（旧读法/旧哈希校验照旧通过）。
+    #   曲线正文另存 district_discomfort_curve.json/csv，这里留一份便于单文件归档。
+    if diag_on:
+        summary['discomfort_curve'] = _curve
+        summary['stopped_reason'] = _stopped_reason
+        summary['diagnostics'] = {
+            'enabled': True,
+            'rl_diag_csv': str(_rl_csv),
+            'reward_breakdown_csv': str(_reward_csv),
+            'discomfort_curve_csv': str(_curve_csv),
+            'discomfort_curve_json': str(_curve_paths[0]),
+            'trace_final_npz': (str(_trace_final_npz) if _final_trace else None),
+            'discomfort_stop_enabled': bool(_stop_on),
+            'min_train_epochs': int(_stop_min_epochs),
+            'n_rl_rows': int(_n_rl_rows),
+            'n_reward_rows': int(_n_reward_rows),
+            'n_trace_files': int(_n_trace_files),
+        }
     (output_dir / 'district_summary.json').write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
 
@@ -857,6 +1830,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log_console(f'  最终区域 KPI: all_time_peak={final.get("all_time_peak_average")} '
                 f'daily_peak={final.get("daily_peak_average")} '
                 f'cost={final.get("cost_total")}')
+    # ---- 诊断产物汇总（--no-diag 时一行都不打印 ⇒ 旧输出逐字节一致）----
+    if _stopped_reason:
+        log_console(f'  早停原因 : {_stopped_reason}')
+    if diag_on:
+        log_console(f'  RL 内部指标 : {_rl_csv}（{_n_rl_rows} 行，逐轮）')
+        log_console(f'  奖励分解    : {_reward_csv}（{_n_reward_rows} 行）')
+        log_console(f'  不适曲线    : {_curve_csv.name} / {_curve_paths[0].name}'
+                    f'（{len(_curve)} 个评估点）')
+        if _n_trace_files:
+            log_console(f'  逐时步轨迹  : district_trace_*.npz（{_n_trace_files} 份）')
+        for _ln in format_curve_overview(_curve):
+            log_console(_ln)
     log_console('=' * 72)
 
     try:

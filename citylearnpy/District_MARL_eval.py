@@ -54,6 +54,11 @@ for _p in (str(Path(__file__).resolve().parent), str(ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# ---- 确定性引导（★平台路径的唯一生效点；评估也必须，否则读到的权重与训练口径不一致）----
+#   `PYTHONHASHSEED` 只在解释器启动时读一次 ⇒ 见 District_MARL_train.py 同名注释。
 if __name__ == '__main__':
+    from district_marl._hashseed import ensure_hashseed
+    ensure_hashseed()
+
     from district_marl.district_eval import main
     sys.exit(main())

@@ -52,6 +52,7 @@ from district_marl.district_env import DistrictContextRLlibEnv
 from district_marl.district_train import (
     build_district_env_config,
     rollout_district,
+    trace_steps,
 )
 
 # 区域级对比表的默认 KPI 列（区域削峰/整形关注面）
@@ -287,6 +288,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument('--outkpis-root', type=str,
                    default=r'D:/citylearn-demo/output/outkpis',
                    help='对比表的根目录（--compare 给的是 run 名时的查找位置）')
+    # ---- 诊断埋点（2026-10-17；与 district_train.py 的「四·五」节同源）----
+    p.add_argument('--no-diag', action='store_true',
+                   help='关闭诊断埋点（奖励分解 / 逐栋不适比例 / 逐时步轨迹）⇒ '
+                        '只写 district_eval_metrics.json + exported_kpis.csv 的旧行为')
+    p.add_argument('--trace-label', type=str, default='eval',
+                   help='轨迹文件名标签：district_trace_<标签>.npz（默认 eval）')
     # parse_known_args：白名单取消后，界面配置里可能有本脚本不认的参数（例如给训练脚本
     # 配的 peak-weight 抄到了评估脚本上）⇒ 忽略并提示，不用 exit 2 打断整个任务。
     args, unknown = p.parse_known_args(argv)
@@ -385,13 +392,61 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log_console(f'  agent: {", ".join(agent_ids)}  |  checkpoint policies: {ids}')
 
     # max_steps=0 ⇒ 不设上限，跑到环境自己结束（= 数据集自带长度）
+    #   [埋点] 评估是一次性 rollout，轨迹/奖励分解的采集成本可忽略 ⇒ 默认全开；
+    #   --no-diag 可退回只写 metrics + KPI 的旧行为。
+    _no_diag = bool(getattr(args, 'no_diag', False))
+    _diag_out: Dict[str, object] = {}
+    _trace_out: Dict[str, object] = {}
     metrics = rollout_district(algo, DistrictContextRLlibEnv, env_config,
                                policy_id_fn, deterministic=True,
-                               max_steps=int(args.steps or 0), export_dir=output_dir)
+                               max_steps=int(args.steps or 0), export_dir=output_dir,
+                               trace_out=(None if _no_diag else _trace_out),
+                               diag_out=(None if _no_diag else _diag_out))
 
     (output_dir / 'district_eval_metrics.json').write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2, sort_keys=True),
         encoding='utf-8')
+
+    if not _no_diag:
+        # ---- 逐时步轨迹（原先 `_info` 被丢弃、`record_details=True` 形同虚设）----
+        if _trace_out:
+            try:
+                import numpy as np
+                _tp = output_dir / f'district_trace_{args.trace_label}.npz'
+                np.savez_compressed(_tp, **_trace_out)
+                log_console(f'  逐时步轨迹 : {_tp}'
+                            f'（{trace_steps(_trace_out)} 步，'
+                            f'键={sorted(k for k in _trace_out)}）')
+            except Exception as exc:
+                log_console(f'[district-marl] 轨迹落盘失败（忽略）: {exc}')
+        # ---- 奖励分解 + 逐栋不适比例 ----
+        try:
+            _payload = {
+                'reward': dict(_diag_out.get('reward') or {}),
+                'reward_summary': str(_diag_out.get('reward_summary') or ''),
+                'reward_stats': {str(k): float(v) for k, v in
+                                 (_diag_out.get('reward_stats') or {}).items()
+                                 if isinstance(v, (int, float))},
+                'discomfort': dict(_diag_out.get('discomfort') or {}),
+            }
+            (output_dir / 'district_eval_diagnostics.json').write_text(
+                json.dumps(_payload, ensure_ascii=False, indent=2, default=str),
+                encoding='utf-8')
+            _dis = _payload['discomfort'] or {}
+            _hot = [float(v) for v in (_dis.get('hot') or [])]
+            _cold = [float(v) for v in (_dis.get('cold') or [])]
+            if _hot or _cold:
+                _n = max(len(_hot), len(_cold))
+                log_console('  ' + '[不适曲线] 高温/低温 '
+                            + ' '.join(
+                                f'B{i + 1}:'
+                                f'{(_hot[i] if i < len(_hot) else float("nan")):5.1%}/'
+                                f'{(_cold[i] if i < len(_cold) else float("nan")):5.1%}'
+                                for i in range(_n)))
+            if _payload['reward_summary']:
+                log_console('  ' + _payload['reward_summary'])
+        except Exception as exc:
+            log_console(f'[district-marl] 评估诊断落盘失败（忽略）: {exc}')
 
     log_console('')
     log_console('[district-marl] 区域 KPI（District，越小越好）')
