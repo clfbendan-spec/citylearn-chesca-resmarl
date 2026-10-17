@@ -65,8 +65,8 @@
 }
 
 % ---------- 开题[7] ----------
-@article{formanek2023, % [开题7] 离线多智能体强化学习数据集与基线
-  author = {Formanek, Christopher and Jeewa, Asad and Shock, Jonathan and others},
+@article{formanek2023, % [开题7] 离线多智能体强化学习数据集与基线（作者以原 arXiv 页面为准）
+  author = {Formanek, Claude and Jeewa, Asad and Shock, Jonathan and Pretorius, Arnu},
   title = {Off-the-Grid MARL: Datasets with Baselines for Offline Multi-Agent Reinforcement Learning},
   journal = {arXiv preprint arXiv:2302.00521},
   year = {2023},
@@ -302,14 +302,15 @@
 }
 
 % ---------- 开题[33] ----------
-@inproceedings{wang2025mappo, % [开题33] 协同多智能体MAPPO设计与实现
-  author = {Wang, Hao and Fei, Rong and Chen, Rui},
+@inproceedings{wang2025mappo, % [开题33] 协同多智能体MAPPO设计与实现（作者以 NSTL/SPIE 元数据为准）
+  author = {Wang, Haolong and Fei, Rong and Chen, Ruizhu},
   title = {Design and Implementation of Cooperative Multi-Agent Based on MAPPO},
   booktitle = {Proceedings of the Fifth International Conference on Telecommunications, Optics, and Computer Science (TOCS 2024)},
   volume = {13629},
-  pages = {488--497},
+  pages = {136291I--136291I10},
   year = {2025},
   publisher = {SPIE},
+  doi = {10.1117/12.3067567},
 }
 
 % ---------- 开题[34] ----------
@@ -388,11 +389,12 @@
   doi = {10.3390/en17205211},
 }
 
-@inproceedings{iclrenergy2023,
-  author = {Qin, Zeyu and Yu, Hang and Zhang, Huanyu and Zheng, Qingxin and others},
-  title = {The CityLearn Challenge 2023: Energy Environment and Reinforcement Learning Baseline Benchmarks},
-  booktitle = {ICLR Workshop on Tackling Climate Change with Machine Learning},
+@misc{ccaibl2023,
+  author = {{Climate Change AI}},
+  title = {Using Reinforcement Learning to Improve Energy Management for Grid-Interactive Buildings},
   year = {2023},
+  url = {https://www.climatechange.ai/blog/2023-06-02-citylearn},
+  note = {ICLR 2023 配套 blog 资料，原 Qin et al. ICLR workshop 论文检索未获唯一对应文本，本项目改引 Climate Change AI 综述资源以保证可验证性},
 }
 
 @article{mnih2015,
@@ -474,10 +476,10 @@
   author = {Wang, Zhe and Hong, Tianzhen},
   title = {Reinforcement Learning for Building Controls: The Opportunities and Challenges},
   journal = {Applied Energy},
-  volume = {299},
-  pages = {117346},
+  volume = {269},
+  pages = {115036},
   year = {2021},
-  doi = {10.1016/j.apenergy.2021.116503},
+  doi = {10.1016/j.apenergy.2020.115036},
 }
 
 @article{zhang2022ems,
@@ -508,36 +510,21 @@
   year = {2018},
 }
 
-@article{costmin2024community,
-  author = {Chose, L. and others},
-  title = {Cost Minimization in Energy Communities with Multi-Agent Deep Reinforcement Learning and Linear Programming},
-  journal = {ResearchGate Preprint},
-  year = {2024},
-  note = {https://www.researchgate.net/publication/402963004},
-}
-
-@article{marlresidential2019,
-  author = {Prasad, Avinash and Dusparic, Ivana},
-  title = {Multiagent Reinforcement Learning for Energy Management in Residential Buildings},
-  journal = {ResearchGate Preprint},
+@article{prasad2019zec,
+  author = {Prasad, Amit and Dusparic, Ivana},
+  title = {Multi-Agent Deep Reinforcement Learning for Zero Energy Communities},
+  journal = {arXiv preprint arXiv:1810.03679},
   year = {2019},
-  note = {https://www.researchgate.net/publication/339580812},
+  note = {Accepted at IEEE PES ISGT Europe 2019; 详见 https://arxiv.org/abs/1810.03679},
 }
 
-@phdthesis{lille2025thesis,
-  author = {Auteur, Lille},
-  title = {Energy Management in Smart Buildings and Communities},
-  school = {Universit{\'e} de Lille, Ecole Doctorale MADIS},
-  year = {2025},
-  note = {2025ULILB048, https://pepite-depot.univ-lille.fr/LIBRE/EDMADIS/2025/2025ULILB048.pdf},
-}
-
-@article{fedmadDPG2024,
-  author = {Li, Yang and Wang, Hao and Zhang, Wei and others},
-  title = {Federated Multi-Agent Deep Deterministic Policy Gradient for Community Energy Management},
-  journal = {IEEE Transactions on Smart Grid (Early Access / Preprint discussion)},
+@article{khanna2024fedmarl,
+  author = {Khanna, A. and Maheshwari, P.},
+  title = {Federated Multi-Agent Reinforcement Learning for Incentive-Based DRS over Blockchain Enabled Microgrids},
+  booktitle = {Proceedings of the 7th International Conference on Signal Processing and Information Security (ICSPIS 2024)},
   year = {2024},
-  note = {CTDE与隐私保护结合的前沿方向，检索关键词 Federated Multi-Agent EMS, https://ieeexplore.ieee.org},
+  publisher = {IEEE},
+  doi = {10.1109/ICSPIS63676.2024.10812651},
 }
 
 @article{mcmahan2017fedavg,
@@ -563,14 +550,6 @@
   year = {2024},
   note = {https://www.ie-lab.org/project/citylearn/},
   url = {https://www.ie-lab.org/project/citylearn/},
-}
-
-@misc{corail2024,
-  author = {{CORAIL Research Group}},
-  title = {CORAIL Publications},
-  year = {2024},
-  note = {https://corail-research.github.io/publications},
-  url = {https://corail-research.github.io/publications},
 }
 
 @article{drgona2020mpc,
@@ -663,6 +642,23 @@
   url = {https://dev.mysql.com/doc/},
 }
 
+% ---------- 同类对照论文（用于第2章分类表、第5章横向对照） ----------
+@mastersthesis{costea2024,
+  author = {Costea, Costantin Cosmin},
+  title = {Multi-Agent Reinforcement Learning Building Energy Optimization: Taxonomy and Experimental Evaluation in CityLearn},
+  school = {Politecnico di Torino, Master Degree Thesis in Energy and Nuclear Engineering},
+  year = {2025},
+  note = {2025–2026 学年硕士论文，提出六轴 MARL 分类体系（策略类型/学习范式/任务类型/感知程度/可观测性/训练方式），并在 CityLearn 中对比 PPO/IPPO/IPPO-SP/MAPPO},
+}
+
+@mastersthesis{javeed2024,
+  author = {Javeed, Arshad},
+  title = {Distributed Reinforcement Learning for Building Energy Optimization},
+  school = {Lund University, Department of Automatic Control, MSc Thesis TFRT-6242},
+  year = {2024},
+  note = {针对 HVAC 数据中心冷站对比 CTDE 与价值分解，提出 LINMIX 线性价值混合与轮流博弈两项 MARL 增强},
+}
+
 % [2026-10-08 删除] @redis2024 条目：原文对应 Redis 队列/缓存表述；实现实际为 Spring Boot 线程池异步调度 + MySQL 状态轮询，系统无 Redis 组件，正文表述已同步移除。
 
 @misc{elk2024,
@@ -687,3 +683,39 @@
   url = {https://gymnasium.farama.org/},
   note = {CityLearn 仿真环境所依赖的 Gymnasium 接口标准},
 }
+
+% ---------- 参考两篇英文学位论文增补的权威国际文献 ----------
+@book{albrecht2024marl,
+  author = {Albrecht, Stefano V. and Christianos, Filippos and Sch{\"a}fer, Lukas},
+  title = {Multi-Agent Reinforcement Learning: Foundations and Modern Approaches},
+  publisher = {MIT Press},
+  address = {Cambridge, MA},
+  year = {2024},
+  url = {https://www.marl-book.com/},
+}
+
+@inproceedings{schroeder2021ippo,
+  author = {Schroeder de Witt, Christian and Gupta, Tarun and Makoviichuk, Denys and Makoviychuk, Viktor and Torr, Philip H. S. and Sun, Mingfei and Whiteson, Shimon},
+  title = {Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge?},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year = {2021},
+}
+
+@article{charbonnier2022,
+  author = {Charbonnier, Flora and Morstyn, Thomas and McCulloch, Malcolm D.},
+  title = {Scalable Multi-Agent Reinforcement Learning for Distributed Control of Residential Energy Flexibility},
+  journal = {Applied Energy},
+  volume = {314},
+  pages = {118825},
+  year = {2022},
+  doi = {10.1016/j.apenergy.2022.118825},
+}
+
+@book{powell2022,
+  author = {Powell, Warren B.},
+  title = {Reinforcement Learning and Stochastic Optimization: A Unified Framework for Sequential Decisions},
+  publisher = {John Wiley \& Sons},
+  address = {Hoboken, NJ},
+  year = {2022},
+}
+

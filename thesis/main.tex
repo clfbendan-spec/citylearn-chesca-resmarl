@@ -16,6 +16,19 @@ style=gb7714-2015,%utf8,
 
 
 \usepackage{tabularx}
+\setlength{\headheight}{13pt}
+% —— 排版微调：为个别中英混排行提供额外可伸缩量，消除行末溢出（不改变字号与行距）——
+\setlength{\emergencystretch}{3em}
+% —— 浮动体参数：放宽每页浮动体数量与占比，使图表紧跟首次引用处，避免堆积到章末 ——
+\setcounter{topnumber}{4}
+\setcounter{bottomnumber}{3}
+\setcounter{totalnumber}{5}
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.72}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage[labelfont=bf,textfont=bf,font=small]{subfig}
