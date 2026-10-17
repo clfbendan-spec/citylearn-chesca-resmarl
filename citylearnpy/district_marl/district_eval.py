@@ -48,6 +48,7 @@ from utils.base import log_console, prepare_ray_env
 prepare_ray_env()
 
 from district_marl import district_config as dc
+from district_marl import _fingerprint as _fp
 from district_marl.district_env import DistrictContextRLlibEnv
 from district_marl.district_train import (
     build_district_env_config,
@@ -397,11 +398,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _no_diag = bool(getattr(args, 'no_diag', False))
     _diag_out: Dict[str, object] = {}
     _trace_out: Dict[str, object] = {}
+    _t_eval = time.perf_counter()
     metrics = rollout_district(algo, DistrictContextRLlibEnv, env_config,
                                policy_id_fn, deterministic=True,
                                max_steps=int(args.steps or 0), export_dir=output_dir,
                                trace_out=(None if _no_diag else _trace_out),
                                diag_out=(None if _no_diag else _diag_out))
+    _eval_s = round(time.perf_counter() - _t_eval, 1)
 
     (output_dir / 'district_eval_metrics.json').write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2, sort_keys=True),
@@ -447,6 +450,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 log_console('  ' + _payload['reward_summary'])
         except Exception as exc:
             log_console(f'[district-marl] 评估诊断落盘失败（忽略）: {exc}')
+
+        # ---- 指纹（回答"这次评估和上次跑的是同一套代码/机器吗"）----
+        #   与训练侧同一个结构；额外带上本次评估自身的信息（checkpoint / schema /
+        #   步数 / 耗时），这样单看一份 json 就能定位「哪个模型在什么环境下评的」。
+        try:
+            _fpayload = {
+                'fingerprint': _fp.fingerprint_block(),
+                'eval': {
+                    'checkpoint': str(checkpoint),
+                    'checkpoint_source': str(ckpt_source),
+                    'train_task': train_task,
+                    'schema': str(args.schema),
+                    'steps': (None if eval_steps is None else int(eval_steps)),
+                    'eval_steps_actual': int(metrics.get('eval_steps') or 0),
+                    'deterministic': True,
+                    'elapsed_s': _eval_s,
+                    'pythonhashseed': (os.environ.get('PYTHONHASHSEED') or ''),
+                },
+            }
+            (output_dir / 'district_eval_fingerprint.json').write_text(
+                json.dumps(_fpayload, ensure_ascii=False, indent=2),
+                encoding='utf-8')
+            log_console(_fp.fingerprint_line(_fpayload['fingerprint']))
+        except Exception as exc:
+            log_console(f'[district-marl] 指纹落盘失败（忽略）: {exc}')
 
     log_console('')
     log_console('[district-marl] 区域 KPI（District，越小越好）')

@@ -76,6 +76,7 @@ import numpy as np
 
 from district_marl import district_config as dc
 from district_marl import district_acceptance as dacc
+from district_marl import _fingerprint as _fp
 from district_marl.district_env import (
     DISTRICT_ENV_CONFIG_KEY,
     DistrictContextRLlibEnv,
@@ -1544,17 +1545,61 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _n_rl_rows = 0
     _n_reward_rows = 0
     _n_trace_files = 0
+    # ---- [埋点 E] 耗时分解 + 训练健康自检（2026-10-17）------------------------
+    #   为什么需要：`elapsed_s` 只有一个总数。训练突然变慢时，无法判断是「采样慢
+    #   （env）」「学得慢（算力）」还是「评估慢（rollout 720/2208 步）」——
+    #   没有这个分解，任何性能优化都是盲改。
+    #   ⚠️ 与其它埋点同一个门控：`--no-diag` 时一行不写、一个键不加。
+    _perf_csv = output_dir / 'district_perf.csv'
+    _perf_tot: Dict[str, float] = {'train_s': 0.0, 'eval_s': 0.0,
+                                   'save_s': 0.0, 'other_s': 0.0}
+    _n_perf_rows = 0
+    _learn_active_epoch: Optional[int] = None      # 第一次真正发生梯度更新的轮次
+    _grad_updates_total: Optional[float] = None    # 末轮累计梯度更新次数
+    _env_steps_total: Optional[float] = None       # 末轮累计采样环境步数
+    _nan_kpi_epochs: List[int] = []                # 出现 NaN 主指标的评估点
+
+    def _record_perf(epoch: int, t_epoch: float, train_s: float,
+                     eval_s: float = 0.0, save_s: float = 0.0,
+                     eval_steps: int = 0) -> None:
+        """记录本轮耗时分解。`other_s` = 本轮总时长 − 上述三段（曲线/日志/落盘）。"""
+        nonlocal _n_perf_rows
+        if not diag_on:
+            return
+        total = max(0.0, time.perf_counter() - t_epoch)
+        other = max(0.0, total - train_s - eval_s - save_s)
+        _perf_tot['train_s'] += train_s
+        _perf_tot['eval_s'] += eval_s
+        _perf_tot['save_s'] += save_s
+        _perf_tot['other_s'] += other
+        append_csv_row(_perf_csv, {
+            'epoch': int(epoch),
+            'train_s': round(train_s, 3),
+            'eval_s': round(eval_s, 3),
+            'save_s': round(save_s, 3),
+            'other_s': round(other, 3),
+            'epoch_total_s': round(total, 3),
+            'wall_s': round(time.perf_counter() - t0, 1),
+            'eval_steps': int(eval_steps),
+            'env_steps_sampled_total': (None if _env_steps_total is None
+                                        else int(_env_steps_total)),
+        })
+        _n_perf_rows += 1
+
     if diag_on:
         # 续训：继承已有曲线与早停判据基线（utils/train.py 的 P19-1 同一个坑：
         #   绝不能拿空数组覆盖已有曲线 ⇒ load 只在读到非空时才返回）
         _curve, _stop_state = load_discomfort_curve(_curve_paths)
 
     for epoch in range(1, int(args.train_epochs) + 1):
+        _t_epoch = time.perf_counter()
+        _t_train = _t_epoch
         try:
             _result = algo.train()
         except Exception as exc:
             log_console(f'[district-marl] 第 {epoch} 轮训练异常，提前收工: {exc}')
             break
+        _train_s = time.perf_counter() - _t_train
         epochs_done = epoch
 
         # ---- [埋点 P0-①] RL 内部指标：**每轮**都记（不受 --eval-every 影响）----
@@ -1569,8 +1614,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if len(_rl_row) > 2:
                 append_csv_row(_rl_csv, _rl_row)
                 _n_rl_rows += 1
+            # ---- 训练健康体征：这三项只在 diag_on 下取，且都"取不到就留空" ----
+            #   learn_active_epoch: 第一次 `num_grad_updates_lifetime > 0` 的轮次。
+            #     在此之前策略仍是随机初始化 ⇒ 该点的 KPI **不是**"学到的表现"，
+            #     和其它评估点摆在一张表里比较会得出错误结论。
+            _gu = _rl_row.get('rl_num_grad_updates_lifetime')
+            if _gu is not None and np.isfinite(_f(_gu)):
+                _grad_updates_total = _f(_gu)
+                if _learn_active_epoch is None and _grad_updates_total > 0:
+                    _learn_active_epoch = int(epoch)
+            _es = _rl_row.get('rl_num_env_steps_sampled')
+            if _es is not None and np.isfinite(_f(_es)):
+                _env_steps_total = _f(_es)
 
         if epoch % max(1, int(args.eval_every)) != 0 and epoch != int(args.train_epochs):
+            # 本轮不评估 ⇒ 仍要落一行耗时分解，否则「训练阶段占比」会被低估
+            _record_perf(epoch, _t_epoch, _train_s, 0.0, 0.0, 0)
             continue
 
         # ---- [埋点 P0-②/③] 评估顺带取奖励分解与不适曲线；轨迹按 --trace-every ----
@@ -1578,11 +1637,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _trace: Dict[str, Any] = {}
         _every = int(getattr(args, 'trace_every', 0) or 0)
         _want_trace = bool(diag_on and _every and (epoch % _every == 0))
+        _t_eval = time.perf_counter()
         metrics = rollout_district(
             algo, DistrictContextRLlibEnv, eval_env_config, policy_id_fn,
             deterministic=True, max_steps=int(args.eval_steps or 0),
             trace_out=(_trace if _want_trace else None),
             diag_out=(_diag_out if diag_on else None))
+        _eval_s = time.perf_counter() - _t_eval
+        _eval_steps = int(metrics.get('eval_steps') or 0)
         row: Dict[str, Any] = {'epoch': epoch, 'elapsed_s': round(time.perf_counter() - t0, 1)}
         row.update(metrics)
         # [埋点 D] SOC 读数并入本轮行 ⇒ 同时进 district_summary.history 与
@@ -1590,6 +1652,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if diag_on and _diag_out.get('soc'):
             row.update(_diag_out['soc'])
         rows.append(row)
+        if diag_on and not np.isfinite(_f(metrics.get(args.best_metric))):
+            _nan_kpi_epochs.append(int(epoch))
 
         if diag_on:
             # ---- 奖励分解落盘（district_stats/district_summary 此前全仓库零调用）----
@@ -1644,17 +1708,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         score = _score(metrics)
         tag = ''
+        _save_s = 0.0
         if score is not None:
             improved = (best_score is None
                         or score[0] < best_score[0] - float(dc.DISTRICT_BEST_MIN_GAIN)
                         or (abs(score[0] - best_score[0]) <= float(dc.DISTRICT_BEST_MIN_GAIN)
                             and score[1] < best_score[1]))
             if improved:
+                _t_save = time.perf_counter()
                 saved = save_multi_agent_checkpoint(algo, ckpt_dir, log_console=log_console)
                 best_score, best_epoch = score, epoch
                 # 每次刷新 best 都同步进度文件 ⇒ 任务管理页随时能看到「模型可用」
                 write_train_progress(ckpt_dir, epochs_done, int(args.train_epochs),
                                      score[0], epoch, accept=accept)
+                _save_s = time.perf_counter() - _t_save
                 tag = f'  ← best（已存 {Path(saved).name}）'
 
         # ---- 峰值早停（B）：best 之后连续 patience 轮无改善即收工 ----
@@ -1681,6 +1748,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f'{args.accept_stat}={("nan" if _acc_v is None else format(_acc_v, ".4f"))} '
             f'best={("nan" if _best_v is None else format(_best_v, ".4f"))}{tag}')
 
+        # 本轮耗时分解（在 break 之前落，早停那一轮的耗时也算进去）
+        _record_perf(epoch, _t_epoch, _train_s, _eval_s, _save_s, _eval_steps)
+
         # ---- 早停：上面 best-checkpoint 的保存/比较已跑完 ⇒ 现在才真正停训 ----
         if _pending_stop:
             _stopped_reason = str(_pending_stop)
@@ -1704,22 +1774,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # 从未刷新过 best 时直接存进断点目录根（否则根目录里一个 checkpoint 都没有，
     # 评估端 resolve 会找不到可加载的断点）。
     final_dest = ckpt_dir if best_score is None else ckpt_dir / 'final'
+    _t_final_save = time.perf_counter()
     try:
         save_multi_agent_checkpoint(algo, final_dest, log_console=log_console)
     except Exception as exc:
         log_console(f'[district-marl] 末次权重保存失败（忽略）: {exc}')
+    _final_save_s = time.perf_counter() - _t_final_save
 
     # 最终区域评估 + 官方 KPI 导出（同一次 rollout 内完成，避免 reset 后读数失真）
     #   [埋点 P0-③] 这一段**始终**落逐时步轨迹 —— 事后想复盘"某轮 KPI 突变"
     #   一定是从最终评估这条轨迹开始看的（--trace-every 只是额外多落几份）。
     _final_diag: Dict[str, Any] = {}
     _final_trace: Dict[str, Any] = {}
+    _t_final_eval = time.perf_counter()
     final = rollout_district(algo, DistrictContextRLlibEnv, eval_env_config,
                              policy_id_fn, deterministic=True,
                              max_steps=int(args.eval_steps or 0),
                              export_dir=output_dir,
                              trace_out=(_final_trace if diag_on else None),
                              diag_out=(_final_diag if diag_on else None))
+    _final_eval_s = time.perf_counter() - _t_final_eval
     if diag_on and _final_trace:
         try:
             np.savez_compressed(_trace_final_npz, **_final_trace)
@@ -1741,6 +1815,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     kpi_path = output_dir / 'exported_kpis.csv'
     if not kpi_path.is_file():
         kpi_path = None
+
+    # ---- 指纹采集（只读，约 1.4 s）----
+    #   ⚠️ 必须放在 `_wall_s` 之后：采集本身耗时不该算进训练耗时。
+    #   `--no-diag` 时为 None ⇒ 不写键、不打日志，产物与改造前逐字节一致。
+    _finger = _fp.fingerprint_block() if diag_on else None
+    _wall_s = round(time.perf_counter() - t0, 1)
+    try:
+        _buffer_cap: Optional[int] = int(getattr(args, 'replay_buffer_cap', 0) or 0) or None
+    except (TypeError, ValueError):
+        _buffer_cap = None
 
     summary = {
         'config': {
@@ -1771,7 +1855,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         'history': rows,
         'final_metrics': {k: float(v) for k, v in final.items()
                           if isinstance(v, (int, float))},
-        'elapsed_s': round(time.perf_counter() - t0, 1),
+        'elapsed_s': _wall_s,
     }
     # ---- 峰值早停块（2026-10-17）----
     #   ⚠️ **只在 patience>0 时才加这两个键** ⇒ `--peak-stop-patience 0` 下
@@ -1809,6 +1893,42 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             'n_rl_rows': int(_n_rl_rows),
             'n_reward_rows': int(_n_reward_rows),
             'n_trace_files': int(_n_trace_files),
+            'perf_csv': str(_perf_csv),
+            'n_perf_rows': int(_n_perf_rows),
+        }
+
+    # ---- 指纹块（2026-10-17）----
+    #   回答「这台机器 + 这套依赖 + 这份源码」是不是和上次那次一样。
+    #   `code.source_digest_16` 是判断"代码改没改"的最终依据（不依赖 git）；
+    #   `code.git_dirty=true` 时**不能用 commit 号定位这次结果**。
+    if diag_on and _finger:
+        summary['fingerprint'] = _finger
+        # ---- 训练健康自检块 ----
+        #   · learn_active_epoch: 该轮之前策略仍是随机初始化 ⇒ 那些评估点的 KPI
+        #     不能当"模型能力"来读（v4 的 ep20 就是典型：buffer 还没攒够）。
+        #   · replay_buffer_fill_ratio: 200K 的 buffer 在 100 轮 local 下只填到
+        #     约 0.36 ⇒ **buffer 容量根本不是瓶颈**，把它当调参旋钮是无效投入。
+        #   · nan_kpi_epochs: 主指标出现 NaN 的评估点（会被 acceptance 静默跳过）。
+        summary['train_health'] = {
+            'learn_active_epoch': _learn_active_epoch,
+            'grad_updates_total': _grad_updates_total,
+            'env_steps_sampled_total': _env_steps_total,
+            'replay_buffer_cap': _buffer_cap,
+            'replay_buffer_fill_ratio': (
+                round(float(_env_steps_total) / float(_buffer_cap), 4)
+                if (_env_steps_total and _buffer_cap) else None),
+            'nan_kpi_epochs': sorted(set(_nan_kpi_epochs)),
+            'eval_deterministic': True,
+        }
+        # ---- 耗时分解总账 ----
+        summary['perf'] = {
+            'per_epoch_csv': str(_perf_csv),
+            'totals': {k: round(v, 1) for k, v in _perf_tot.items()},
+            'final_eval_s': round(_final_eval_s, 1),
+            'final_save_s': round(_final_save_s, 1),
+            'wall_s': float(_wall_s),
+            'counted_s': round(sum(_perf_tot.values())
+                               + _final_eval_s + _final_save_s, 1),
         }
     (output_dir / 'district_summary.json').write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -1843,6 +1963,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     f'（{len(_curve)} 个评估点）')
         if _n_trace_files:
             log_console(f'  逐时步轨迹  : district_trace_*.npz（{_n_trace_files} 份）')
+        if _n_perf_rows:
+            log_console(f'  耗时分解    : {_perf_csv.name}（{_n_perf_rows} 行）'
+                        f'  训练={_perf_tot["train_s"]:.0f}s '
+                        f'评估={_perf_tot["eval_s"]:.0f}s '
+                        f'存盘={_perf_tot["save_s"]:.0f}s '
+                        f'其它={_perf_tot["other_s"]:.0f}s')
+        if _finger:
+            log_console(_fp.fingerprint_line(_finger))
+        if _learn_active_epoch is not None:
+            log_console(f'  学习启动轮  : 第 {_learn_active_epoch} 轮'
+                        f'（此前的评估点仍是随机初始化策略）')
+        if _buffer_cap and _env_steps_total:
+            log_console(f'  回放池占用  : {_env_steps_total:.0f}/{_buffer_cap}'
+                        f'（{_env_steps_total / _buffer_cap:.1%}）')
         for _ln in format_curve_overview(_curve):
             log_console(_ln)
     log_console('=' * 72)
