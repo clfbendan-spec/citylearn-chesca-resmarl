@@ -1760,9 +1760,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # 验收口径（只影响报告，不影响训练）
             'accept_stat': str(args.accept_stat),
             'accept_tail': int(args.accept_tail),
-            # 峰值早停：0 = 关；>0 = 连续 N 轮未刷新 best 即停（见 early_stop 块）
-            'peak_stop_patience': int(_peak_patience),
-            'peak_stop_min_epochs': int(_peak_min_epochs),
             'pythonhashseed': (os.environ.get('PYTHONHASHSEED') or ''),
         },
         'best_epoch': best_epoch,
@@ -1771,22 +1768,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         #   旧脚本读 `best_score` 仍然有效；新脚本优先读 `acceptance.value`
         #   （兼容读法见 district_acceptance.accept_value）。
         'acceptance': acceptance,
-        # ★早停块：`epochs_done < train_epochs` 表示没跑满。`reason` 与诊断埋点的
-        #   `stopped_reason` 同源（两者可能是"峰值早停"或"不适曲线早停"）。
-        'early_stop': {
-            'enabled': bool(_peak_patience > 0 or _stop_on),
+        'history': rows,
+        'final_metrics': {k: float(v) for k, v in final.items()
+                          if isinstance(v, (int, float))},
+        'elapsed_s': round(time.perf_counter() - t0, 1),
+    }
+    # ---- 峰值早停块（2026-10-17）----
+    #   ⚠️ **只在 patience>0 时才加这两个键** ⇒ `--peak-stop-patience 0` 下
+    #   district_summary.json 与改造前**逐字节一致**（配合 --no-diag 可完全回到旧产物）。
+    #   `epochs_done < train_epochs` 表示没跑满；`reason` 与诊断埋点的 `stopped_reason` 同源
+    #   （可能是"峰值早停"或"不适曲线早停"）。
+    if int(_peak_patience) > 0:
+        summary['config']['peak_stop_patience'] = int(_peak_patience)
+        summary['config']['peak_stop_min_epochs'] = int(_peak_min_epochs)
+        summary['early_stop'] = {
+            'enabled': True,
             'patience': int(_peak_patience),
             'min_epochs': int(_peak_min_epochs),
             'reason': _stopped_reason,
             'epochs_done': int(epochs_done),
             'epochs_target': int(args.train_epochs),
             'best_epoch': best_epoch,
-        },
-        'history': rows,
-        'final_metrics': {k: float(v) for k, v in final.items()
-                          if isinstance(v, (int, float))},
-        'elapsed_s': round(time.perf_counter() - t0, 1),
-    }
+        }
     # ---- 诊断埋点块（2026-10-17）----
     #   ⚠️ 只在 diag_on 时才**追加**这三个键：`--no-diag` 下 district_summary.json
     #   与改造前**逐字节一致**（旧读法/旧哈希校验照旧通过）。
