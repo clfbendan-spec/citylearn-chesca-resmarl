@@ -47,6 +47,32 @@ xelatex -interaction=nonstopmode main.tex
 > ⚠️ 新增 `\label` 后第一趟编译必然报 `undefined references`，跑完四步即消失；若四步后仍 undefined，
 > 说明 label 拼写或所在环境（如 `\caption` 之外）有问题。
 
+## 在 VS Code 里写论文（LaTeX Workshop）
+
+推荐扩展只有一个：**LaTeX Workshop**（`James-Yu.latex-workshop`）。它提供语法高亮、命令补全、
+侧边栏大纲、保存即编译、SyncTeX 正反向同步和内置 PDF 预览，其余扩展都是锦上添花。
+
+配置已随仓库提供，两处各一份、内容一致：
+
+- `thesis/.vscode/settings.json` —— 在 VS Code 里**直接打开 `thesis/`** 时生效
+- `.vscode/settings.json`（仓库根）—— 打开整个仓库时生效
+
+| 操作 | 快捷键 |
+|------|--------|
+| 编译（latexmk: xelatex） | `Ctrl+Alt+B` |
+| 查看 PDF（右侧分栏，跟随光标） | `Ctrl+Alt+V` |
+| 源码 ↔ PDF 双向跳转 | `Ctrl+Alt+J`；PDF 上**双击**跳回源码 |
+
+> ★★ **不能给 `latex-workshop.latex.outDir` 设子目录（如 `%DIR%/out`）。**
+> `main.tex` 用 `\include{contents/*}`，在 `-output-directory` 模式下 xelatex 会去找
+> `out/contents/` 写子 `.aux`，目录不存在即报 `I can't write on file 'contents/abstract.aux'`
+> 并 `Emergency stop`——实测只出 6 页、**PDF 根本不生成**，界面上只剩一屏编译日志。
+> 必须保持 `"latex-workshop.latex.outDir": "%DIR%"`（原地输出）。
+>
+> 另两项与"好用"直接相关：`autoClean.run` 必须为 `never`（否则每次保存都删掉 `.aux`/`.fdb_latexmk`，
+> latexmk 的增量编译失效，92 页每次全量重编）；`linting.chktex.enabled` 建议 `false`
+> （chktex 对中文全角标点、CJK 间距误报极多，会把"问题"面板刷满）。
+
 ## 图表复现
 
 正文插图全部由脚本生成，改口径后可重跑（**不要**手改 png/pdf）：
@@ -63,8 +89,8 @@ xelatex -interaction=nonstopmode main.tex
 > ⚠️ `scripts/gen_placeholder_figs.py` 中的 `fig_residual_fusion()` 是**已废弃**的旧版图 2-4 生成器，
 > 直接跑该脚本的 `__main__` 会覆盖`_redraw_fig2_4.py` 的成果。请只调用需要的单个函数。
 >
-> 脚本输出路径写死在脚本内（`images/pictures/`），与正文 `\includegraphics` 的相对路径一致，
-> 因此必须在本目录（`thesis/`）下执行。
+> 脚本用 `Path(__file__).resolve().parent.parent / "images" / "pictures"` 定位输出目录，
+> 与正文 `\includegraphics` 的相对路径一致；因此在任意工作目录下执行都能正确落盘。
 
 ## 已知待补项
 

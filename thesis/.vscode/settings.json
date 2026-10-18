@@ -1,0 +1,93 @@
+{
+  // ===================================================================
+  // 仅针对论文工程（本目录）的 LaTeX Workshop 配置
+  // 作用：无论 VS Code 打开的是 /citylearn-demo 还是 /citylearn-demo/thesis，
+  //       都用同一套正确配置（用户级 settings.json 里的 outDir=out 会被这里覆盖）。
+  // ===================================================================
+
+  // ★★ 必须原地输出。main.tex 用 \include{contents/*}，在 -output-directory 模式下
+  //    xelatex 会去 out/contents/ 写子 .aux，目录不存在即 Emergency stop（实测只出 6 页）。
+  "latex-workshop.latex.outDir": "%DIR%",
+
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk (xelatex)",
+      "command": "latexmk",
+      "args": [
+        "-xelatex",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "%DOC%"
+      ]
+    },
+    {
+      "name": "xelatex",
+      "command": "xelatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "%DOC%"
+      ]
+    },
+    {
+      "name": "biber",
+      "command": "biber",
+      "args": ["%DOCFILE%"]
+    }
+  ],
+
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk: xelatex（推荐，自动跑 biber 与多轮）",
+      "tools": ["latexmk (xelatex)"]
+    },
+    {
+      "name": "手动：xelatex → biber → xelatex×2",
+      "tools": ["xelatex", "biber", "xelatex", "xelatex"]
+    },
+    {
+      "name": "单次：xelatex（只查语法错，最快）",
+      "tools": ["xelatex"]
+    }
+  ],
+  "latex-workshop.latex.recipe.default": "latexmk: xelatex（推荐，自动跑 biber 与多轮）",
+  "latex-workshop.latex.build.forceRecipeUsage": false,
+
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.latex.autoClean.run": "never",
+
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.view.pdf.tab.editorGroup": "right",
+  "latex-workshop.view.pdf.zoom": "page-width",
+  "latex-workshop.view.pdf.internal.synctex.keybinding": "double-click",
+  "latex-workshop.synctex.afterBuild.enabled": true,
+  "latex-workshop.showContextMenu": true,
+
+  "latex-workshop.linting.chktex.enabled": false,
+
+  "latex-workshop.latex.rootFile.doNotPrompt": true,
+  "latex-workshop.latex.search.rootFiles.include": ["**/main.tex"],
+  "latex-workshop.latex.search.rootFiles.exclude": [
+    "**/out/**",
+    "**/.git/**",
+    "**/node_modules/**"
+  ],
+
+  "latex-workshop.texcount.autorun": "onSave",
+  "latex-workshop.texcount.args": ["-merge", "-inc", "-total", "-ch", "-utf8"],
+
+  // 只对论文目录生效：编译产物不进搜索/索引
+  "files.watcherExclude": {
+    "**/*.pdf": true,
+    "**/*.synctex.gz": true,
+    "**/*.aux": true,
+    "**/*.log": true
+  },
+  "search.exclude": {
+    "**/*.aux": true,
+    "**/*.log": true,
+    "**/*.synctex.gz": true
+  }
+}
