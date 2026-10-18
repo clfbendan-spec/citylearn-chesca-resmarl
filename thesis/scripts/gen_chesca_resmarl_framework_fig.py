@@ -7,8 +7,10 @@
     见 checa/agent.py:405 / 1075（详见图「CHESCA单步流程图」）
   · 第 2 层 Multi-Agent SAC 残差：逐栋 agent，输入 CHESCA 状态 + 环境观测，
     输出绝对动作 a_rl；离线由 Multi-agent.py 训练，评估阶段冻结加载 checkpoint
-  · 融合层 = 单步流程阶段 5：a_final = clip((1-α)·a_base + α·mask(a_rl))
-    见 checa/agent.py:351-399（docstring 明写 a_final = clip((1−α)·a_base + α·a_rl_masked)）
+  · 融合层 = 单步流程阶段 5：a_final = clip(a_base + α·(m ⊙ a_rl)·g)
+    见 checa/agent.py 的 apply_residual_correction()：
+    默认 additive 残差语义 a_final = 安全投影(clip(a_base + α·span·(mask ⊙ a_rl)·g))；
+    residual_mode='blend' 时才退回旧式 (1−α)·a_base + α·a_rl，仅作历史对照，从未采用
   · α=0 / 未启用 ⇒ 原样返回 a_base；ELE 残差生效时会同步重算 predicted_battery_demand
 """
 
@@ -123,7 +125,7 @@ text(54, L2Y + L2H - 2.3, "第 2 层　Multi-Agent SAC 残差策略（推理阶�
 CHIPS2 = [
     ("逐栋策略 π_i", "每个建筑一个 SAC agent\n仅使用本地观测"),
     ("输入状态", "小时 · 预测值\n电池 / 热水 SOC · 净负荷均值"),
-    ("输出残差动作", "绝对动作 a_rl\n= [DHW, ELE, TMP] × N 栋"),
+    ("输出残差动作", "残差动作 a_rl ∈ [−1, 1]\n= [DHW, ELE, TMP] × N 栋"),
 ]
 cx = 11.5
 for title, body in CHIPS2:
@@ -145,7 +147,7 @@ box(9, FY, 128, FH, C_FUSE, lw=1.9)
 text(73, FY + FH - 2.4, "融合层（CHESCA 单步流程的阶段 5）", size=11.2,
      weight="bold", color="#5b21b6")
 box(16, FY + 2.2, 52, 5.2, ("#ede9fe", "#7c3aed"), lw=1.5, radius=0.35)
-text(42, FY + 4.8, "a_final = clip( (1-α)·a_base + α·mask(a_rl) )",
+text(42, FY + 4.8, "a_final = clip( a_base + α·(m ⊙ a_rl)·g )",
      size=11.0, weight="bold", color="#4c1d95")
 text(96, FY + 4.8, "掩码关掉的维度保持 a_base 原值；α=0 → 严格退化为纯 CHESCA\n"
                    "安全投影：裁剪到动作空间上下限，基线硬约束始终成立",
@@ -169,7 +171,7 @@ text(54, 14.4, "停电等极端工况由第 1 层规则兜底，残差仅在非�
 
 box(103, 12.4, 34, 12.0, ("#f1f5f9", "#64748b"), lw=1.5)
 text(120, 21.4, "输出与可追溯", size=9.8, weight="bold", color="#334155")
-text(120, 17.0, "KPI：成本 / 碳排 / 峰值 / 不适 / 零净能\n决策轨迹与 KPI 记录\n（可复现、可解释）",
+text(120, 17.0, "KPI：成本 · 碳排 · 峰值\n爬坡 · 热舒适越界率\n决策过程与 KPI 记录",
      size=8.2, color="#475569")
 
 arrow(54, FY - 0.4, 54, 24.9, color="#7c3aed", lw=1.8)

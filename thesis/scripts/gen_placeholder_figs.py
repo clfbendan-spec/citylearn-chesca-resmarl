@@ -125,7 +125,7 @@ def fig_three_actions():
 
     box(ax, 26, 11.0, 84, 7.0, ("#f1f5f9", "#7c3aed"), lw=1.7, dashed=True)
     text(ax, 68, 16.2, "阶段 5　ResMARL 残差合成", size=10.8, weight="bold", color="#5b21b6")
-    text(ax, 68, 13.0, "a_final = clip( (1-α)·a_base + α·mask(a_rl) )　　（α=0 → 恒等，退化为纯 CHESCA）",
+    text(ax, 68, 13.0, "a_final = clip( a_base + α·(m ⊙ a_rl)·g )　　（α=0 → 恒等，退化为纯 CHESCA）",
          size=9.2, color="#4c1d95")
     arrow(ax, 68, 20.8, 68, 18.3, color="#7c3aed", lw=1.8, dashed=True)
 
@@ -147,7 +147,7 @@ def fig_modules():
         (10, "系统管理", "用户 / 角色 / 权限 / 通知\n菜单可见性按权限控制\n（反馈管理列为后续工作）", VIOLET),
         (41, "数据管理", "社区 / 建筑 / 设备\n数据集 schema 与版本\n兼容校验 + CSV 导出复核", GREEN),
         (72, "算法与实验管理", "算法登记 · 参数配置 · 任务提交\n状态跟踪 · 结果归档\n流水线任务串联训练与评估", BLUE),
-        (103, "可视化分析", "KPI 对比（柱状 / 雷达）\n时序曲线（负荷/电价/SOC/室温）\n决策轨迹（基线/残差/掩码/投影）", AMBER),
+        (103, "可视化分析", "KPI 对比（柱状 / 雷达）\n时序曲线（负荷/电价/SOC/室温）\n决策过程（基线/残差/掩码/投影）", AMBER),
     ]
     for x, title, body, colors in MODS:
         box(ax, x, 38.0, 27, 24.0, colors, lw=1.7)
@@ -157,7 +157,7 @@ def fig_modules():
     box(ax, 14, 26.0, 108, 7.6, ("#f1f5f9", "#64748b"), lw=1.8)
     text(ax, 68, 31.4, "统一以任务 id 串起「配置 — 运行 — 结果」全链路", size=11.6,
          weight="bold", color="#334155")
-    text(ax, 68, 28.4, "配置快照 · 仿真输出 · KPI 入库 · 决策轨迹 均可按同一任务 ID 回溯",
+    text(ax, 68, 28.4, "配置快照 · 仿真输出 · KPI 入库 · 决策过程 均可按同一任务 ID 回溯",
          size=9.2, color="#475569")
     for x in (23.5, 54.5, 85.5, 116.5):
         arrow(ax, x, 37.8, x, 34.0, color="#64748b", lw=1.5)
@@ -235,7 +235,7 @@ def fig_er():
 
     box(ax, 52, 43.6, 32, 8.6, YELLOW, lw=1.6)
     text(ax, 68, 49.2, "结果文件目录（按任务 id）", size=9.6, weight="bold", color="#854d0e")
-    text(ax, 68, 46.0, "KPI 记录 · 决策轨迹 · 逐步明细", size=8.3, color="#7c2d12")
+    text(ax, 68, 46.0, "KPI 记录 · 决策过程 · 逐步明细", size=8.3, color="#7c2d12")
     arrow(ax, 68, 57.8, 68, 52.6, color="#ca8a04", lw=1.6)
 
     box(ax, 10, 43.6, 30, 8.6, GREEN, lw=1.6)
@@ -313,7 +313,7 @@ def fig_scheduling():
     arrow(ax, 114, 56.8, 114, 47.4, color="#4b5563", lw=1.6)
 
     ROW2 = [
-        (11, "⑥ 前端展示", "KPI 对比 / 时序曲线\n决策轨迹 · 标准输出与 stderr", BLUE),
+        (11, "⑥ 前端展示", "KPI 对比 / 时序曲线\n决策过程 · 标准输出与 stderr", BLUE),
         (56, "⑤ 解析入库", "KPI 事务写入 kpis 表\n任务状态更新为已完成", VIOLET),
         (101, "④ Python 仿真", "CHESCA / CHESCA-ResMARL\n结果写入本任务目录", YELLOW),
     ]
@@ -337,6 +337,11 @@ def fig_scheduling():
 
 
 def fig_residual_fusion():
+    """【已废弃】图 2-4（残差合成图）现由根目录 _redraw_fig2_4.py 生成。
+
+    本函数仍是旧的 blend 口径，且带「式 (2-?)」占位符，与论文式 2-6 的 additive
+    语义不一致。请勿通过 __main__ 重跑，否则会覆盖已修好的图 2-4。
+    """
     fig, ax = new_canvas(w=13.8, h=7.6, xmax=138, ymax=76)
     box(ax, 9, 69.0, 120, 6.0, VIOLET, lw=1.9)
     text(ax, 69, 72.0, "残差合成：a_final = clip( (1-α)·a_base + α·mask(a_rl) )", size=13.6,
@@ -382,14 +387,14 @@ def fig_residual_fusion():
 def fig_experiment_pipeline():
     fig, ax = new_canvas(w=14.0, h=7.2, xmax=146, ymax=72)
     box(ax, 8, 65.0, 130, 6.0, BLUE, lw=1.9)
-    text(ax, 73, 68.0, "算法实验流程（从参考值到显著性检验）", size=14.2, weight="bold", color="#1e3a8a")
+    text(ax, 73, 68.0, "算法实验流程（从参考值到可比性结论）", size=14.2, weight="bold", color="#1e3a8a")
 
     STEPS = [
         (8, "NOCONTROL", "无控制参考值\n作为 KPI 分母", SLATE),
         (36, "纯 CHESCA", "基线链路验证", BLUE),
         (64, "ResMARL α=0", "退化正确性验证\n须与基线完全一致", GREEN),
-        (92, "α × 掩码 × 安全开关", "每组 ≥5 个随机种子\n均值 / 标准差 / 置信区间", VIOLET),
-        (120, "KPI 归一化 + 检验", "成本 / 碳排 / 峰值 / 不适\n配对显著性检验", AMBER),
+        (92, "参数消融与方案演进", "每组 3 个随机种子\n均值 / 标准差 / 极差", VIOLET),
+        (120, "KPI 归一化 + 判断", "成本 · 碳排 · 峰值 · 越界率\nΔ/σ 比值与 2σ 阈值", AMBER),
     ]
     for x, title, body, colors in STEPS:
         box(ax, x, 42.0, 24, 14.0, colors, lw=1.6)
@@ -400,13 +405,13 @@ def fig_experiment_pipeline():
 
     box(ax, 8, 25.0, 136, 11.0, ("#fef2f2", "#dc2626"), lw=1.6, dashed=True)
     text(ax, 76, 32.6, "失败分支：舒适越界 / 峰值恶化", size=10.4, weight="bold", color="#b91c1c")
-    text(ax, 76, 28.4, "查决策轨迹三列定位来源 —— 基线列（规则与约束）· 残差列（SAC 输出）· 投影列（掩码与裁剪）",
+    text(ax, 76, 28.4, "查决策过程三列定位来源 —— 基线列（规则与约束）· 残差列（策略网络输出）· 投影列（掩码与裁剪）",
          size=8.6, color="#991b1b")
 
     text(ax, 8, 19.4, "· 顺序要求：先确认基线与 α=0 退化正确，再开展参数扫描；退化不一致则先修基线，不做后续比较",
          size=9.0, color="#334155", ha="left")
-    text(ax, 8, 15.8, "· 固定随机种子即可复现 KPI 与决策轨迹，保证跨场景结果可比", size=9.0,
-         color="#334155", ha="left")
+    text(ax, 8, 15.8, "· 只固定随机种子仍会分岔（同种子跨次极差 0.089）；须同时锁定进程哈希种子，才逐位复现",
+         size=9.0, color="#334155", ha="left")
     save(fig, "算法实验流程图")
 
 

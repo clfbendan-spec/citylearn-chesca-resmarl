@@ -173,17 +173,20 @@
     \label{残差合成图}
 \end{figure}
 
-最终下发给建筑设备的控制动作$a_{\text{最终}}$由分层规则基线动作$a_{\text{基线}}$与强化学习残差修正量$\delta$合成，如式\eqref{eq:residual-mix}所示：
+最终下发给建筑设备的控制动作$a_{\text{最终}}$由分层规则基线动作$a_{\text{基线}}$与强化学习残差修正量$\delta$合成。残差量本身受通道掩码、幅度上限与安全门控三重约束，合成方式如式\eqref{eq:residual-mix}所示：
 \begin{equation}
     \label{eq:residual-mix}
-    a_{\text{最终}} = a_{\text{基线}} + \delta, \qquad |\delta| \le \alpha
+    \begin{aligned}
+        \delta &= \alpha \cdot s \cdot \bigl(m \odot a_{\text{RL}}\bigr) \cdot g, \\
+        a_{\text{最终}} &= \operatorname{clip}\bigl(a_{\text{基线}} + \delta\bigr),
+    \end{aligned}
 \end{equation}
-式中，$\alpha \in [0, 1]$为残差夹断系数（$\alpha=0$时退化为纯分层规则基线）。为确保强化学习试错绝不破坏住户舒适度与设备安全，在式\eqref{eq:residual-mix}外围设计了三层安全防护：
+式中，$a_{\text{RL}} \in [-1, 1]$为策略网络经$\tanh$缩放后输出的三维残差动作，$s$为动作跨度缩放系数（实现中取$1.0$），$m$与$g$分别为逐维取$\{0, 1\}$的通道掩码与安全门控，$\odot$表示逐元素相乘，$\alpha \in [0, 1]$为残差幅度上限（$\alpha=0$时$\delta \equiv 0$，式\eqref{eq:residual-mix}退化为纯分层规则基线）。由于$s=1$、$|a_{\text{RL}}| \le 1$且$m, g \in \{0, 1\}$，逐维修正量严格满足$|\delta| \le \alpha$。为确保强化学习试错绝不破坏住户舒适度与设备安全，在式\eqref{eq:residual-mix}外围按“先选通道、再限幅度、后判电量”的顺序设计了三层安全防护：
 
 \begin{enumerate}
-    \item 第一层：修正幅度限制（$\alpha$夹断）——将每维修正量严格限制在$[-\alpha, +\alpha]$内。
-    \item 第二层：动作通道屏蔽掩码（锁定空调温控维）——默认仅允许残差修改电池充放电动作，而将直接影响室温的空调动作强制锁定在分层规则基线上（$\delta^{\text{空调}}=0$），从结构上保证100\%零热热舒适越界恶化。
-    \item 第三层：电池电量安全门控——当电池剩余电量低于当前时段安全保留线时自动断开残差通道，防止晚高峰前提前放空电池。
+    \item 第一层：动作通道屏蔽掩码（锁定空调温控维）——默认仅允许残差修改电池充放电动作，而将直接影响室温的空调动作强制锁定在分层规则基线上（$\delta^{\text{空调}}=0$），从结构上保证热舒适越界率不因强化学习探索而恶化。
+    \item 第二层：修正幅度上限（$\alpha$裁剪）——在掩码放行的维度上，将每维修正量严格限制在$[-\alpha, +\alpha]$内。
+    \item 第三层：电池电量安全门控——当电池剩余电量越过充电上界的安全余量带，或低于当前时段的安全保留线时，该栋建筑该步的残差通道整体断开（$g=0$），防止晚高峰前提前放空电池或过度充电。
 \end{enumerate}
 
 \section{MARL：端到端区域协同多智能体强化学习方法}

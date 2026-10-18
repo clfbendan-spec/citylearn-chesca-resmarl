@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Generate thesis overview figure: core challenges vs improvement solutions."""
+"""【已废弃·请勿运行】旧版图 1-1 生成器（三类难题版）。
+
+论文采用的图 1-1 是「四个核心难题 → 两类互补改进方案」版本，
+由 thesis/_redraw_fig1_1.py 生成。直接运行本脚本会用旧的三类难题版
+覆盖 images/pictures/核心难题与改进方案.png，请勿执行。
+"""
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -105,7 +110,7 @@ solutions = [
     ),
     (
         "改进方案三",
-        "可视化管理平台\n贯通数据、任务、KPI与决策轨迹，\n实现可复现、可解释、可用",
+        "可视化管理平台\n覆盖数据、任务、KPI与决策过程，\n实现可复现、可解释、可用",
         "#f0fdf4",
         "#16a34a",
     ),

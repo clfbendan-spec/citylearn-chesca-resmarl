@@ -82,7 +82,7 @@ MAIN = [
     (63.2, 7.6, C_RULE, "② 动作初稿 initial_actions()（逐栋生成候选动作）\n非停电：冷机 PID + DHW 规则；停电：保冷 + 优先储热"),
     (56.0, 5.6, C_RULE, "③ 未来用电需求：未来制冷 / 热水负荷估计"),
     (44.6, 9.4, C_BATT, "④ 电池 refine refine_actions_with_battery_controller()\nmin_soc 下界 → 树搜索 → 电价感知 → 复电限流\n→ B_high / B_low 阈值增减负荷 → 动作裁剪"),
-    (36.4, 6.4, C_RES, "⑤ 残差修正 apply_residual_correction()\na=(1-α)·a_base+α·a_rl（纯 CHESCA：α=0，恒等）"),
+    (36.4, 6.4, C_RES, "⑤ 残差修正 apply_residual_correction()\na_final = a_base + α·(m⊙a_rl)·g（纯 CHESCA：α=0，恒等）"),
     (28.2, 6.4, C_IO, "输出动作 a_t = [DHW, ELE, TMP] × N 栋 → 交环境执行\ntrace 落盘 + 奖励与 KPI 计算"),
 ]
 for y, h, colors, main in MAIN:
