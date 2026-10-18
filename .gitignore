@@ -104,3 +104,17 @@ $null
 *.bak_*
 *_bak_*
 ~$*
+
+# ---------- 论文工程：本地过程产物（不进仓库）----------
+# 章节/插图备份目录：thesis/backup/、thesis/contents_backup_*/
+thesis/backup/
+thesis/contents_backup_*/
+thesis/images/_fig_backup/
+# 一次性替换/诊断脚本：thesis/_*.py（图 1-1 / 图 2-4 的两个重画脚本除外）
+thesis/_*.py
+!thesis/_redraw_fig1_1.py
+!thesis/_redraw_fig2_4.py
+# 写作过程文档与预览产物
+thesis/main.html
+thesis/术语体检清单.md
+thesis/参考文献核验报告.md

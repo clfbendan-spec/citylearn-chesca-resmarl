@@ -21,7 +21,7 @@ from matplotlib.patches import FancyBboxPatch
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "SimSun"]
 plt.rcParams["axes.unicode_minus"] = False
 
-OUT = Path(r"d:\citylearn-demo\thesis\images\pictures")
+OUT = Path(__file__).resolve().parent.parent / "images" / "pictures"
 OUT.mkdir(parents=True, exist_ok=True)
 
 BLUE = ("#eff6ff", "#2563eb")

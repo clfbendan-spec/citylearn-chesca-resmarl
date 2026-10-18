@@ -21,7 +21,7 @@ from matplotlib.patches import FancyBboxPatch
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "SimSun"]
 plt.rcParams["axes.unicode_minus"] = False
 
-OUT = Path(r"d:\citylearn-demo\thesis\images\pictures")
+OUT = Path(__file__).resolve().parent.parent / "images" / "pictures"
 OUT.mkdir(parents=True, exist_ok=True)
 PNG = OUT / "CHESCA单步流程图.png"
 PDF = OUT / "CHESCA单步流程图.pdf"

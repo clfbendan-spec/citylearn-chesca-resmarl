@@ -19,6 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+from pathlib import Path
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "SimSun", "DejaVu Sans"]
 plt.rcParams["font.family"] = "sans-serif"
@@ -134,9 +135,10 @@ ax.text(0.4, NOTE_TOP - 0.58,
         "· 纯基线入口关闭残差，$a_{\\mathrm{final}} = a_{\\mathrm{base}}$，用于对照实验。",
         fontsize=8.8, color="#333", ha="left", va="top")
 
-# 输出
-out_pdf = r"D:\citylearn-demo\thesis\images\pictures\残差合成图.pdf"
-out_png = r"D:\citylearn-demo\thesis\images\pictures\残差合成图.png"
+# 输出（相对本脚本定位，仓库任意位置 clone 均可运行）
+_PIC = Path(__file__).resolve().parent / "images" / "pictures"
+out_pdf = str(_PIC / "残差合成图.pdf")
+out_png = str(_PIC / "残差合成图.png")
 plt.savefig(out_pdf, bbox_inches="tight", facecolor="white", pad_inches=0.10)
 plt.savefig(out_png, dpi=240, bbox_inches="tight", facecolor="white", pad_inches=0.10)
 plt.close(fig)

@@ -1,0 +1,40 @@
+# ============================================================================
+#  CityLearn 建筑群控制平台 —— Python 算法组件依赖
+# ----------------------------------------------------------------------------
+#  版本取自论文全部实验实际运行的环境（Python 3.9.23 / Windows），
+#  即产出论文读数的那套版本，而非"最新版"。
+#
+#  安装：
+#      python -m pip install -r requirements.txt
+#
+#  说明：
+#    * torch 默认安装 CPU 版本即可跑通全部实验；如需 GPU 加速，
+#      请按 https://pytorch.org 的指引替换为对应 CUDA 版本。
+#    * ray 仅 District-MARL 线（RLlib/MAPPO 对照）需要；只跑 CHESCA /
+#      CHESCA-ResMARL 时可省略。
+#    * gymnasium 固定在 0.28.1：CityLearn 2.5.0 的 env 接口与该版本的
+#      reset/step 签名一致，升到 1.x 需要改 rewards/ 下的封装。
+# ============================================================================
+
+# ---- 仿真与强化学习（必需）----
+citylearn==2.5.0
+gymnasium==0.28.1
+torch==2.7.1
+stable-baselines3==2.2.1
+
+# ---- 分布式训练（District-MARL / RLlib 对照，可选）----
+ray==2.10.0
+
+# ---- 数据处理与指标计算（必需）----
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.13.1
+scikit-learn==1.2.2
+
+# ---- 预测模型与绘图 ----
+xgboost==2.1.4
+matplotlib==3.9.4
+
+# ---- 数据库与配置 ----
+sqlalchemy==2.0.39
+pyyaml==6.0.2

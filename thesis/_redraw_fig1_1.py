@@ -13,6 +13,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+from pathlib import Path
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "SimSun", "DejaVu Sans"]
 plt.rcParams["font.family"] = "sans-serif"
@@ -201,7 +202,7 @@ text(W / 2, GB_BOTTOM + 0.30,
      fontsize=11.0, color="#3b1e63")
 
 # 输出
-out_path = r"D:\citylearn-demo\thesis\images\pictures\核心难题与改进方案.png"
+out_path = str(Path(__file__).resolve().parent / "images" / "pictures" / "核心难题与改进方案.png")
 plt.savefig(out_path, dpi=240, bbox_inches="tight", facecolor="white",
             pad_inches=0.15)
 plt.close(fig)
