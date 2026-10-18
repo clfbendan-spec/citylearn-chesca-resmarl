@@ -32,7 +32,7 @@
 \begin{table}[!htbp]
     \centering\bicaption{建筑群多智能体控制算法六维正交分类对照表}{Six-axis orthogonal taxonomy comparison of MARL algorithms for building cluster control}
     \label{tab:maralgo-axes}
-    \begin{tabular}{P{5.4em}P{4.0em}P{3.8em}P{4.0em}P{4.0em}P{5.6em}P{6.4em}}
+    \begin{tabular}{P{6.4em}P{4.0em}P{3.8em}P{4.0em}P{4.0em}P{5.0em}P{6.4em}}
         \toprule
         算法名称 & \makecell{策略\\类型} & \makecell{学习\\方式} & \makecell{观测\\范围} & \makecell{训练\\架构} & \makecell{协同与\\功劳分配} & \makecell{安全保护\\机制} \\\midrule
         \makecell{单楼独立\\SAC\cite{haarnoja2018}} & \makecell{演员\\评论家} & 异策略 & 仅本楼 & \makecell{完全\\分散} & \makecell{无（仅算\\各楼账）} & \makecell{动作范围\\裁剪} \\
@@ -41,7 +41,7 @@
         \makecell{集中式\\MAPPO\cite{yu2022mappo}} & \makecell{演员\\评论家} & 同策略 & \makecell{训练\\看全区} & 集中训练 & \makecell{全局评论家\\打分} & \makecell{更新步长\\裁剪} \\
         \makecell{MADDPG\\（参考）\cite{lowe2017}} & \makecell{演员\\评论家} & 异策略 & \makecell{训练\\看全区} & 集中训练 & \makecell{集中评论家\\打分} & \makecell{动作范围\\裁剪} \\
         \makecell{QMIX\\（参考）\cite{rashid2018}} & 价值分解 & 异策略 & \makecell{训练\\看全区} & 集中训练 & \makecell{单调价值\\网络合成} & 无显式约束 \\
-        \makecell{CHESCA-ResMARL：\\先验残差} & \makecell{规则\\+残差} & \makecell{同/异\\策略} & \makecell{本楼/\\全区} & \makecell{共享/\\集中} & \makecell{社区树搜索\\+残差} & \makecell{掩码+限幅\\+门控} \\
+        \makecell{CHESCA-\\ResMARL：\\先验残差} & \makecell{规则\\+残差} & \makecell{同/异\\策略} & \makecell{本楼/\\全区} & \makecell{共享/\\集中} & \makecell{社区树搜索\\+残差} & \makecell{掩码+限幅\\+门控} \\
         \makecell{MARL：\\区域协同} & \makecell{演员\\评论家} & 异策略 & \makecell{本楼+\\区域} & 参数共享 & \makecell{正购电归因\\+峰锚定} & \makecell{空调保底\\+备电} \\
         \bottomrule
     \end{tabular}

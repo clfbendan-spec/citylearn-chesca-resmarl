@@ -63,13 +63,13 @@
 \begin{table}[!htbp]
     \centering\bicaption{平台统一接入的五类对比基准与多智能体控制器一览表}{Summary of five baseline and multi-agent controllers uniformly integrated into the platform}
     \label{tab:baselines}
-    \begin{tabular}{P{8.3em}P{5.3em}P{8.3em}P{8.7em}}
+    \begin{tabular}{P{9.0em}P{5.3em}P{8.3em}P{8.0em}}
         \toprule
         控制器中文名称 & 控制类别 & 核心控制逻辑简述 & 在本文实验中的定位与作用 \\\midrule
         无控制参考基准 & 物理基准 & 蓄电池与热水储罐完全停用，仅靠空调维持基本室温 & 作为所有归一化指标（式\ref{eq:kpi-norm}）的分母基准（各项指标恒为$1.0000$） \\
         \makecell{传统冷热电\\规则控制} & 简单规则 & 按一天24小时固定时间表充放电（如早晚固定充放） & 检验不看实时负荷与电价的传统死板规则在社区中的表现 \\
         分层先验控制基线 & 专家规则 & 24h负荷预测 + 本地PID温控 + 社区电池A*树搜索 + 本文脉冲软门控与热水修复 & 本文第一条路线的高水平安全底座，提供极强的确定性削峰基准 \\
-        \makecell{CHESCA-ResMARL：先验\\残差混合控制} & 混合智能 & 在分层先验基线之上叠加多智能体残差修正$\delta$，配齐三层安全包络 & 本文核心方法一：面向有专家规则场景，验证零舒适度越界保证与同策略（IPPO）更新归因 \\
+        \makecell{CHESCA-ResMARL：\\先验残差混合控制} & 混合智能 & 在分层先验基线之上叠加多智能体残差修正$\delta$，配齐三层安全包络 & 本文核心方法一：面向有专家规则场景，验证零舒适度越界保证与同策略（IPPO）更新归因 \\
         \makecell{MARL：区域\\协同多智能体} & 纯强化学习 & 完全不用规则基线，靠9维区域特征 + 买电归因与峰锚定 + 20万大回放池与3步回报从零学习 & 本文核心方法二：面向无先验规则场景，验证纯多智能体自主协同削峰与电度省钱能力 \\
         \bottomrule
     \end{tabular}
