@@ -1,13 +1,16 @@
 """重画 thesis/images/pictures/核心难题与改进方案.png
 
-v2: 文字精简、显式 \\n 换行、字号 9.5、行高拉宽，
-避免 v1 中文字被框边界截断。
+v3 修订（2026-10-18）：
+  1) 方案标题拆两行（主标题 + 括号副标题），消除方案二标题越出文本框；
+  2) 纵向布局改为按内容块累加计算，画布由 13x13 收紧到 13x10.88，
+     让底部「总体目标」框紧贴难题四框（间隔 0.40），不再悬空；
+  3) 难题框之间 / 方案框之间的纵向间隙统一为 0.16 画布单位
+     （按论文图宽约 15cm 折算 ≈ 5px），且两侧自动对齐。
 """
 from __future__ import annotations
 
 import matplotlib
 matplotlib.use("Agg")
-from matplotlib import font_manager
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
@@ -15,14 +18,39 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "SimSun", "DejaVu Sans"]
 plt.rcParams["font.family"] = "sans-serif"
 plt.rcParams["axes.unicode_minus"] = False
 
-# 画布
-W, H = 13.0, 13.0
+# ---------- 纵向布局参数（自顶向下累加，避免留白失衡） ----------
+MARGIN = 0.30        # 画布上/下留白
+TITLE_H = 0.85       # 顶部主标题框高
+GAP_M_TITLE = 0.25   # 主标题 -> 副标题
+SUB_H = 0.55         # 副标题条高
+GAP_SUB = 0.45       # 副标题 -> 难题组
+ROW_H = 1.55         # 单个难题框高
+BOX_GAP = 0.16       # 难题框之间 / 方案框之间的纵向间隙
+GAP_GB = 0.40        # 难题组 -> 总体目标框
+GB_H = 1.10          # 总体目标框高
+
+GROUP_H = 4 * ROW_H + 3 * BOX_GAP
+H = (MARGIN + TITLE_H + GAP_M_TITLE + SUB_H + GAP_SUB
+     + GROUP_H + GAP_GB + GB_H + MARGIN)
+W = 13.0
+
 fig, ax = plt.subplots(figsize=(W, H), dpi=120)
 ax.set_xlim(0, W)
 ax.set_ylim(0, H)
 ax.set_aspect("equal")
 ax.axis("off")
 fig.patch.set_facecolor("white")
+
+# 关键 y 坐标
+TITLE_Y = H - MARGIN - TITLE_H
+SUB_Y = TITLE_Y - GAP_M_TITLE - SUB_H
+GROUP_TOP = SUB_Y - GAP_SUB
+LY1 = GROUP_TOP - ROW_H
+LY2 = LY1 - ROW_H - BOX_GAP
+LY3 = LY2 - ROW_H - BOX_GAP
+LY4 = LY3 - ROW_H - BOX_GAP
+GB_TOP = LY4 - GAP_GB
+GB_BOTTOM = GB_TOP - GB_H
 
 
 def box(x, y, w, h, fill, edge, lw=1.6, radius=0.12, alpha=0.55):
@@ -50,26 +78,18 @@ def arrow(x1, y1, x2, y2, color="#444", lw=1.6, style="-|>"):
 
 
 # ----- 顶部标题（蓝） -----
-box(0.4, 11.95, W - 0.8, 0.85, "#e3edfb", "#1f4e9c", lw=2.0)
-text(W / 2, 12.37, "基于多智能体强化学习的建筑群节能控制",
+box(0.4, TITLE_Y, W - 0.8, TITLE_H, "#e3edfb", "#1f4e9c", lw=2.0)
+text(W / 2, TITLE_Y + TITLE_H / 2, "基于多智能体强化学习的建筑群节能控制",
      fontsize=18, weight="bold", color="#1f4e9c")
 
 # ----- 副标题条 -----
-box(0.4, 11.00, W - 0.8, 0.55, "#f3f7fc", "#1f4e9c", lw=1.2)
-text(W / 2, 11.27, "四个核心难题      →      两类互补改进方案",
+box(0.4, SUB_Y, W - 0.8, SUB_H, "#f3f7fc", "#1f4e9c", lw=1.2)
+text(W / 2, SUB_Y + SUB_H / 2, "四个核心难题      →      两类互补改进方案",
      fontsize=14, weight="bold", color="#1f4e9c")
 
-# ----- 左侧四个难题（4 行） -----
+# ----- 左侧四个难题 -----
 LX = 0.4
 LW = 5.4
-ROW_H = 1.55
-GAP = 0.10
-# 顶 y：副标题条底 = 11.00，留 0.45 间距 → 难题一顶 = 10.45
-# LY1 = 难题一底（y坐标），实际 LY1 是底
-LY1 = 10.45 - ROW_H  # = 8.90
-LY2 = LY1 - ROW_H - GAP
-LY3 = LY2 - ROW_H - GAP
-LY4 = LY3 - ROW_H - GAP
 
 problems = [
     (LY1, "#ffd6b3", "#d96f33", "核心难题一",
@@ -103,19 +123,22 @@ for y, fill, edge, title, body in problems:
 # ----- 右侧两个方案（各覆盖两难题） -----
 RX = 6.85
 RW = 5.75
-# 方案一：覆盖难题一+难题二
+CX = RX + RW / 2
+
+# 方案一：覆盖难题一 + 难题二
 SOL1_TOP = LY1 + ROW_H
 SOL1_BOTTOM = LY2
 SOL1_H = SOL1_TOP - SOL1_BOTTOM
-# 方案二：覆盖难题三+难题四
+# 方案二：覆盖难题三 + 难题四
 SOL2_TOP = LY3 + ROW_H
 SOL2_BOTTOM = LY4
 SOL2_H = SOL2_TOP - SOL2_BOTTOM
 
 box(RX, SOL1_BOTTOM, RW, SOL1_H, "#c8efd9", "#2c8f5a", lw=1.8)
-text(RX + RW / 2, SOL1_TOP - 0.30,
-     "改进方案一：先验引导残差混合控制（回应难题一、二）",
+text(CX, SOL1_TOP - 0.24, "改进方案一：先验引导残差混合控制",
      fontsize=12.5, weight="bold", color="#2c8f5a")
+text(CX, SOL1_TOP - 0.52, "（回应难题一、二）",
+     fontsize=10.5, color="#2c8f5a")
 s1_body = (
     "1) 修复分层先验控制器内部生活热水储罐状态更新闭环，\n"
     "    释放热水储热移峰通道；\n"
@@ -125,13 +148,15 @@ s1_body = (
     "    + 幅度上限约束 + 低电量门控构成三层安全包络，\n"
     "    确保热舒适越界代价为零。"
 )
-ax.text(RX + RW / 2, SOL1_BOTTOM + SOL1_H / 2 - 0.15, s1_body,
+s1_region_top = SOL1_TOP - 0.70
+ax.text(CX, (s1_region_top + SOL1_BOTTOM + 0.10) / 2, s1_body,
         fontsize=9.5, color="#1d4d33", ha="center", va="center")
 
 box(RX, SOL2_BOTTOM, RW, SOL2_H, "#c8e9f7", "#2c7a9c", lw=1.8)
-text(RX + RW / 2, SOL2_TOP - 0.30,
-     "改进方案二：端到端区域协同 MARL + 可视化管理平台（回应难题二、三、四）",
+text(CX, SOL2_TOP - 0.24, "改进方案二：端到端区域协同 MARL + 可视化管理平台",
      fontsize=12.5, weight="bold", color="#2c7a9c")
+text(CX, SOL2_TOP - 0.52, "（回应难题二、三、四）",
+     fontsize=10.5, color="#2c7a9c")
 s2_body = (
     "1) 非侵入式环境包装器注入 9 维区域协同特征\n"
     "   （社区净负荷比例 + 本楼相对电量排名），不动仿真器源码；\n"
@@ -143,38 +168,34 @@ s2_body = (
     "5) 基于 Vue + Spring Boot + MySQL + Python 异步进程池\n"
     "    的可视化管理平台贯通数据/任务/KPI/白盒轨迹全流程。"
 )
-ax.text(RX + RW / 2, SOL2_BOTTOM + SOL2_H / 2 - 0.25, s2_body,
+s2_region_top = SOL2_TOP - 0.70
+ax.text(CX, (s2_region_top + SOL2_BOTTOM + 0.10) / 2, s2_body,
         fontsize=9.5, color="#1d3d52", ha="center", va="center")
 
 # ----- 中间连线 -----
-arrow(LX + LW + 0.05, LY1 + ROW_H * 0.7,
+arrow(LX + LW + 0.05, LY1 + ROW_H * 0.70,
       RX - 0.05, SOL1_BOTTOM + SOL1_H * 0.82,
       color="#2c8f5a")
-arrow(LX + LW + 0.05, LY2 + ROW_H * 0.7,
+arrow(LX + LW + 0.05, LY2 + ROW_H * 0.70,
       RX - 0.05, SOL1_BOTTOM + SOL1_H * 0.42,
       color="#2c8f5a")
-# 难题二 → 方案二（细）
+# 难题二 -> 方案二（细）
 arrow(LX + LW + 0.05, LY2 + ROW_H * 0.30,
       RX - 0.05, SOL2_TOP - 0.55,
       color="#2c7a9c", lw=1.0)
-arrow(LX + LW + 0.05, LY3 + ROW_H * 0.7,
-      RX - 0.05, SOL2_TOP - 1.6,
+arrow(LX + LW + 0.05, LY3 + ROW_H * 0.70,
+      RX - 0.05, SOL2_TOP - 1.60,
       color="#2c7a9c")
-arrow(LX + LW + 0.05, LY4 + ROW_H * 0.7,
-      RX - 0.05, SOL2_TOP - 2.5,
+arrow(LX + LW + 0.05, LY4 + ROW_H * 0.70,
+      RX - 0.05, SOL2_TOP - 2.50,
       color="#2c7a9c")
 
 # ----- 底部紫色总体目标 -----
-GB_TOP = 1.65
-GB_BOTTOM = 0.55
-GB_LEFT = 0.4
-GB_RIGHT = W - 0.4
-box(GB_LEFT, GB_BOTTOM, GB_RIGHT - GB_LEFT, GB_TOP - GB_BOTTOM,
-    "#dcc6ff", "#6a3eb4", lw=2.0)
-text((GB_LEFT + GB_RIGHT) / 2, GB_TOP - 0.35,
+box(0.4, GB_BOTTOM, W - 0.8, GB_H, "#dcc6ff", "#6a3eb4", lw=2.0)
+text(W / 2, GB_TOP - 0.35,
      "总体目标：CHESCA-ResMARL 混合控制 + 可视化管理平台",
      fontsize=14, weight="bold", color="#4d2480")
-text((GB_LEFT + GB_RIGHT) / 2, GB_BOTTOM + 0.30,
+text(W / 2, GB_BOTTOM + 0.30,
      "规则共主（保安全底线） + MARL 可学习增补（求协同上限） + "
      "可视化平台（贯工程闭环）",
      fontsize=11.0, color="#3b1e63")
@@ -184,4 +205,4 @@ out_path = r"D:\citylearn-demo\thesis\images\pictures\核心难题与改进方�
 plt.savefig(out_path, dpi=240, bbox_inches="tight", facecolor="white",
             pad_inches=0.15)
 plt.close(fig)
-print("SAVED:", out_path)
+print("SAVED:", out_path, "| canvas %.2f x %.2f" % (W, H))
