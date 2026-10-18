@@ -4,7 +4,7 @@
 建筑群能源系统同时受天气、住户用电、分时电价、屋顶光伏与室内热舒适这五类信号的耦合影响，
 在不确定性与目标冲突上明显高于单建筑。固定规则控制缺乏自适应能力，模型预测控制依赖精确
 物理建模且算力较重，纯多智能体强化学习则会陷入局部视野受限、跨楼功劳分配模糊、训练不稳
-定、安全边界难保证四类问题。围绕规则基线自适应、纯学习协同上限、实验可复现性、真实电费
+定、安全边界难保证四类问题。围绕分层规则基线自适应、纯学习协同上限、实验可复现性、真实电费
 核算、算法过程可查五个维度，既有研究在每一项上均留有可量化的提升空间。
 
 本文的工作分两条线。第一条线解决“不同社区该用哪种控制方法”：社区如果已有专家经验和物理
@@ -27,19 +27,19 @@
 据转换插件（环境包装器），把社区整体用电水平与本楼电池相对排名这两个区域协同特征动态注
 入各智能体局部观测，使平台层与算法层解耦。奖励侧，对“本步向电网买电的电度贡献”分摊惩
 罚，并用本局历史最高峰值动态锚定目标，迫使策略协同削峰而非各自为战；训练侧，把经验回放
-池显著扩大，并叠加多步回报引导，将 SAC 算法的训练–评估节奏稳定下来。本文首次实证：纯
-多智能体策略的社区峰值比较单楼独立 SAC 基线显著降低，室内过热不适率从较高水平大幅下降，
-分时电度电费降至各对比组最低水平。本文同时把全月尖峰时刻的功率平衡做了通道拆解：剩余差
+池显著扩大，并叠加多步累积回报引导，将软演员—评论家（SAC）算法的训练–评估节奏稳定下来。本文首次实证：纯
+多智能体策略的社区峰值比较单楼独立 SAC 基线显著降低，室内热舒适越界率从较高水平大幅下降，
+分时电度电费降至各对比组最低水平。本文同时把全月尖峰时刻的功率平衡做了构成分解：剩余差
 距主要源于峰前电池电量已被日常分时电价套利消耗，部分源于稳态空调下限保护限制了大幅关
 停——这是无预测纯学习策略的物理能力边界，也是后续研究必须正视的客观上限。
 
 （3）在经济核算上，本文独立构建了社区并网点处“两部制需量 + 度电 + 电池循环折旧”三段
 账单模型：度电部分按分时电价，需量部分按整月社区峰值最大需量计一次容量费，电池部分按等
 效循环数折算为折旧扣回。按月扣除电池折旧后，社区综合电费仍较纯 SAC 显著下降一个量级，
-与园区目前已有的纯电度电费核算口径相比，更贴合工商业社区微电网的实际账单结构。
+与园区目前已有的纯电度电费核算方式相比，更贴合工商业社区微电网的实际账单结构。
 
 （4）在可视化上，平台基于前后端分离与异步进程调度，把“模型拓扑前置校验、训练进度实时
-监控、多维性能对比、逐小时决策过程回放”打通，把算法层与工程层的工作流收口在同一界
+监控、多维性能对比、逐小时决策过程回放”打通，把算法层与工程层的工作流统一在同一界
 面，使算法决策与工程操作可被同一团队在同一界面下完整审计。
 
 \ChineseKeywords{建筑群节能；多智能体强化学习；区域协同削峰；残差强化学习；两部制需量电价；可视化管理}
@@ -51,13 +51,13 @@ Building-cluster energy systems are jointly driven by weather conditions, occupa
 
 To address these gaps, this thesis follows two lines of work. The first asks which control method suits which community: where expert rules and physical models already exist, the rules carry the basic control and learning only makes small corrections; where no such prior exists, multiple agents learn cooperative peak shaving from scratch. The second asks how the algorithm can be seen and supervised: a management platform lays out training progress, method comparison, and hour-by-hour decision traces on one screen, so that every adjustment can be replayed and explained. The main contributions are summarized in four points.
 
-\textit{Contribution 1 (rule-prior communities).} We reformulate the hierarchical pipeline ``load forecast $\rightarrow$ per-building temperature draft $\rightarrow$ community-battery path search $\rightarrow$ action write-back,'' and repair the closed-loop state update of its domestic hot-water storage channel so that the thermal buffering capacity is actually exercised. On top of that, we add a continuous graded soft gate whose depth grows with the current-step non-shiftable load surge: the larger the surge, the deeper the admissible cut into battery charge and discharge. We empirically show that community peak demand and peak ratio drop substantially relative to the no-control baseline on the standard monthly benchmark, decrease further on a longer-horizon benchmark, and that thermal-comfort violations stay exactly zero throughout. The resulting policy transfers zero-shot to a longer horizon and to a larger six-building cluster, producing marked peak reductions that are further amplified by domain-fingerprint recalibration. Stacked on the rule prior is a multi-agent residual learning policy constrained by three envelopes---action-channel masking, amplitude clipping, and low-SOC protection---and we show that indoor thermal comfort stays exactly zero-violation across all tested amplitude levels. We further provide the first empirical evidence that on-policy iterative updates account for the great majority of early-stage peak-shaving gains within the CTDE family.
+\textit{Contribution 1 (rule-prior communities).} We reformulate the hierarchical pipeline ``load forecast $\rightarrow$ per-building temperature draft $\rightarrow$ community-battery path search $\rightarrow$ action write-back,'' and repair the closed-loop state update of its domestic hot-water storage channel so that the thermal buffering capacity is actually exercised. On top of that, we add a continuous graded soft gate whose depth grows with the current-step non-shiftable load surge: the larger the surge, the deeper the admissible cut into battery charge and discharge. We empirically show that community peak demand and peak ratio drop substantially relative to the no-control baseline on the standard monthly benchmark, decrease further on a longer-horizon benchmark, and that thermal-comfort violations stay exactly zero throughout. The resulting policy transfers zero-shot to a longer horizon and to a larger six-building cluster, producing marked peak reductions that are further amplified by load-signature recalibration. Stacked on the rule prior is a multi-agent residual learning policy constrained by three envelopes---action-channel masking, amplitude clipping, and low-SOC protection---and we show that indoor thermal comfort stays exactly zero-violation across all tested amplitude levels. We further provide the first empirical evidence that on-policy iterative updates account for the great majority of early-stage peak-shaving gains within the centralized-training-with-decentralized-execution (CTDE) family.
 
-\textit{Contribution 2 (no-prior communities and engineering deployment).} We design a non-intrusive external data-augmentation plugin (an environment wrapper) that injects district-level electricity awareness and the relative battery rank of each building into every agent's local observation, without touching the simulator source. On the reward side, we attribute penalty to the net grid-import contribution of each building and anchor the target to the running season-maximum peak, forcing cooperation over selfishness. On the training side, we substantially enlarge the replay buffer and add multi-step return bootstrapping, which stabilizes the train--eval loop of SAC. The resulting MARL policy drives the district peak ratio substantially below the per-building SAC baseline, lowers indoor overheating discomfort from a high level to a much lower one, and yields the lowest time-of-use energy charge among all compared groups. We also decompose the monthly peak moment into power-balance channels: the residual gap traces mainly to the battery being drained ahead of the peak by routine time-of-use arbitrage, and partially to the steady-state cooling-load floor that limits aggressive shutdown. We argue that this split pinpoints the physical capability boundary of forecast-free pure MARL and should be taken as the objective upper limit by future work.
+\textit{Contribution 2 (no-prior communities and engineering deployment).} We design a non-intrusive external data-augmentation plugin (an environment wrapper) that injects district-level electricity awareness and the relative battery rank of each building into every agent's local observation, without touching the simulator source. On the reward side, we attribute penalty to the net grid-import contribution of each building and anchor the target to the running season-maximum peak, forcing cooperation over selfishness. On the training side, we substantially enlarge the replay buffer and add multi-step return bootstrapping, which stabilizes the train--eval loop of soft actor--critic (SAC). The resulting MARL policy drives the district peak ratio substantially below the per-building SAC baseline, lowers indoor overheating discomfort from a high level to a much lower one, and yields the lowest time-of-use energy charge among all compared groups. We also decompose the monthly peak moment into power-balance channels: the residual gap traces mainly to the battery being drained ahead of the peak by routine time-of-use arbitrage, and partially to the steady-state cooling-load floor that limits aggressive shutdown. We argue that this split pinpoints the physical capability boundary of forecast-free pure MARL and should be taken as the objective upper limit by future work.
 
 \textit{Contribution 3 (economic accounting).} We build a three-part community point-of-common-coupling tariff model that combines a time-of-use energy charge, a two-part demand charge tied to the monthly peak, and a battery depreciation charge converted from equivalent cycle counts. Even after deducting battery depreciation, the integrated monthly bill still drops by a significant margin relative to pure SAC, making the result directly relevant to industrial and commercial parks.
 
-\textit{Contribution 4 (visualization).} A frontend-backend decoupled platform with asynchronous process scheduling unifies four workflows---pre-flight topology validation, training progress monitoring, multi-dimensional performance comparison, and hourly white-box trajectory replay---into a single engineering interface where algorithm decisions and operations can be jointly reviewed by the same team.
+\textit{Contribution 4 (visualization).} A frontend-backend decoupled platform with asynchronous process scheduling unifies four workflows---pre-flight topology validation, training progress monitoring, multi-dimensional performance comparison, and hourly decision-trace replay---into a single engineering interface where algorithm decisions and operations can be jointly reviewed by the same team.
 
 \EnglishKeywords{building cluster energy saving; multi-agent reinforcement learning; district cooperative peak shaving; residual reinforcement learning; two-part demand tariff; visualization management}
 \end{EnglishAbstract}
