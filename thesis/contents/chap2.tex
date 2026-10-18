@@ -27,12 +27,12 @@
 
 主流多智能体强化学习（MARL）形成了两种互为补充的训练范式\cite{costea2024,albrecht2024marl}。第一种是集中式训练与分散式执行（CTDE），代表算法有MADDPG\cite{lowe2017}、QMIX\cite{rashid2018}与MAPPO\cite{yu2022mappo,wang2025mappo}——训练阶段允许评论家拼接全社区状态辅助打分，部署阶段仅保留各楼演员网络按局部观测独立执行。第二种是参数共享分散式训练（Parameter Sharing），代表算法有参数共享IPPO\cite{schroeder2021ippo}与参数共享SAC——同构建筑共用同一套网络权重并汇总多楼样本联合更新，在成倍提升样本效率的同时避免了高维全局评论家的小样本过拟合。
 
-参考都灵理工大学Costea提出的“多智能体算法六轴分类法”\cite{costea2024}，表\ref{tab:maralgo-axes}对本项目实际使用的控制算法及两类经典参考算法（MADDPG、QMIX）进行了六维正交对比，列含义详见表下注释。
+参考都灵理工大学Costea提出的“多智能体算法六轴分类法”\cite{costea2024}，表\ref{tab:maralgo-axes}对本项目实际使用的控制算法及两类经典参考算法（MADDPG、QMIX）进行了六维正交对比。
 
 \begin{table}[!htbp]
     \centering\bicaption{建筑群多智能体控制算法六维正交分类对照表}{Six-axis orthogonal taxonomy comparison of MARL algorithms for building cluster control}
     \label{tab:maralgo-axes}
-    \begin{tabular}{P{5.6em}P{4.0em}P{3.8em}P{4.2em}P{4.0em}P{6.0em}P{5.0em}}
+    \begin{tabular}{P{5.4em}P{4.0em}P{3.8em}P{4.0em}P{4.0em}P{5.6em}P{6.4em}}
         \toprule
         算法名称 & \makecell{策略\\类型} & \makecell{学习\\方式} & \makecell{观测\\范围} & \makecell{训练\\架构} & \makecell{协同与\\功劳分配} & \makecell{安全保护\\机制} \\\midrule
         \makecell{单楼独立\\SAC\cite{haarnoja2018}} & \makecell{演员\\评论家} & 异策略 & 仅本楼 & \makecell{完全\\分散} & \makecell{无（仅算\\各楼账）} & \makecell{动作范围\\裁剪} \\
@@ -41,12 +41,10 @@
         \makecell{集中式\\MAPPO\cite{yu2022mappo}} & \makecell{演员\\评论家} & 同策略 & \makecell{训练\\看全区} & 集中训练 & \makecell{全局评论家\\打分} & \makecell{更新步长\\裁剪} \\
         \makecell{MADDPG\\（参考）\cite{lowe2017}} & \makecell{演员\\评论家} & 异策略 & \makecell{训练\\看全区} & 集中训练 & \makecell{集中评论家\\打分} & \makecell{动作范围\\裁剪} \\
         \makecell{QMIX\\（参考）\cite{rashid2018}} & 价值分解 & 异策略 & \makecell{训练\\看全区} & 集中训练 & \makecell{单调价值\\网络合成} & 无显式约束 \\
-        \makecell{方案一：\\先验残差} & \makecell{规则\\+残差} & \makecell{同/异\\策略} & \makecell{本楼/\\全区} & \makecell{共享/\\集中} & \makecell{社区树搜索\\+残差} & \makecell{掩码+限幅\\\quad+门控} \\
+        \makecell{方案一：\\先验残差} & \makecell{规则\\+残差} & \makecell{同/异\\策略} & \makecell{本楼/\\全区} & \makecell{共享/\\集中} & \makecell{社区树搜索\\+残差} & \makecell{掩码+限幅\\+门控} \\
         \makecell{方案二：\\区域协同} & \makecell{演员\\评论家} & 异策略 & \makecell{本楼+\\区域} & 参数共享 & \makecell{正购电归因\\+峰锚定} & \makecell{空调保底\\+备电} \\
         \bottomrule
     \end{tabular}
-
-    \vspace{0.3em}\small\noindent\textbf{说明：}本文实际采用与改进的核心算法集中在末两行（方案一：先验残差、方案二：区域协同），上层六行（前六行算法）均为对比基线或参考算法，用于在同一套基准下客观衡量本文方案相对经典 MARL 算法的位置；六维属性按“策略类型 / 学习方式 / 观测范围 / 训练架构 / 协同与功劳分配 / 安全保护机制”自左至右展开，最右两列（功劳分配与安全保护）是本文在多建筑协同场景中最关心的两条对比轴。
 \end{table}
 
 \section{建筑群能量管理问题形式化与探索性数据分析}

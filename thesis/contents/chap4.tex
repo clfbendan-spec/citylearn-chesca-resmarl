@@ -87,8 +87,8 @@ Python 仿真进程在后台运行时，会产生两类输出信息：一类是�
 具体实现包含三个步骤：
 \begin{enumerate}
     \item 训练期间的原子进度更新：在100轮强化学习训练过程中，Python端每完成一次评估，就把当前轮数、总轮数和历史最佳峰值比写入临时进度文件，再通过操作系统原子替换指令瞬间发布为最新版本，确保Java后端每隔5秒读取时不会读到写了一半的残缺文件。
-    \item 任务结束后的指标自动归档：当仿真进程正常结束（返回码为0）时，Java后端的日志解析器自动读取任务文件夹下的评估指标汇总文件（含全时段峰值比、日均峰值比、电度成本比、碳排放比、爬坡率比、热舒适越界率等关键指标）与社区评估摘要文件（包含关键小时步的电池充放电/室温等摘要），将上述指标自动批量写入任务专属输出目录的 CSV 汇总文件与本论文附件资料中。
-    \item 异常报错的自动捕获与留痕：如果Python进程因参数配置错误等原因中途失败（返回码非0），后端立即将数据库中的任务状态更新为“失败（状态码2）”，并将最后50行错误堆栈保存到错误日志文件中，前端页面可点击该记录查看完整报错原因。
+    \item 任务结束后的指标自动归档：当仿真进程正常结束时，Java后端的日志解析器自动读取任务文件夹下的评估指标汇总文件（含全时段峰值比、日均峰值比、电度成本比、碳排放比、爬坡率比、热舒适越界率等关键指标）与社区评估摘要文件（包含关键小时步的电池充放电与室温等摘要），将上述指标自动批量归档到任务专属输出目录。
+    \item 异常报错的自动捕获与留痕：如果Python进程因参数配置错误等原因中途失败，后端立即将数据库中的任务状态更新为“失败”，并将最后50行错误堆栈保存到错误日志文件中，前端页面可点击该记录查看完整报错原因。
 \end{enumerate}
 
 \section{数据库表结构设计与文件混合存储实现}
@@ -104,7 +104,7 @@ Python 仿真进程在后台运行时，会产生两类输出信息：一类是�
         \texttt{task\_name} & \texttt{VARCHAR(128)} & 否 & 否 & 用户自定义的任务名称（如“方案二\_种子3”） \\
         \texttt{dataset\_id} & \texttt{INT} & 否 & 否 & 关联的数据集编号（外键） \\
         \texttt{script\_id} & \texttt{INT} & 否 & 否 & 关联的控制器脚本编号（外键） \\
-        \texttt{status} & \texttt{TINYINT} & 否 & 否 & 运行状态：$0=$运行中，$1=$已完成，$2=$失败 \\
+        \texttt{status} & \texttt{TINYINT} & 否 & 否 & 运行状态：运行中、已完成、失败 \\
         \texttt{output\_dir} & \texttt{VARCHAR(255)} & 否 & 否 & 该任务专属输出文件夹在磁盘上的路径 \\
         \texttt{created\_at} & \texttt{DATETIME} & 否 & 否 & 任务提交创建时间 \\
         \bottomrule
@@ -152,90 +152,58 @@ Python 仿真进程在后台运行时，会产生两类输出信息：一类是�
 
 整个异步调度过程分为四步：
 \begin{enumerate}
-    \item 任务创建与快照隔离：用户在网页点击“提交任务”后，Spring Boot后端先检查数据集与模型建筑数是否匹配；检查通过后立即生成任务编号、在数据库中插入一条状态为“运行中（$0$）”的记录，并在磁盘上创建该任务专属的文件夹，将用户当前填写的参数和脚本复制一份存为快照，随即在$0.05$秒内向前端返回“提交成功”。
-    \item 后台拉起确定性Python子进程：后端异步线程池接手该任务，通过Java进程构建器（\texttt{ProcessBuilder}）启动独立的Python子进程，并在启动环境变量中强制注入进程哈希种子（取值为0，锁定进程哈希种子，消除多智能体字典遍历顺序带来的随机分岔）。
+    \item 任务创建与快照隔离：用户在网页点击“提交任务”后，Spring Boot后端先检查数据集与模型建筑数是否匹配；检查通过后立即生成任务编号、在数据库中插入一条状态为“运行中”的记录，并在磁盘上创建该任务专属的文件夹，将用户当前填写的参数和脚本复制一份存为快照，随即向前端返回“提交成功”。
+    \item 后台拉起确定性Python子进程：后端异步线程池接手该任务，通过 Java 进程构建器启动独立的Python子进程，并在启动环境变量中强制注入进程哈希种子（取值为0），消除多智能体字典遍历顺序带来的随机分岔。
     \item 前端周期轮询实时进度：在Python子进程训练期间，前端页面每隔5秒调用一次进度查询接口，后端直接读取任务文件夹下的训练进度文件并返回当前训练到了第几轮、当前最佳全时段峰值是多少，实现流畅的进度条展示。
-    \item 最优检查点恢复与结果归档：训练到达设定轮数后，Python程序自动重新加载整个训练过程中表现最好的检查点权重（Best Checkpoint），跑完一遍完整评估并生成评估指标汇总文件与逐时动作轨迹文件；Java后端监听到进程结束后，自动将所有评估指标与逐时轨迹归档到任务专属输出目录，并将任务状态更新为“已完成（$1$）”。
+    \item 最优检查点恢复与结果归档：训练到达设定轮数后，Python程序自动重新加载整个训练过程中表现最好的检查点权重（Best Checkpoint），跑完一遍完整评估并生成评估指标汇总文件与逐时动作轨迹文件；Java后端监听到进程结束后，自动将所有评估指标与逐时轨迹归档到任务专属输出目录，并将任务状态更新为“已完成”。
 \end{enumerate}
 
 \section{前端系统功能实现与运行界面展示}
 前述各模块经联调后落地为可运行系统，本节按页面截图逐一展示。
 
 \subsection{系统首页与全局导航}
-图\figref{系统首页界面}展示了平台登录后的系统首页。左侧为清晰的导航菜单栏，右侧上方展示了当前接入的社区建筑规模、数据集数量与历史实验任务统计卡片，下方提供了快速创建实验与查看分析报告的操作引导。
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.90\textwidth]{./images/pictures/系统首页界面.png}
-    \centering\bicaption{系统首页总览与全局导航运行界面}{System dashboard overview and global navigation interface}
-    \label{系统首页界面}
-\end{figure}
-
-\subsection{模型参数配置与任务提交}
-图\figref{模型配置界面}展示了算法与数据集配置页面。用户可在顶部下拉框中选择“标准月度评估集”等中文命名数据集与对应的控制器，下方自动展开分组参数表单（如脉冲分级阈值、残差幅度$\alpha$、区域峰值权重与经验池大小），右侧支持直接查看或微调Python执行脚本。
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.90\textwidth]{./images/pictures/模型配置界面.png}
-    \centering\bicaption{双路线控制策略动态分组参数配置与任务提交界面}{Dynamic grouped parameter configuration and task submission interface}
-    \label{模型配置界面}
-\end{figure}
-
-用户在“模型优选”区选中一个已完成任务后，平台会联动展示该任务对应的逐时电网购售电柱图与电费核算明细，便于对比不同控制器在峰谷套利上的实际效果，弹窗界面如图\figref{模型优选-电网详情弹窗}所示。
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.62\textwidth]{./images/pictures/模型优选-电网详情弹窗.jpg}
-    \centering\bicaption{模型优选—社区电网逐时购售电与电费核算弹窗界面}{Model selector: per-step community grid import/export and electricity-bill accounting popup}
-    \label{模型优选-电网详情弹窗}
-\end{figure}
-
-\subsection{能源分析与多任务KPI对比}
-图\figref{能源与KPI分析界面}展示了能源与KPI对比分析页面。页面上方通过分组柱状图与五维雷达图直观对比了无控制基准、分层先验基线、先验残差混合控制与端到端区域协同控制在五项核心指标上的表现，下方同步展示了社区逐小时净负荷曲线与分时电价的对应关系。
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.90\textwidth]{./images/pictures/能源与KPI分析界面.png}
-    \centering\bicaption{多任务KPI对比柱状图、雷达图与社区负荷时序分析界面}{Multi-task KPI bar chart, radar chart, and community load time-series analysis interface}
-    \label{能源与KPI分析界面}
-\end{figure}
-
-页面上方的“能源分配”区块用桑基图（按流量加权的可视化方式）直观展示选定时间窗内太阳能、电网、家庭负荷与蓄电池四类节点间的能量流向与逐时吞吐，弥补了多任务KPI对比只能给出聚合数值、无法看清节点级能量来源与去向的不足，桑基图界面如图\figref{能源分配桑基图}所示。
+平台登录后的首页左侧为导航菜单栏，右侧上方展示当前接入的社区建筑规模、数据集数量与历史实验任务统计卡片，下方提供快速创建实验与查看分析报告的操作引导。首页核心区块“能源分配”以桑基图形式呈现选定时间窗内太阳能、电网、家庭负荷与蓄电池四类节点之间的能量流向与逐时吞吐，可直观判断某一时段社区用电究竟来自光伏、电网还是电池放电，运行界面如图\figref{能源分配桑基图}所示。
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.86\textwidth]{./images/pictures/能源分配桑基图.jpg}
-    \centering\bicaption{能源分配桑基图—太阳能/电网/家庭/电池四节点能量流向与吞吐}{Energy allocation Sankey: solar/grid/home/battery four-node energy flow and throughput}
+    \centering\bicaption{系统首页能源分配桑基图——太阳能、电网、家庭与电池四节点能量流向与吞吐}{System dashboard energy-allocation Sankey: energy flow and throughput among solar, grid, home, and battery}
     \label{能源分配桑基图}
 \end{figure}
 
-\subsection{逐小时决策轨迹与环境状态联动查看}
-图\figref{决策轨迹页面}展示了逐小时白盒决策轨迹诊断页面。研究人员选中具体楼宇并将时间轴定位到晚间用电高峰时段后，页面同屏对齐展示该楼宇每小时的基线动作、残差修正量与最终执行动作，以及对应的室内温度与蓄电池剩余电量变化，每一项控制决策对应到一组实测的状态量与触发条件。
+\subsection{模型参数配置与任务提交}
+算法与数据集配置页面顶部提供以中文命名的数据集与控制器下拉框，选定控制器后下方自动展开对应的分组参数表单（如脉冲分级阈值、残差幅度$\alpha$、区域峰值权重与经验池大小），右侧支持直接查看或微调执行脚本。参数填写完毕后点击“新建任务”，弹出“训练 $\to$ 评估”两步编排窗口：第一步选择训练脚本与训练配置，第二步选择评估脚本与评估配置，两步均填写完毕才生成一条新任务记录，避免误点造成孤立任务，如图\figref{新建任务弹窗}所示。
 \begin{figure}[!htbp]
     \centering
-    \includegraphics[width=0.90\textwidth]{./images/pictures/决策轨迹页面.png}
-    \centering\bicaption{逐小时白盒决策轨迹分解与室温、电池状态联动回放界面}{Hourly white-box decision trajectory decomposition and indoor temperature/battery SOC linked playback interface}
-    \label{决策轨迹页面}
+    \includegraphics[width=0.78\textwidth]{./images/pictures/新建任务弹窗.jpg}
+    \centering\bicaption{新建任务——训练与评估两步编排弹窗界面}{New task: two-step train-then-evaluate orchestration popup}
+    \label{新建任务弹窗}
 \end{figure}
 
-页面顶部还有“每步动作”二级标签，将每栋建筑每小时的基线动作、残差修正与最终动作按曲线（连续变化的折线）形式叠加在同一坐标系下，可直接读出基线被修正的方向与幅度，逐步动作可视化界面如图\figref{决策推演-每步动作}所示。
+\subsection{能源分析与多任务KPI对比}
+能源与KPI对比分析页面支持同屏勾选多组已完成任务，通过分组柱状图与五维雷达图对比各策略在全时段峰值、日均峰值、电度电费、碳排放与负荷爬坡率五个维度上的表现，并同步展示社区逐小时净负荷曲线与分时电价的对应关系。在“模型优选”区选中某一任务后，平台联动弹出该任务对应的逐时电网购售电柱图与电费核算明细，可据此判断不同控制器在峰谷时段的实际套利行为，如图\figref{模型优选-电网详情弹窗}所示。
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.62\textwidth]{./images/pictures/模型优选-电网详情弹窗.jpg}
+    \centering\bicaption{模型优选——社区电网逐时购售电与电费核算弹窗界面}{Model selector: per-step community grid import/export and electricity-bill accounting popup}
+    \label{模型优选-电网详情弹窗}
+\end{figure}
+
+\subsection{逐小时决策轨迹与环境状态联动查看}
+决策轨迹页面用于打开强化学习的“黑盒”决策过程。研究人员选中具体楼宇并把时间轴定位到晚间用电高峰时段后，页面按“每步动作”视角将每栋建筑每小时的规则基线动作、强化学习残差修正量与最终执行动作叠加在同一坐标系中，可直接读出基线被修正的方向与幅度，界面如图\figref{决策推演-每步动作}所示。
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.92\textwidth]{./images/pictures/决策推演-每步动作.jpg}
-    \centering\bicaption{决策推演—每步动作三轨叠加可视化（基线/残差/最终）}{Decision trace: three-track overlay of baseline/residual/final actions per step}
+    \centering\bicaption{决策推演——基线、残差与最终动作的每步叠加可视化}{Decision trace: per-step overlay of baseline, residual, and final actions}
     \label{决策推演-每步动作}
 \end{figure}
 
 \subsection{任务管理自动化流程与在线脚本编辑}
-图\figref{任务列表与脚本编辑界面}展示了历史仿真任务管理列表与在线脚本编辑弹窗。列表实时显示每个任务的运行状态（运行中、已完成、失败）、训练轮次进度与耗时，支持一键跳转至KPI分析页或打开代码弹窗对照检查该任务所使用的算法脚本快照。
+图\figref{任务列表与脚本编辑界面}展示了历史仿真任务管理列表与在线脚本编辑弹窗。列表实时显示每个任务的运行状态、训练轮次进度与耗时，支持一键跳转至KPI分析页或打开代码弹窗对照检查该任务所使用的算法脚本快照。
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.90\textwidth]{./images/pictures/任务列表与脚本编辑界面.png}
     \centering\bicaption{异步仿真任务状态监控列表与在线Python脚本编辑界面}{Asynchronous simulation task monitoring list and online Python script editor interface}
     \label{任务列表与脚本编辑界面}
-\end{figure}
-
-点击列表上方“新建任务”按钮可弹出“训练 $\to$ 评估”两步编排弹窗：第一步选择训练脚本与训练配置，第二步选择评估脚本与评估配置；两步填写完毕才生成一条新任务记录，避免单次误点提交造成的孤立任务，新建任务弹窗界面如图\figref{新建任务弹窗}所示。
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.78\textwidth]{./images/pictures/新建任务弹窗.jpg}
-    \centering\bicaption{新建任务—训练$\to$评估两步编排弹窗界面}{New task: train-then-evaluate two-step orchestration popup}
-    \label{新建任务弹窗}
 \end{figure}
 
 \section{本章小结}
