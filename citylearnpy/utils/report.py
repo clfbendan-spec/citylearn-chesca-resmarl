@@ -25,6 +25,16 @@ def _as_float(v: Any, default: float = float('nan')) -> float:
         return default
 
 
+# 数值安全版：能转成 float 且有限就返回，否则 None ✓
+#   用途：decision_trace.json 是严格 JSON，写进 NaN/Infinity 会让前端 JSON.parse 直接失败。
+def _num_or_none(v: Any) -> Optional[float]:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if np.isfinite(f) else None
+
+
 # 读取 CityLearn 时序字段在「刚完成的一步」上的值 ✓
 def series_value(obj: Any, time_step: int, default: float = float('nan')) -> float:
     if obj is None:
@@ -359,7 +369,9 @@ def format_state_line(row: Mapping[str, Any]) -> str:
 
 
 # 首行：观测/动作的数值（与控制台每步诊断的字段对齐 ✓）✓
-def format_obs_action_line(row: Mapping[str, Any]) -> str:
+# include_all_actions=True ⇒ 额外打印 DHW 动作维（district 三动作维都要留痕；
+# 默认 False ⇒ Multi-agent 的既有行文本逐字不变，零侵入）
+def format_obs_action_line(row: Mapping[str, Any], *, include_all_actions: bool = False) -> str:
     outage = float(row.get('power_outage', 0) or 0) >= 0.5
     hot = float(row.get('is_hot', 0) or 0) >= 0.5
     cold = float(row.get('is_cold', 0) or 0) >= 0.5
@@ -371,6 +383,12 @@ def format_obs_action_line(row: Mapping[str, Any]) -> str:
     if outage:
         tags.append('停电')
     tag_s = ','.join(tags) if tags else '正常'
+    # DHW 动作维：district 的动作是「DHW / 电池 / 冷却」三维，旧文本只印后两维 ⇒
+    # 打开 include_all_actions 时把 DHW 补在冷却之后、电池之前，保持原有字段顺序可读。
+    dhw_tag = ''
+    if include_all_actions:
+        dhw_tag = (f"act_dhw={_fmt(row.get('action_dhw_storage'), 3)} "
+                   f"{_raw_act_tag(row, 'dhw_storage')}")
     return (
         f"> [观测动作] "
         f"T={_fmt(row.get('indoor_temp'))} "
@@ -381,6 +399,7 @@ def format_obs_action_line(row: Mapping[str, Any]) -> str:
         f"out={1 if outage else 0} "
         f"act_cool={_fmt(row.get('action_cooling_device'), 3)} "
         f"{_raw_act_tag(row, 'cooling_device')}"
+        f"{dhw_tag}"
         f"act_bat={_fmt(row.get('action_electrical_storage'), 3)} "
         f"cool_kWh={_fmt(row.get('cooling_electricity_consumption'))} "
         f"cool_dem={_fmt(row.get('cooling_demand'))} "
@@ -419,8 +438,11 @@ def build_building_entry(
     *,
     building_idx: int,
     reward_detail: Optional[Mapping[str, Any]] = None,
+    include_all_actions: bool = False,
 ) -> Dict[str, Any]:
-    status = format_obs_action_line(row)
+    # include_all_actions=True ⇒ 动作块写全「DHW / 电池 / 冷却」三维（district 用）；
+    # False ⇒ 与旧版逐字节一致（DHW 恒 0.0，Multi-agent / CHESCA 既有产物不变）。
+    status = format_obs_action_line(row, include_all_actions=include_all_actions)
     calc_lines: List[str] = []
     if reward_detail and reward_detail.get('calc_lines'):
         calc_lines = [str(x) for x in reward_detail['calc_lines']]
@@ -435,14 +457,22 @@ def build_building_entry(
     outage = float(row.get('power_outage', 0) or 0) >= 0.5
     cool_act = row.get('action_cooling_device')
     bat_act = row.get('action_electrical_storage')
-    try:
-        ele = float(bat_act) if bat_act is not None else 0.0
-    except (TypeError, ValueError):
-        ele = 0.0
-    try:
-        tmp = float(cool_act) if cool_act is not None else 0.0
-    except (TypeError, ValueError):
-        tmp = 0.0
+    if include_all_actions:
+        # 三维全量：DHW 也要有真实值（旧版把它写死 0.0，界面上那一列恒为平线）。
+        # 用 _num_or_none 而非 float()：缺维/NaN → None，落盘成 null，不会污染 JSON。
+        dhw = _num_or_none(row.get('action_dhw_storage'))
+        ele = _num_or_none(bat_act)
+        tmp = _num_or_none(cool_act)
+    else:
+        dhw = 0.0
+        try:
+            ele = float(bat_act) if bat_act is not None else 0.0
+        except (TypeError, ValueError):
+            ele = 0.0
+        try:
+            tmp = float(cool_act) if cool_act is not None else 0.0
+        except (TypeError, ValueError):
+            tmp = 0.0
 
     summary_parts = [
         f"T={_fmt(row.get('indoor_temp'))}",
@@ -470,6 +500,21 @@ def build_building_entry(
                 f"path={path}"
             )
 
+    # 动作块：界面「动作」两列（init / final）读的就是这三个键 ⇒ 缺 DHW 会显示成平线。
+    actions_block: Dict[str, Any] = {
+        'init': {'dhw': dhw, 'ele': ele, 'tmp': tmp},
+        'final': {'dhw': dhw, 'ele': ele, 'tmp': tmp},
+    }
+    if include_all_actions:
+        # 策略原始输出（未经过 district 改写/安全投影）——与 final 对照即可看出改写量
+        raw = {
+            'dhw': _num_or_none(row.get('action_dhw_storage_raw')),
+            'ele': _num_or_none(row.get('action_electrical_storage_raw')),
+            'tmp': _num_or_none(row.get('action_cooling_device_raw')),
+        }
+        if any(v is not None for v in raw.values()):
+            actions_block['raw'] = raw
+
     return {
         'building': int(building_idx),
         'control_mode': 'outage' if outage else 'marl',
@@ -478,10 +523,7 @@ def build_building_entry(
         'narrative_lines': narrative_lines,
         'battery_soc': row.get('soc'),
         'dhw_soc': None,
-        'actions': {
-            'init': {'dhw': 0.0, 'ele': ele, 'tmp': tmp},
-            'final': {'dhw': 0.0, 'ele': ele, 'tmp': tmp},
-        },
+        'actions': actions_block,
         'forecast': {},
         'refine': {'applied': False, 'skip_reason': 'multi_agent_no_refine'},
         'residual': {'enabled': False},
@@ -497,6 +539,7 @@ def build_step_record(
     reward_details: Optional[Sequence[Mapping[str, Any]]] = None,
     episode: int = 0,
     reward_label: Optional[str] = None,
+    include_all_actions: bool = False,
 ) -> Dict[str, Any]:
     buildings = []
     for i, row in enumerate(building_rows):
@@ -507,7 +550,9 @@ def build_step_record(
                 detail = reward_details[b_idx]
             elif i < len(reward_details):
                 detail = reward_details[i]
-        buildings.append(build_building_entry(row, building_idx=b_idx, reward_detail=detail))
+        buildings.append(build_building_entry(
+            row, building_idx=b_idx, reward_detail=detail,
+            include_all_actions=include_all_actions))
 
     # 阶段摘要：本方案没有 CHESCA 的五段，只按"观测 → 奖励"两段说明
     r_sum = 0.0
@@ -568,10 +613,13 @@ class MarlDecisionTraceRecorder:
         n_buildings: int,
         reward_kwargs: Mapping[str, Any],
         reward_label: Optional[str] = None,
+        include_all_actions: bool = False,
     ):
         self.n_buildings = int(n_buildings)
         self.reward_kwargs = dict(reward_kwargs)
         self.reward_label = reward_label
+        # 是否把动作块写全三维（DHW / 电池 / 冷却）。默认 False ⇒ 旧调用方逐字节不变。
+        self.include_all_actions = bool(include_all_actions)
         self.steps: List[Dict[str, Any]] = []
 
     # 把这一步追加进内存里的逐步记录（这一步先不写文件 ✓）✓
@@ -594,6 +642,7 @@ class MarlDecisionTraceRecorder:
                 reward_details=reward_details,
                 episode=episode,
                 reward_label=self.reward_label,
+                include_all_actions=self.include_all_actions,
             )
         )
 

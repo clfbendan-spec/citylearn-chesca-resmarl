@@ -21,8 +21,13 @@
   2) **只换 phases**：`utils.report` 的 phases 写死为"SAC 策略动作 → SymmetricComfortReward"，
      那是单栋 Multi-agent 的说法；district 要讲的是「区域上下文 → 逐栋动作 → 区域奖励分摊」，
      所以每步记录生成后覆盖 phases，并附上社区净负荷 / 峰值目标等区域字段。
-  3) **条数设上限**：整季 8760 步 × 6 栋会写出几十 MB，界面也拖不动。默认最多记
-     `max_records` 条（默认 720 = 一个典型日），可用 stride 抽稀覆盖更长区间。
+  3) **动作记全三维**：district 的动作是「DHW / 电池 / 冷却」三维，而 `utils.report`
+     的通用出口只写后两维（DHW 写死 0.0）。这里以 `include_all_actions=True` 建记录器，
+     把 `actions.final` / `actions.raw` 全量写进去；同时补每栋 `dhw_soc`，
+     并在 `district.exec_actions` 里按 agent 汇总一份执行动作，方便与 `raw_actions` 对照。
+  4) **默认全量记录**：stride=1、max_records=0（不限）⇒ 走过多少步就记多少步。
+     只有显式传参（`--no-decision-log` / `--decision-log-stride` / `--decision-log-max-steps`）
+     才会变成"不记录 / 抽稀 / 截断"。
 
 零侵入
 ------
@@ -33,6 +38,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -66,8 +72,8 @@ class DistrictDecisionLog:
     n_buildings    社区楼栋数（只用于顶层字段）
     reward_label   奖励函数名（打印在 phases 与顶层 meta 里）
     reward_kwargs  奖励超参快照（可选，写进顶层便于回溯；不参与展示逻辑）
-    stride         每多少步记一条（1 = 逐步；12 ≈ 每小时一条）
-    max_records    最多记多少条（达到上限后停止采集，并在 meta 里标 truncated）
+    stride         每多少步记一条（1 = 逐步，默认）
+    max_records    最多记多少条（0 = 不限制，默认）；达到上限会停止采集并标 truncated
     """
 
     def __init__(
@@ -77,7 +83,7 @@ class DistrictDecisionLog:
         reward_label: str = 'DistrictPeakReward',
         reward_kwargs: Optional[Mapping[str, Any]] = None,
         stride: int = 1,
-        max_records: int = 720,
+        max_records: int = 0,
     ):
         # 延迟 import：district_eval 会先做 sys.path 引导与 ray 环境准备，
         # 模块级 import utils.* 在部分包装脚本下会过早拉起重依赖。
@@ -87,16 +93,25 @@ class DistrictDecisionLog:
         self.reward_label = str(reward_label or 'DistrictPeakReward')
         self.reward_kwargs = dict(reward_kwargs or {})
         self.stride = max(1, int(stride))
-        self.max_records = max(1, int(max_records))
+        # 0 = 不限制（默认）：decision_trace 要能回答"每一步每次动作是什么"，
+        # 预先截断会让界面上后半段凭空消失。
+        self.max_records = max(0, int(max_records))
 
         self._rec = MarlDecisionTraceRecorder(
-            self.n_buildings, self.reward_kwargs, reward_label=self.reward_label)
+            self.n_buildings, self.reward_kwargs, reward_label=self.reward_label,
+            include_all_actions=True)
 
         self.seen_steps = 0        # 走过多少步（抽稀前）
         self.recorded_steps = 0    # 实际写进 JSON 的条数
         self.failures = 0          # 采集异常次数（不打断评估）
         self.peak_net = 0.0        # 本段见过的最大社区净负荷（事后补写峰步标记）
+        self._peak_marked = False  # 峰步标记只做一次（重复调用会重复追加摘要文字）
         self._last_error = ''
+
+    @property
+    def truncated(self) -> bool:
+        """是否因条数上限而截断（max_records=0 视为不限 ⇒ 永远 False）。"""
+        return bool(self.max_records and self.recorded_steps >= self.max_records)
 
     # ------------------------------------------------------------------ 采集
     def record_step(
@@ -121,7 +136,7 @@ class DistrictDecisionLog:
         if self._rec is None:
             return
         self.seen_steps += 1
-        if self.recorded_steps >= self.max_records:
+        if self.max_records and self.recorded_steps >= self.max_records:
             return
         if self.stride > 1 and ((self.seen_steps - 1) % self.stride) != 0:
             return
@@ -150,6 +165,9 @@ class DistrictDecisionLog:
         if net is not None and net > self.peak_net:
             self.peak_net = net
 
+        # 补齐三维动作与 DHW 储能读数（district 专有；report 的通用出口没有这一层）
+        exec_actions = self._decorate_buildings(citylearn_env, record, ordered_keys)
+
         # 区域字段：界面暂不渲染，但排查"这一步为什么这么动作"时最有用
         record['district'] = {
             'community_net_kw': net,
@@ -158,11 +176,42 @@ class DistrictDecisionLog:
                            else float(net) / float(peak_target)),
             'hour': hour,
             'outage_flags': list(outage_flags or []),
+            # 动作维度顺序：DHW / 电池 / 冷却（与 building.active_actions 一致）
+            'action_dims': ['dhw', 'ele', 'tmp'],
+            # 策略原始输出（未经改写/投影）：与 exec_actions 对照即可看出被改了多少
             'raw_actions': {str(k): [float(x) for x in _as_list(v)]
                             for k, v in (actions or {}).items()},
+            # 实际执行值：来自奖励侧 _pending_acts（方案 3 的削峰改写会体现在这里）
+            'exec_actions': exec_actions,
         }
         record['phases'] = self._build_phases(record, net, peak_target, hour)
         self.recorded_steps += 1
+
+    # ------------------------------------------------------------- 三维动作
+    def _decorate_buildings(
+        self,
+        citylearn_env: Any,
+        record: Dict[str, Any],
+        ordered_keys: Sequence[Any],
+    ) -> Dict[str, List[Any]]:
+        """给每栋补 DHW 储能 SOC，并按 agent 汇总「执行动作」三维向量。"""
+        from utils.report import getattr_path, series_value
+
+        buildings = list(getattr(citylearn_env, 'buildings', []) or [])
+        time_step = int(getattr(citylearn_env, 'time_step', 0) or 0)
+        exec_map: Dict[str, List[Any]] = {}
+        for i, entry in enumerate(record.get('buildings') or []):
+            building = buildings[i] if i < len(buildings) else None
+            if building is not None:
+                soc = series_value(getattr_path(building, 'dhw_storage', 'soc'), time_step)
+                try:
+                    entry['dhw_soc'] = float(soc) if math.isfinite(float(soc)) else None
+                except (TypeError, ValueError):
+                    entry['dhw_soc'] = None
+            fin = ((entry.get('actions') or {}).get('final') or {})
+            key = str(ordered_keys[i]) if i < len(ordered_keys) else f'agent_{i}'
+            exec_map[key] = [fin.get('dhw'), fin.get('ele'), fin.get('tmp')]
+        return exec_map
 
     # ------------------------------------------------------------- 阶段推演
     def _build_phases(
@@ -195,13 +244,25 @@ class DistrictDecisionLog:
             ctx += f'，为峰值目标的 {ratio * 100:.1f}%'
             ctx += '，已进入峰段' if ratio >= _PEAK_STEP_RATIO else '，未到峰段'
 
-        # ② 逐栋动作：只要有电池读数就统计放电方向，帮助判断"尖峰时电池有没有出力"
-        socs = [b.get('battery_soc') for b in buildings]
-        socs = [float(s) for s in socs if isinstance(s, (int, float)) and s == s]
-        soc_s = (f'；{len(socs)} 栋有电池读数，SOC 区间 '
-                 f'{min(socs):.2f}~{max(socs):.2f}' if socs else '；无电池读数')
+        # ② 逐栋动作：三维全列（DHW / 电池 / 冷却），并给出储能读数区间，
+        #    便于判断"尖峰时电池/DHW 到底有没有出力"。
+        def _nums(key: str) -> List[float]:
+            vals = [b.get(key) for b in buildings]
+            return [float(v) for v in vals
+                    if isinstance(v, (int, float)) and v == v]
+
+        def _rng(vals: List[float]) -> str:
+            return '-' if not vals else f'{min(vals):.2f}~{max(vals):.2f}'
+
+        bat_socs = _nums('battery_soc')
+        dhw_socs = _nums('dhw_soc')
+        dhw_txt = _rng(dhw_socs)
+        if dhw_socs and max(dhw_socs) == 0.0 and min(dhw_socs) == 0.0:
+            # 如实标注：DHW 动作在变但 SOC 全程不动，多半是上游蓄热更新没生效
+            dhw_txt += '（本段未变化）'
         act_s = (f'{n} 栋各自 Policy 输出 DHW / 电池 / 冷却三维动作'
-                 f'（剧本里的 act_* 是改写后**实际执行**值，raw= 为策略原始输出）{soc_s}')
+                 f'（act_dhw / act_bat / act_cool 是改写后**实际执行**值，raw= 为策略原始输出）；'
+                 f'电池 SOC {_rng(bat_socs)}、DHW SOC {dhw_txt}')
 
         # ③ 区域奖励
         r_sum, r_n = 0.0, 0
@@ -238,7 +299,9 @@ class DistrictDecisionLog:
                 'max_records': self.max_records,
                 'seen_steps': int(self.seen_steps),
                 'recorded_steps': int(self.recorded_steps),
-                'truncated': bool(self.recorded_steps >= self.max_records),
+                # max_records=0 表示不限 ⇒ 永不截断
+                'truncated': bool(self.max_records and self.recorded_steps >= self.max_records),
+                'action_dims': ['dhw', 'ele', 'tmp'],
                 'peak_net_kw': float(self.peak_net) if self.peak_net else None,
                 'collect_failures': int(self.failures),
             },
@@ -274,7 +337,7 @@ class DistrictDecisionLog:
         直接拿来当分母会算出恒 <100% 的假比例。
         """
         peak = float(peak_net) if peak_net else float(self.peak_net or 0.0)
-        if peak <= 0:
+        if peak <= 0 or self._peak_marked:
             return
         for step in self._rec.steps:
             d = step.get('district') or {}
@@ -298,6 +361,8 @@ class DistrictDecisionLog:
                 if is_peak:
                     extra += '（峰步）'
                 phases[0]['summary'] = base + extra
+        # 只标一次：rollout 收尾与调用方可能各调一次（尤其训练/评估两条路径）
+        self._peak_marked = True
 
 
 # ------------------------------------------------------------------ 小工具
@@ -331,32 +396,37 @@ def _json_safe(obj: Any) -> Any:
 
 
 def build_decision_log(
-    enabled: bool,
-    n_buildings: int,
+    enabled: bool = True,
+    n_buildings: int = 0,
     *,
     reward_label: str = 'DistrictPeakReward',
     reward_kwargs: Optional[Mapping[str, Any]] = None,
     stride: int = 1,
-    max_records: int = 720,
+    max_records: int = 0,
     log_console=None,
 ) -> Optional[DistrictDecisionLog]:
-    """工厂：enabled=False 返回 None（调用方拿到 None 即整段跳过，零侵入）。"""
+    """工厂：默认**开启**并全量记录（stride=1、不限条数）；enabled=False 才返回 None。
+
+    调用方拿到 None 即整段跳过 ⇒ 零侵入。想少记就显式传 stride / max_records。
+    """
     if not enabled:
         if log_console is not None:
             log_console('决策推演日志=OFF（--no-decision-log；KPI 与既有产物不受影响）')
         return None
-    if n_buildings <= 0:
+    if int(n_buildings or 0) <= 0:
         if log_console is not None:
             log_console('决策推演日志=OFF（读不到楼栋数）')
         return None
     log = DistrictDecisionLog(
-        n_buildings,
+        int(n_buildings),
         reward_label=reward_label,
         reward_kwargs=reward_kwargs,
         stride=stride,
         max_records=max_records,
     )
     if log_console is not None:
-        log_console(f'决策推演日志=ON（每 {log.stride} 步一条，上限 {log.max_records} 条 '
-                    f'⇒ decision_trace.json；奖励={log.reward_label}）')
+        _cap = '不限' if log.max_records == 0 else f'{log.max_records} 条'
+        log_console(f'决策推演日志=ON（每 {log.stride} 步一条，条数上限 {_cap} '
+                    f'⇒ decision_trace.json；动作维 dhw/ele/tmp 全量；'
+                    f'奖励={log.reward_label}）')
     return log

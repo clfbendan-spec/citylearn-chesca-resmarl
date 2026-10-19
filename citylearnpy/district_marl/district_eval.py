@@ -299,13 +299,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     #   与 --no-diag 相互独立：diag 是给脚本分析用的矩阵/奖励分解，
     #   decision_trace.json 是给界面逐步回放用的剧本，关一个不影响另一个。
     p.add_argument('--no-decision-log', action='store_true',
-                   help='关闭决策推演日志（decision_trace.json）⇒ 模型优选界面看不到逐步推演')
-    p.add_argument('--decision-log-stride', type=int, default=0,
-                   help='决策推演每 N 步记一条；0 = 自动（按数据集总步数与条数上限算，'
-                        '保证整段覆盖；显式给 1 则逐步记录）')
-    p.add_argument('--decision-log-max-steps', type=int, default=720,
-                   help='决策推演最多记多少条（默认 720 ≈ 一个典型日；0 = 不限制，'
-                        '但整季会写出几十 MB）')
+                   help='关闭决策推演日志（decision_trace.json）⇒ 模型优选界面看不到逐步推演。'
+                        '默认**开启且全量记录**（每步一条、动作记全 DHW/电池/冷却三维），'
+                        '只有显式传本参数才不记录')
+    p.add_argument('--decision-log-stride', type=int, default=1,
+                   help='决策推演每 N 步记一条（默认 1 = 逐步全记）；'
+                        '传 0 = 按条数上限自动抽稀覆盖整段')
+    p.add_argument('--decision-log-max-steps', type=int, default=0,
+                   help='决策推演条数上限（默认 0 = 不限制，整段全记）')
     # parse_known_args：白名单取消后，界面配置里可能有本脚本不认的参数（例如给训练脚本
     # 配的 peak-weight 抄到了评估脚本上）⇒ 忽略并提示，不用 exit 2 打断整个任务。
     args, unknown = p.parse_known_args(argv)
@@ -416,13 +417,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             from district_marl.district_decision_log import build_decision_log
 
-            _max_rec = int(getattr(args, 'decision_log_max_steps', 720) or 0)
+            _max_rec = int(getattr(args, 'decision_log_max_steps', 0) or 0)
             if _max_rec <= 0:
                 _max_rec = 10 ** 9   # 0 = 不限制（截断标记自然恒为 False）
-            # stride 自动（默认）：让条数上限**均匀铺满整段**，而不是只记前 720 步。
-            # 例如整季 8760 步 / 720 条 ⇒ 每 13 步一条；想看连续细节就显式给
-            # --decision-log-stride 1（只适合短段，整季会写出几十 MB）。
-            _stride_cli = int(getattr(args, 'decision_log_stride', 0) or 0)
+            # 默认 stride=1 全量记录；只有显式传 0 才按条数上限自动抽稀。
+            # 想看整季又不想要几十 MB，就 --decision-log-stride 12 / --decision-log-max-steps 720。
+            _stride_cli = int(getattr(args, 'decision_log_stride', 1))
+            if _stride_cli < 0:
+                _stride_cli = 0
             _eff_steps = int(eval_steps) if eval_steps else int(_expected_steps or 0)
             if _stride_cli > 0:
                 _stride = _stride_cli
@@ -480,11 +482,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 'eval_steps_actual': int(metrics.get('eval_steps') or 0),
             })
             _mb = _dp.stat().st_size / 1048576 if _dp.is_file() else 0.0
-            _trunc = _decision_log.recorded_steps >= _decision_log.max_records
+            _trunc = _decision_log.truncated
             log_console(
                 f'  决策推演 : {_dp}'
                 f'（{_decision_log.recorded_steps} 条 / 走过 {_decision_log.seen_steps} 步，'
-                f'{_mb:.1f} MB{("，已截断（--decision-log-max-steps 可调）" if _trunc else "")}）')
+                f'{_mb:.1f} MB，动作维 dhw/ele/tmp'
+                f'{("，已截断（--decision-log-max-steps 可调）" if _trunc else "")}）')
             if _decision_log.failures:
                 log_console(f'    ⚠ 采集异常 {_decision_log.failures} 次'
                             f'（最后一条：{_decision_log._last_error}）')

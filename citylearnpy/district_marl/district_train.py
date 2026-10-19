@@ -246,7 +246,10 @@ def rollout_district(
     export_dir: Optional[Path] = None,
     trace_out: Optional[Dict[str, Any]] = None,
     diag_out: Optional[Dict[str, Any]] = None,
-    decision_log: Any = None,
+    decision_log: Any = 'auto',
+    decision_stride: int = 1,
+    decision_max_records: int = 0,
+    decision_out: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """贪心跑一整段评估，返回区域 KPI 字典。
 
@@ -261,12 +264,18 @@ def rollout_district(
 
     trace_out 非空 ⇒ 顺手记逐时步轨迹（社区净用电 / 逐 agent 奖励·动作·SOC）。
     diag_out  非空 ⇒ 顺手把奖励分解（district_stats）与逐栋不适比例（kpi_snapshot）填进去。
-    decision_log 非空 ⇒ 顺手记「决策推演日志」（district_decision_log.DistrictDecisionLog），
-                  由调用方落盘成 decision_trace.json 供模型优选界面展示。
-    三者默认 None ⇒ 行为与改前逐位一致（旧调用方无需改动）。
+
+    decision_log —— 决策推演日志（模型优选界面用）。**默认 'auto' = 记录下来**：
+        · 'auto' / True  ⇒ 现场建一个默认记录器（stride=1、不限条数、三维动作全记）
+        · None / False   ⇒ 显式不记录（**只有传参才会关**，供训练循环内的评估复用）
+        · DistrictDecisionLog 实例 ⇒ 用调用方配好的记录器（可自定义 stride / 上限）
+      记录器采到的 payload 会写进 decision_out['payload']，由调用方决定落盘路径。
     """
     env = env_cls(env_config)
     metrics: Dict[str, float] = {}
+    # 默认 'auto' = 记录；None/False = 显式关闭（只有传参才关）
+    _auto_log = decision_log is True or (
+        isinstance(decision_log, str) and decision_log.strip().lower() == 'auto')
     _watch = trace_out is not None
     _tr_net: List[float] = []
     _tr_rew: List[List[float]] = []
@@ -287,6 +296,18 @@ def rollout_district(
     try:
         obs, _info = env.reset()
         keys = list(getattr(env, '_agent_ids', None) or obs.keys())
+        if _auto_log:
+            # 默认记录：拿到 agent 列表后现场建（楼栋数 = agent 数）
+            try:
+                from district_marl.district_decision_log import build_decision_log
+
+                decision_log = build_decision_log(
+                    True, len(keys),
+                    stride=decision_stride,
+                    max_records=decision_max_records)
+            except Exception:
+                decision_log = None
+            _auto_log = False
         series: List[float] = []
         steps = 0
         done = False
@@ -372,6 +393,15 @@ def rollout_district(
                 _rows_to_matrix(_soc_steps, len(keys)), series, _hours)
             if _soc_stats:
                 diag_out['soc'] = _soc_stats
+        # 决策推演日志：整段跑完再补峰步标记（跑到第 10 步时还不知道全段峰值）
+        if decision_log is not None and hasattr(decision_log, 'to_payload'):
+            try:
+                decision_log.mark_peak_steps(float(metrics.get('district_peak_raw') or 0.0))
+                if decision_out is not None:
+                    decision_out['log'] = decision_log
+                    decision_out['payload'] = decision_log.to_payload()
+            except Exception:
+                pass
     finally:
         try:
             env.close()
@@ -1296,6 +1326,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument('--trace-every', type=int, default=0,
                    help='每 N 次评估额外落一份逐时步轨迹 district_trace_ep<轮>.npz'
                         '（0 = 不额外落；**最终评估始终**落 district_trace_final.npz）')
+    # ---- 决策推演日志（模型优选界面用；默认开，传参才关）----
+    p.add_argument('--no-decision-log', action='store_true',
+                   help='关闭最终评估的决策推演日志（decision_trace.json）。'
+                        '默认**开启**并全量记录：每步一条、动作记全 DHW/电池/冷却三维；'
+                        '训练循环内的中间评估始终不记（避免每轮都攒一份大文件）。')
+    p.add_argument('--decision-log-stride', type=int, default=1,
+                   help='最终评估的决策推演每 N 步记一条（默认 1 = 逐步全记）')
+    p.add_argument('--decision-log-max-steps', type=int, default=0,
+                   help='最终评估的决策推演条数上限（默认 0 = 不限制）')
     # parse_known_args：平台可能追加本脚本不认识的 flag（例如 Multi-agent 系列专用参数），
     # 认识不了就忽略并提示，避免因一个无关参数直接 argparse 退出（exit 2）。
     args, unknown = p.parse_known_args(argv)
@@ -1666,7 +1705,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             algo, DistrictContextRLlibEnv, eval_env_config, policy_id_fn,
             deterministic=True, max_steps=int(args.eval_steps or 0),
             trace_out=(_trace if _want_trace else None),
-            diag_out=(_diag_out if diag_on else None))
+            diag_out=(_diag_out if diag_on else None),
+            # 训练循环内的评估**显式关闭**决策推演日志（这是"传参才不记录"的那一处）：
+            # 每轮都记一遍只会把内存撑爆，真正要看的推演由评估任务（district_eval）产出。
+            decision_log=None)
         _eval_s = time.perf_counter() - _t_eval
         _eval_steps = int(metrics.get('eval_steps') or 0)
         row: Dict[str, Any] = {'epoch': epoch, 'elapsed_s': round(time.perf_counter() - t0, 1)}
@@ -1810,14 +1852,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     #   一定是从最终评估这条轨迹开始看的（--trace-every 只是额外多落几份）。
     _final_diag: Dict[str, Any] = {}
     _final_trace: Dict[str, Any] = {}
+    _final_decision: Dict[str, Any] = {}
     _t_final_eval = time.perf_counter()
     final = rollout_district(algo, DistrictContextRLlibEnv, eval_env_config,
                              policy_id_fn, deterministic=True,
                              max_steps=int(args.eval_steps or 0),
                              export_dir=output_dir,
                              trace_out=(_final_trace if diag_on else None),
-                             diag_out=(_final_diag if diag_on else None))
+                             diag_out=(_final_diag if diag_on else None),
+                             # 默认记录；只有 --no-decision-log 才关
+                             decision_log=(None if bool(getattr(
+                                 args, 'no_decision_log', False)) else 'auto'),
+                             decision_stride=int(getattr(args, 'decision_log_stride', 1) or 1),
+                             decision_max_records=int(getattr(
+                                 args, 'decision_log_max_steps', 0) or 0),
+                             decision_out=_final_decision)
     _final_eval_s = time.perf_counter() - _t_final_eval
+    if _final_decision.get('log') is not None:
+        try:
+            _dl = _final_decision['log']
+            _dl_path = _dl.save(output_dir / 'decision_trace.json', extra_meta={
+                'source': 'train_final_eval',
+                'epochs_done': int(epochs_done),
+                'schema': str(args.schema),
+            })
+            _dl_mb = _dl_path.stat().st_size / 1048576 if _dl_path.exists() else 0.0
+            log_console(f'  决策推演 : {_dl_path.name}'
+                        f'（{_dl.recorded_steps} 条 / 走过 {_dl.seen_steps} 步，'
+                        f'{_dl_mb:.1f} MB，动作维 dhw/ele/tmp）')
+            if _dl.failures:
+                log_console(f'    ⚠ 采集异常 {_dl.failures} 次（最后一条：{_dl._last_error}）')
+        except Exception as exc:
+            log_console(f'[district-marl] 决策推演落盘失败（忽略）: {exc}')
     if diag_on and _final_trace:
         try:
             np.savez_compressed(_trace_final_npz, **_final_trace)
