@@ -246,6 +246,7 @@ def rollout_district(
     export_dir: Optional[Path] = None,
     trace_out: Optional[Dict[str, Any]] = None,
     diag_out: Optional[Dict[str, Any]] = None,
+    decision_log: Any = None,
 ) -> Dict[str, float]:
     """贪心跑一整段评估，返回区域 KPI 字典。
 
@@ -260,7 +261,9 @@ def rollout_district(
 
     trace_out 非空 ⇒ 顺手记逐时步轨迹（社区净用电 / 逐 agent 奖励·动作·SOC）。
     diag_out  非空 ⇒ 顺手把奖励分解（district_stats）与逐栋不适比例（kpi_snapshot）填进去。
-    两者默认 None ⇒ 行为与改前逐位一致（旧调用方无需改动）。
+    decision_log 非空 ⇒ 顺手记「决策推演日志」（district_decision_log.DistrictDecisionLog），
+                  由调用方落盘成 decision_trace.json 供模型优选界面展示。
+    三者默认 None ⇒ 行为与改前逐位一致（旧调用方无需改动）。
     """
     env = env_cls(env_config)
     metrics: Dict[str, float] = {}
@@ -273,7 +276,7 @@ def rollout_district(
     _soc_steps: List[List[float]] = []
     _need_soc = bool(_watch or (diag_out is not None))
     _hours: Optional[np.ndarray] = None
-    if diag_out is not None:
+    if diag_out is not None or decision_log is not None:
         # hour 挂在**每栋建筑的** energy_simulation 上（CityLearnEnv 本身没有该属性，
         # district_building_microgrid 上也没有）⇒ 取第 1 栋的整段 hour 作为时间轴。
         try:
@@ -313,6 +316,27 @@ def rollout_district(
                     _tr_soc.append(_soc_now)
                 if diag_out is not None:
                     _soc_steps.append(_soc_now)
+            if decision_log is not None:
+                # 决策推演日志（模型优选界面用）。纯读取：不改动作、不改奖励、不改 KPI；
+                # 动作优先取奖励侧的 _pending_acts（= district 改写后真正执行的值），
+                # 这样方案 3 的 a_peak_resp 改写也能在剧本里如实体现。
+                try:
+                    _dl_hour = None
+                    if _hours is not None and getattr(_hours, 'size', 0):
+                        _dl_hour = float(_hours[min(steps, int(_hours.size) - 1)])
+                    decision_log.record_step(
+                        _unwrap_citylearn_env(env),
+                        step_count=steps + 1,
+                        ordered_keys=keys,
+                        actions=actions,
+                        rewards=_rew,
+                        community_net=_net_now,
+                        hour=_dl_hour,
+                    )
+                except Exception:
+                    # record_step 内部已计数并吞掉自身异常；这里兜住 hour/解包等边缘错误，
+                    # 绝不让"看日志"这件事影响评估本身。
+                    pass
             steps += 1
             done = _all_done(terminated, truncated)
             if max_steps and steps >= max_steps:

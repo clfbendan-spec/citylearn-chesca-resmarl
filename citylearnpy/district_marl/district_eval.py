@@ -295,6 +295,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         '只写 district_eval_metrics.json + exported_kpis.csv 的旧行为')
     p.add_argument('--trace-label', type=str, default='eval',
                    help='轨迹文件名标签：district_trace_<标签>.npz（默认 eval）')
+    # ---- 决策推演日志（模型优选界面展示用；2026-10-19）----
+    #   与 --no-diag 相互独立：diag 是给脚本分析用的矩阵/奖励分解，
+    #   decision_trace.json 是给界面逐步回放用的剧本，关一个不影响另一个。
+    p.add_argument('--no-decision-log', action='store_true',
+                   help='关闭决策推演日志（decision_trace.json）⇒ 模型优选界面看不到逐步推演')
+    p.add_argument('--decision-log-stride', type=int, default=0,
+                   help='决策推演每 N 步记一条；0 = 自动（按数据集总步数与条数上限算，'
+                        '保证整段覆盖；显式给 1 则逐步记录）')
+    p.add_argument('--decision-log-max-steps', type=int, default=720,
+                   help='决策推演最多记多少条（默认 720 ≈ 一个典型日；0 = 不限制，'
+                        '但整季会写出几十 MB）')
     # parse_known_args：白名单取消后，界面配置里可能有本脚本不认的参数（例如给训练脚本
     # 配的 peak-weight 抄到了评估脚本上）⇒ 忽略并提示，不用 exit 2 打断整个任务。
     args, unknown = p.parse_known_args(argv)
@@ -387,7 +398,51 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # 探针只用于拿 agent 列表
     probe = DistrictContextRLlibEnv(env_config)
     agent_ids = list(probe._agent_ids)
+    # 顺手读数据集总步数（energy_simulation 是预分配整段 ⇒ len() 可用且安全；
+    # 注意不能去读 net_electricity_consumption[-1]，那是未滚动的假 0）。
+    # 用途：决策推演日志按「总步数 / 条数上限」自动抽稀，保证整段覆盖。
+    _expected_steps = None
+    try:
+        _cle_probe = getattr(getattr(probe, 'env', None), 'unwrapped', None)
+        _b0_probe = list(getattr(_cle_probe, 'buildings', []) or [])[0]
+        _expected_steps = int(len(_b0_probe.energy_simulation.hour))
+    except Exception:
+        _expected_steps = None
     del probe
+
+    # 决策推演日志：拿到 agent 数之后再建（楼栋数决定条目数；读不到就自动跳过）
+    _decision_log = None
+    if not bool(getattr(args, 'no_decision_log', False)):
+        try:
+            from district_marl.district_decision_log import build_decision_log
+
+            _max_rec = int(getattr(args, 'decision_log_max_steps', 720) or 0)
+            if _max_rec <= 0:
+                _max_rec = 10 ** 9   # 0 = 不限制（截断标记自然恒为 False）
+            # stride 自动（默认）：让条数上限**均匀铺满整段**，而不是只记前 720 步。
+            # 例如整季 8760 步 / 720 条 ⇒ 每 13 步一条；想看连续细节就显式给
+            # --decision-log-stride 1（只适合短段，整季会写出几十 MB）。
+            _stride_cli = int(getattr(args, 'decision_log_stride', 0) or 0)
+            _eff_steps = int(eval_steps) if eval_steps else int(_expected_steps or 0)
+            if _stride_cli > 0:
+                _stride = _stride_cli
+            elif _eff_steps > 0 and _max_rec < 10 ** 8:
+                _stride = max(1, -(-_eff_steps // _max_rec))   # ceil 除法
+            else:
+                _stride = 1
+            _decision_log = build_decision_log(
+                True, len(agent_ids),
+                reward_label='DistrictPeakReward',
+                stride=_stride,
+                max_records=_max_rec,
+                log_console=log_console,
+            )
+            if _eff_steps > 0:
+                _n_expect = min(_max_rec, -(-_eff_steps // max(1, _stride)))
+                log_console(f'  覆盖范围   : 全段约 {_eff_steps} 步，计划记 {_n_expect} 条'
+                            f'（stride={_stride}）')
+        except Exception as exc:
+            log_console(f'[district-marl] 决策推演日志初始化失败（跳过）: {exc}')
 
     policy_id_fn, ids = build_policy_id_fn(algo, agent_ids)
     log_console(f'  agent: {", ".join(agent_ids)}  |  checkpoint policies: {ids}')
@@ -403,12 +458,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                policy_id_fn, deterministic=True,
                                max_steps=int(args.steps or 0), export_dir=output_dir,
                                trace_out=(None if _no_diag else _trace_out),
-                               diag_out=(None if _no_diag else _diag_out))
+                               diag_out=(None if _no_diag else _diag_out),
+                               decision_log=_decision_log)
     _eval_s = round(time.perf_counter() - _t_eval, 1)
 
     (output_dir / 'district_eval_metrics.json').write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2, sort_keys=True),
         encoding='utf-8')
+
+    # ---- 决策推演日志（模型优选界面读的就是这个文件名）----
+    #   必须整段跑完再标记峰步：跑到第 10 步时还不知道全段峰值，
+    #   逐步判断会把前期局部高点误标成峰步。
+    if _decision_log is not None:
+        try:
+            _decision_log.mark_peak_steps(float(metrics.get('district_peak_raw') or 0.0))
+            _dp = output_dir / 'decision_trace.json'
+            _decision_log.save(_dp, extra_meta={
+                'checkpoint': str(checkpoint),
+                'schema': str(args.schema),
+                'deterministic': True,
+                'eval_steps_actual': int(metrics.get('eval_steps') or 0),
+            })
+            _mb = _dp.stat().st_size / 1048576 if _dp.is_file() else 0.0
+            _trunc = _decision_log.recorded_steps >= _decision_log.max_records
+            log_console(
+                f'  决策推演 : {_dp}'
+                f'（{_decision_log.recorded_steps} 条 / 走过 {_decision_log.seen_steps} 步，'
+                f'{_mb:.1f} MB{("，已截断（--decision-log-max-steps 可调）" if _trunc else "")}）')
+            if _decision_log.failures:
+                log_console(f'    ⚠ 采集异常 {_decision_log.failures} 次'
+                            f'（最后一条：{_decision_log._last_error}）')
+            if _decision_log.recorded_steps == 0:
+                log_console('    ⚠ 一条都没记下：多半是读不到 CityLearnEnv 或楼栋数'
+                            '（见 --no-district-obs / checkpoint 是否匹配）')
+        except Exception as exc:
+            log_console(f'[district-marl] 决策推演落盘失败（忽略）: {exc}')
 
     if not _no_diag:
         # ---- 逐时步轨迹（原先 `_info` 被丢弃、`record_details=True` 形同虚设）----

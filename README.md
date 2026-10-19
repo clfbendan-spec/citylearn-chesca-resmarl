@@ -213,6 +213,27 @@ python district_marl/district_eval.py  --help
 > 两个入口在启动时会自动锁定 `PYTHONHASHSEED=0`（`district_marl/_hashseed.py`）。若你在同一进程内
 > 循环多次训练，请显式传 `--hashseed random` 退出该护栏，否则每轮结果会逐位相同（这是特性而非缺陷）。
 
+### 6.5b 决策推演日志（模型优选界面）
+
+`district_marl/district_eval.py` 默认额外落一份 `decision_trace.json`，结构与 CHESCA / Multi-agent
+**完全同构**（`version: 2` + `slim`）。「模型优选」页面选中该评估任务后，就能像看 CHESCA 一样
+用滑块逐步回放每一步的观测、动作、电池 SOC 与区域奖励，无需任何前端或后端改动。
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--no-decision-log` | 关（即默认记录） | 关闭后不写该文件；实测 `district_eval_metrics.json` 的 **md5 与开启时完全相同** |
+| `--decision-log-stride` | `0`（自动） | 0 = 按「总步数 ÷ 条数上限」自动抽稀以覆盖整段；给 `1` 则逐步记录 |
+| `--decision-log-max-steps` | `720` | 条数上限（`0` = 不限）。整段 720 步 ≈ **5.2 MB**；整季 8760 步请保持默认，让它自动抽稀 |
+
+每步的 `phases` 是区域版三段：**区域观测与峰值目标 → 逐栋策略动作 → 区域奖励与分摊**；
+`district` 块另带 `community_net_kw` / `is_peak_step` / `ratio_vs_segment_peak` / `raw_actions`
+（纯展示，**不参与任何 KPI 或选点**）。峰步标记是整段跑完后统一补的 —— 跑到第 10 步时还不知道
+全段峰值，逐步判断会把前期局部高点误标成峰步。
+
+> 这类文件有多吃内存：仓库里既有的 Multi-agent `decision_trace.json` 单份就到 **40–161 MB**
+> （未瘦身，8759 步那份 161 MB），Java 每次打开详情都要整份读进内存。district 这条默认带上限，
+> 体积小一个量级；历史大文件可用 `python slim_decision_trace.py --all` 瘦身。
+
 ### 6.6 编译论文
 
 ```bash
