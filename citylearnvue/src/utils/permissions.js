@@ -9,7 +9,24 @@ export const PERMS = {
   MENU_ALGORITHM_PARAM: 'menu:algorithmParam',
   CODE_EDITOR_OPERATE: 'codeEditor:operate',
   CODE_EDITOR_DELETE: 'codeEditor:delete',
-  RES_MARL_OPERATE: 'resMarlConfig:operate'
+  RES_MARL_OPERATE: 'resMarlConfig:operate',
+  // 任务管理：新建 / 编辑 / 删除 / 执行
+  TASK_CREATE: 'taskList:create',
+  TASK_EDIT: 'taskList:edit',
+  TASK_DELETE: 'taskList:delete',
+  TASK_RUN: 'taskList:run',
+  // 参数配置：单独配置（分组节点 + 新建/编辑/删除）
+  PARAM_ITEM: 'algorithmParam:item',
+  PARAM_ITEM_CREATE: 'algorithmParam:itemCreate',
+  PARAM_ITEM_EDIT: 'algorithmParam:itemEdit',
+  PARAM_ITEM_DELETE: 'algorithmParam:itemDelete',
+  // 参数配置：配置组（分组节点 + 新建/编辑/删除/移入/移出）
+  PARAM_SET: 'algorithmParam:set',
+  PARAM_SET_CREATE: 'algorithmParam:setCreate',
+  PARAM_SET_EDIT: 'algorithmParam:setEdit',
+  PARAM_SET_DELETE: 'algorithmParam:setDelete',
+  PARAM_SET_MOVE_IN: 'algorithmParam:setMoveIn',
+  PARAM_SET_MOVE_OUT: 'algorithmParam:setMoveOut'
 }
 
 export const MENU_PERM_MAP = {

@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.citylearn.common.PageBean;
-import com.citylearn.common.PermissionCodes;
 import com.citylearn.common.SessionKeys;
 import com.citylearn.common.UserRoles;
 import com.citylearn.config.SystemConfig;
@@ -28,7 +27,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -254,7 +252,7 @@ public class UserService implements SystemConfig {
         List<Permission> all = listEnabledPermissions();
         Map<String, Permission> byCode = all.stream()
                 .collect(Collectors.toMap(Permission::getCode, p -> p, (a, b) -> a, LinkedHashMap::new));
-        List<String> normalized = normalizePermissions(permissions, byCode.keySet());
+        List<String> normalized = normalizePermissions(permissions, byCode);
         clearUserPermissions(id);
         Date now = new Date();
         for (String code : normalized) {
@@ -296,24 +294,27 @@ public class UserService implements SystemConfig {
         userPermissionMapper.delete(wrapper);
     }
 
-    private List<String> normalizePermissions(List<String> permissions, Set<String> allowed) {
+    private List<String> normalizePermissions(List<String> permissions, Map<String, Permission> byCode) {
         LinkedHashSet<String> result = new LinkedHashSet<>();
         if (permissions != null) {
             for (String code : permissions) {
-                if (StringUtils.isNotBlank(code) && allowed.contains(code.trim())) {
+                if (StringUtils.isNotBlank(code) && byCode.containsKey(code.trim())) {
                     result.add(code.trim());
                 }
             }
         }
-        // 子权限勾选时自动带上对应菜单
-        if (result.contains(PermissionCodes.CODE_EDITOR_OPERATE) || result.contains(PermissionCodes.CODE_EDITOR_DELETE)) {
-            if (allowed.contains(PermissionCodes.MENU_CODE_EDITOR)) {
-                result.add(PermissionCodes.MENU_CODE_EDITOR);
-            }
-        }
-        if (result.contains(PermissionCodes.RES_MARL_OPERATE)) {
-            if (allowed.contains(PermissionCodes.MENU_RES_MARL)) {
-                result.add(PermissionCodes.MENU_RES_MARL);
+        // 勾选子权限时自动带上全部上级（菜单 / 分组节点），否则「只勾了子权限」的用户连入口都没有。
+        // 上限 10 层只是防御脏数据里的环（parent_code 指回自己）。
+        for (String code : new ArrayList<>(result)) {
+            Permission node = byCode.get(code);
+            int guard = 0;
+            while (node != null && StringUtils.isNotBlank(node.getParentCode()) && guard++ < 10) {
+                String parent = node.getParentCode();
+                if (!byCode.containsKey(parent)) {
+                    break;
+                }
+                result.add(parent);
+                node = byCode.get(parent);
             }
         }
         List<String> ordered = new ArrayList<>();

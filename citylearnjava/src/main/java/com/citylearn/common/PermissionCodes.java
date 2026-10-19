@@ -25,4 +25,38 @@ public final class PermissionCodes {
 
     /** ResMARL 配置：修改 / 保存 / 恢复默认 */
     public static final String RES_MARL_OPERATE = "resMarlConfig:operate";
+
+    /* ---------------- 任务管理：新建 / 编辑 / 删除 / 执行 ---------------- */
+    /** 任务管理：新建任务（含「新建训练+评估编排任务」） */
+    public static final String TASK_CREATE = "taskList:create";
+    /** 任务管理：编辑任务名称与卡片配置 */
+    public static final String TASK_EDIT = "taskList:edit";
+    /** 任务管理：删除任务 */
+    public static final String TASK_DELETE = "taskList:delete";
+    /** 任务管理：执行任务 */
+    public static final String TASK_RUN = "taskList:run";
+
+    /* ---------------- 参数配置：单独配置 ---------------- */
+    /** 参数配置：单独配置（分组节点，本身不控制按钮） */
+    public static final String PARAM_ITEM = "algorithmParam:item";
+    /** 单独配置：新建参数 */
+    public static final String PARAM_ITEM_CREATE = "algorithmParam:itemCreate";
+    /** 单独配置：编辑参数 */
+    public static final String PARAM_ITEM_EDIT = "algorithmParam:itemEdit";
+    /** 单独配置：删除参数 */
+    public static final String PARAM_ITEM_DELETE = "algorithmParam:itemDelete";
+
+    /* ---------------- 参数配置：配置组 ---------------- */
+    /** 参数配置：配置组（分组节点，本身不控制按钮） */
+    public static final String PARAM_SET = "algorithmParam:set";
+    /** 配置组：新建配置组 */
+    public static final String PARAM_SET_CREATE = "algorithmParam:setCreate";
+    /** 配置组：编辑配置组 */
+    public static final String PARAM_SET_EDIT = "algorithmParam:setEdit";
+    /** 配置组：删除配置组 */
+    public static final String PARAM_SET_DELETE = "algorithmParam:setDelete";
+    /** 配置组：把参数移入配置组 */
+    public static final String PARAM_SET_MOVE_IN = "algorithmParam:setMoveIn";
+    /** 配置组：把参数移出配置组 */
+    public static final String PARAM_SET_MOVE_OUT = "algorithmParam:setMoveOut";
 }

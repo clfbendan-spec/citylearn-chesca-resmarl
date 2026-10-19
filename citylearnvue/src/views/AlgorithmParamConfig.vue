@@ -7,17 +7,27 @@
       <div class="header-actions">
         <!-- 配置组详情：把该组的成员操作放在最显眼的位置 -->
         <template v-if="inSetDetail">
-          <el-button icon="el-icon-folder-add" @click="openPicker">从已有配置添加</el-button>
-          <el-button type="primary" icon="el-icon-plus" @click="openAddDialog">添加配置</el-button>
+          <el-button v-if="canSetMoveIn" icon="el-icon-folder-add" @click="openPicker">从已有配置添加</el-button>
+          <el-button v-if="canItemCreate" type="primary" icon="el-icon-plus" @click="openAddDialog">添加配置</el-button>
         </template>
-        <el-button
-          v-else
-          type="primary"
-          icon="el-icon-plus"
-          @click="activeTab === 'alone' ? openAddDialog() : openAddSetDialog()"
-        >
-          {{ activeTab === 'alone' ? '添加配置' : '新建配置组' }}
-        </el-button>
+        <template v-else>
+          <el-button
+            v-if="activeTab === 'alone' && canItemCreate"
+            type="primary"
+            icon="el-icon-plus"
+            @click="openAddDialog()"
+          >
+            添加配置
+          </el-button>
+          <el-button
+            v-if="activeTab === 'set' && canSetCreate"
+            type="primary"
+            icon="el-icon-plus"
+            @click="openAddSetDialog()"
+          >
+            新建配置组
+          </el-button>
+        </template>
       </div>
     </div>
 
@@ -59,8 +69,8 @@
 
           <el-table-column label="操作" width="160" fixed="right">
             <template slot-scope="{ row }">
-              <el-button type="text" @click="openEditDialog(row)">编辑</el-button>
-              <el-button type="text" class="danger-text" @click="removeMember(row)">移出组</el-button>
+              <el-button v-if="canItemEdit" type="text" @click="openEditDialog(row)">编辑</el-button>
+              <el-button v-if="canSetMoveOut" type="text" class="danger-text" @click="removeMember(row)">移出组</el-button>
             </template>
           </el-table-column>
 
@@ -100,10 +110,10 @@
 
             <el-table-column label="操作" width="150" fixed="right">
               <template slot-scope="{ row }">
-                <el-button type="text" @click="openEditDialog(row)">编辑</el-button>
+                <el-button v-if="canItemEdit" type="text" @click="openEditDialog(row)">编辑</el-button>
                 <!-- 系统内置参数不提供删除：后端也会拒绝（deleteAlgorithmParamConfig） -->
                 <el-button
-                  v-if="!row.ifSystem"
+                  v-if="canItemDelete && !row.ifSystem"
                   type="text"
                   class="danger-text"
                   title="删除该参数"
@@ -141,9 +151,10 @@
             <el-table-column label="操作" width="180" fixed="right">
               <template slot-scope="{ row }">
                 <el-button type="text" @click="openSetDetail(row)">详情</el-button>
-                <el-button type="text" @click="openEditSetDialog(row)">编辑</el-button>
+                <el-button v-if="canSetEdit" type="text" @click="openEditSetDialog(row)">编辑</el-button>
                 <!-- 组内有参数时不允许删除：后端也会拒绝（deleteAlgorithmParamConfigSet） -->
                 <el-button
+                  v-if="canSetDelete"
                   type="text"
                   class="danger-text"
                   :disabled="!!row.memberCount"
@@ -402,6 +413,7 @@
 <script>
 import axios from 'axios'
 import * as echarts from 'echarts'
+import { PERMS } from '../utils/permissions'
 
 /**
  * 值类型下拉的固定选项。
@@ -430,6 +442,11 @@ let optionUid = 0
 
 export default {
   name: 'AlgorithmParamConfig',
+  inject: {
+    hasPermission: {
+      default: () => () => true
+    }
+  },
   data() {
     return {
       /** 页签：alone=单独配置，set=配置组 */
@@ -494,6 +511,39 @@ export default {
     },
     memberCount() {
       return (this.activeSet && this.activeSet.members && this.activeSet.members.length) || 0
+    },
+    /* ---------------- 操作权限（单独配置 / 配置组各一套） ---------------- */
+    /** 单独配置：新建参数 */
+    canItemCreate() {
+      return this.hasPermission(PERMS.PARAM_ITEM_CREATE)
+    },
+    /** 单独配置：编辑参数 */
+    canItemEdit() {
+      return this.hasPermission(PERMS.PARAM_ITEM_EDIT)
+    },
+    /** 单独配置：删除参数 */
+    canItemDelete() {
+      return this.hasPermission(PERMS.PARAM_ITEM_DELETE)
+    },
+    /** 配置组：新建 */
+    canSetCreate() {
+      return this.hasPermission(PERMS.PARAM_SET_CREATE)
+    },
+    /** 配置组：编辑 */
+    canSetEdit() {
+      return this.hasPermission(PERMS.PARAM_SET_EDIT)
+    },
+    /** 配置组：删除 */
+    canSetDelete() {
+      return this.hasPermission(PERMS.PARAM_SET_DELETE)
+    },
+    /** 配置组：把参数移入组（含「从已有配置添加」） */
+    canSetMoveIn() {
+      return this.hasPermission(PERMS.PARAM_SET_MOVE_IN)
+    },
+    /** 配置组：把参数移出组 */
+    canSetMoveOut() {
+      return this.hasPermission(PERMS.PARAM_SET_MOVE_OUT)
     },
     /** 编辑中的是否为系统内置参数：系统参数只允许改简介 */
     isSystemRow() {

@@ -6,7 +6,12 @@
         <p class="ha-muted">共 {{ mainTasks.length }} 条</p>
       </div>
       <div class="ha-toolbar toolbar">
-        <el-button type="primary" icon="el-icon-plus" @click="openCreateTask()">
+        <el-button
+          v-if="canCreateTask"
+          type="primary"
+          icon="el-icon-plus"
+          @click="openCreateTask()"
+        >
           新建任务
         </el-button>
         <el-button icon="el-icon-refresh" :loading="loading" @click="loadTasks()">
@@ -110,7 +115,7 @@
           <template slot-scope="{ row }">
             <!-- 执行：只有「待执行」的编排任务可执行；执行后编辑/删除自动消失（它们同样要求 status=5） -->
             <el-button
-              v-if="canExecutePipelineTask(row)"
+              v-if="canRunTask && canExecutePipelineTask(row)"
               type="text"
               size="small"
               class="primary-text-btn"
@@ -120,7 +125,7 @@
               执行
             </el-button>
             <el-button
-              v-if="canEditPipelineTask(row)"
+              v-if="canEditTask && canEditPipelineTask(row)"
               type="text"
               size="small"
               title="编辑任务名称与两张卡片的配置"
@@ -129,7 +134,7 @@
               编辑
             </el-button>
             <el-button
-              v-if="canEditPipelineTask(row)"
+              v-if="canDeleteTask && canEditPipelineTask(row)"
               type="text"
               size="small"
               class="danger-text-btn"
@@ -176,11 +181,17 @@
 <script>
 import axios from 'axios'
 import PipelineTaskDialog from '../components/PipelineTaskDialog.vue'
+import { PERMS } from '../utils/permissions'
 
 export default {
   name: 'TaskList',
   components: {
     PipelineTaskDialog
+  },
+  inject: {
+    hasPermission: {
+      default: () => () => true
+    }
   },
   data() {
     return {
@@ -224,6 +235,23 @@ export default {
      */
     hasPipelineOnPage() {
       return this.pagedTasks.some((t) => this.isPipelineTask(t))
+    },
+    /* ---------------- 操作权限（未分配时按钮直接不渲染） ---------------- */
+    /** 新建任务 */
+    canCreateTask() {
+      return this.hasPermission(PERMS.TASK_CREATE)
+    },
+    /** 编辑任务 */
+    canEditTask() {
+      return this.hasPermission(PERMS.TASK_EDIT)
+    },
+    /** 删除任务 */
+    canDeleteTask() {
+      return this.hasPermission(PERMS.TASK_DELETE)
+    },
+    /** 执行任务 */
+    canRunTask() {
+      return this.hasPermission(PERMS.TASK_RUN)
     }
   },
   mounted() {
