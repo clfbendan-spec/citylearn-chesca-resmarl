@@ -1879,7 +1879,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             _dl_mb = _dl_path.stat().st_size / 1048576 if _dl_path.exists() else 0.0
             log_console(f'  决策推演 : {_dl_path.name}'
                         f'（{_dl.recorded_steps} 条 / 走过 {_dl.seen_steps} 步，'
-                        f'{_dl_mb:.1f} MB，动作维 dhw/ele/tmp）')
+                        f'{_dl_mb:.1f} MB，'
+                        f'动作维 {"/".join(_dl._dim_names())}'
+                        f'（每栋 {_dl.action_dim or "?"} 维 × {_dl.n_buildings} 栋）')
             if _dl.failures:
                 log_console(f'    ⚠ 采集异常 {_dl.failures} 次（最后一条：{_dl._last_error}）')
         except Exception as exc:

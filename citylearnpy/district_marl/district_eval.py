@@ -486,7 +486,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             log_console(
                 f'  决策推演 : {_dp}'
                 f'（{_decision_log.recorded_steps} 条 / 走过 {_decision_log.seen_steps} 步，'
-                f'{_mb:.1f} MB，动作维 dhw/ele/tmp'
+                f'{_mb:.1f} MB，'
+                f'动作维 {"/".join(_decision_log._dim_names())}'
+                f'（每栋 {_decision_log.action_dim or "?"} 维 × '
+                f'{_decision_log.n_buildings} 栋）'
                 f'{("，已截断（--decision-log-max-steps 可调）" if _trunc else "")}）')
             if _decision_log.failures:
                 log_console(f'    ⚠ 采集异常 {_decision_log.failures} 次'

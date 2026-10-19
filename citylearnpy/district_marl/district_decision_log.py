@@ -50,6 +50,16 @@ DECISION_TRACE_FILENAME = 'decision_trace.json'
 # 只写进日志给人看，不参与任何选点、KPI 或奖励计算（避免又造出一个"事后口径"）。
 _PEAK_STEP_RATIO = 0.995
 
+# 动作维名。⚠️ 维度是**拆分后**的概念，别与总量混淆：
+#   · 每栋楼的动作 = `building.active_actions` = [dhw_storage, electrical_storage,
+#     cooling_device]，即 **3 维**（实测 Box(3,)，low=[-1,-1,0] / high=[1,1,1]）；
+#   · 3 栋楼在 RLlib 里是 `Dict{agent_0: Box(3), agent_1: Box(3), agent_2: Box(3)}`，
+#     合计 9 个连续标量 —— 这个 9 是**总量**，不是一条 9 维向量，也不能按位置归属；
+#   · 方案 3（`--peak-action-dim 1`）给每 agent 追加 `a_peak_resp∈[0,1]` ⇒ 每栋 4 维、
+#     合计 12。所以维名必须**按实际向量长度**生成，不能写死 3 个。
+_BASE_ACTION_DIMS = ('dhw', 'ele', 'tmp')
+_EXTRA_ACTION_DIMS = ('a_peak_resp',)
+
 
 def _fmt(v: Any, d: int = 3) -> str:
     """数值格式化（None / nan 统一给 '-'，与 utils.report 的风格一致）。"""
@@ -84,6 +94,7 @@ class DistrictDecisionLog:
         reward_kwargs: Optional[Mapping[str, Any]] = None,
         stride: int = 1,
         max_records: int = 0,
+        action_dim: Optional[int] = None,
     ):
         # 延迟 import：district_eval 会先做 sys.path 引导与 ray 环境准备，
         # 模块级 import utils.* 在部分包装脚本下会过早拉起重依赖。
@@ -107,6 +118,18 @@ class DistrictDecisionLog:
         self.peak_net = 0.0        # 本段见过的最大社区净负荷（事后补写峰步标记）
         self._peak_marked = False  # 峰步标记只做一次（重复调用会重复追加摘要文字）
         self._last_error = ''
+        # 每个 agent 的动作向量长度（3 = DHW/电池/冷却；4 = 再 +a_peak_resp）。
+        # None ⇒ 等第一步拿到真实向量再定（这样调用方不必关心方案 3 开没开）。
+        self.action_dim = (int(action_dim) if action_dim else None)
+
+    def _dim_names(self, n: Optional[int] = None) -> List[str]:
+        """按实际动作长度给出维名；超出已知部分用 `extra_i` 兜底，绝不静默丢维。"""
+        k = int(n if n is not None else (self.action_dim or len(_BASE_ACTION_DIMS)))
+        names = list(_BASE_ACTION_DIMS)
+        for i in range(max(0, k - len(_BASE_ACTION_DIMS))):
+            names.append(_EXTRA_ACTION_DIMS[i] if i < len(_EXTRA_ACTION_DIMS)
+                         else f'extra_{i}')
+        return names[:k]
 
     @property
     def truncated(self) -> bool:
@@ -135,6 +158,14 @@ class DistrictDecisionLog:
         """
         if self._rec is None:
             return
+        # 首次拿到真实动作向量时定维（3 = 基础三动作；方案 3 开启则为 4）。
+        # 不可写死 3：`--peak-action-dim 1` 时第 4 维 a_peak_resp 会被原名表漏掉。
+        if self.action_dim is None and isinstance(actions, Mapping):
+            for _v in actions.values():
+                _n = len(_as_list(_v))
+                if _n > 0:
+                    self.action_dim = int(_n)
+                    break
         self.seen_steps += 1
         if self.max_records and self.recorded_steps >= self.max_records:
             return
@@ -166,7 +197,8 @@ class DistrictDecisionLog:
             self.peak_net = net
 
         # 补齐三维动作与 DHW 储能读数（district 专有；report 的通用出口没有这一层）
-        exec_actions = self._decorate_buildings(citylearn_env, record, ordered_keys)
+        exec_actions = self._decorate_buildings(citylearn_env, record, ordered_keys,
+                                                actions)
 
         # 区域字段：界面暂不渲染，但排查"这一步为什么这么动作"时最有用
         record['district'] = {
@@ -176,8 +208,8 @@ class DistrictDecisionLog:
                            else float(net) / float(peak_target)),
             'hour': hour,
             'outage_flags': list(outage_flags or []),
-            # 动作维度顺序：DHW / 电池 / 冷却（与 building.active_actions 一致）
-            'action_dims': ['dhw', 'ele', 'tmp'],
+            # 动作维度顺序：DHW / 电池 / 冷却（+ 方案 3 的 a_peak_resp）
+            'action_dims': self._dim_names(),
             # 策略原始输出（未经改写/投影）：与 exec_actions 对照即可看出被改了多少
             'raw_actions': {str(k): [float(x) for x in _as_list(v)]
                             for k, v in (actions or {}).items()},
@@ -193,8 +225,15 @@ class DistrictDecisionLog:
         citylearn_env: Any,
         record: Dict[str, Any],
         ordered_keys: Sequence[Any],
+        raw_actions: Optional[Mapping[Any, Sequence[float]]] = None,
     ) -> Dict[str, List[Any]]:
-        """给每栋补 DHW 储能 SOC，并按 agent 汇总「执行动作」三维向量。"""
+        """给每栋补 DHW 储能 SOC，并按 agent 汇总「执行动作」向量（长度自适应）。
+
+        基础三动作（dhw / ele / tmp）取 report 已结算的 `actions.final`；
+        方案 3 的 `a_peak_resp` 不在 report 的字段表里（那是 district 专有维），
+        所以从策略原始向量按位置补齐 —— 该维**不被 `_dm_peak_action_apply` 改写**
+        （它只改写前 3 维），因此原始值 == 执行值。
+        """
         from utils.report import getattr_path, series_value
 
         buildings = list(getattr(citylearn_env, 'buildings', []) or [])
@@ -210,7 +249,19 @@ class DistrictDecisionLog:
                     entry['dhw_soc'] = None
             fin = ((entry.get('actions') or {}).get('final') or {})
             key = str(ordered_keys[i]) if i < len(ordered_keys) else f'agent_{i}'
-            exec_map[key] = [fin.get('dhw'), fin.get('ele'), fin.get('tmp')]
+            vec: List[Any] = [fin.get('dhw'), fin.get('ele'), fin.get('tmp')]
+
+            # ---- 超出基础三维的部分（方案 3 的 a_peak_resp）按位置补 ----
+            n_dim = int(self.action_dim or len(vec))
+            if n_dim > len(vec) and isinstance(raw_actions, Mapping):
+                raw_vec: List[float] = []
+                for k in (ordered_keys[i] if i < len(ordered_keys) else key, key):
+                    if k in raw_actions:
+                        raw_vec = _as_list(raw_actions[k])
+                        break
+                for j in range(len(vec), n_dim):
+                    vec.append(raw_vec[j] if j < len(raw_vec) else None)
+            exec_map[key] = vec
         return exec_map
 
     # ------------------------------------------------------------- 阶段推演
@@ -260,8 +311,15 @@ class DistrictDecisionLog:
         if dhw_socs and max(dhw_socs) == 0.0 and min(dhw_socs) == 0.0:
             # 如实标注：DHW 动作在变但 SOC 全程不动，多半是上游蓄热更新没生效
             dhw_txt += '（本段未变化）'
-        act_s = (f'{n} 栋各自 Policy 输出 DHW / 电池 / 冷却三维动作'
-                 f'（act_dhw / act_bat / act_cool 是改写后**实际执行**值，raw= 为策略原始输出）；'
+        # 动作维数自适应：基础 3 维（DHW/电池/冷却）；方案 3 再 +1 维削峰响应。
+        n_dim = int(self.action_dim or len(_BASE_ACTION_DIMS))
+        dim_txt = 'DHW / 电池 / 冷却'
+        if n_dim > len(_BASE_ACTION_DIMS):
+            dim_txt = 'DHW / 电池 / 冷却 / ' + ' / '.join(
+                self._dim_names(n_dim)[len(_BASE_ACTION_DIMS):])
+        act_s = (f'{n} 栋各自 Policy 输出{dim_txt} {n_dim} 维动作'
+                 f'（每栋 {n_dim} 维，社区合计 {n_dim * n} 个标量；'
+                 f'act_dhw / act_bat / act_cool 是改写后**实际执行**值，raw= 为策略原始输出）；'
                  f'电池 SOC {_rng(bat_socs)}、DHW SOC {dhw_txt}')
 
         # ③ 区域奖励
@@ -296,12 +354,19 @@ class DistrictDecisionLog:
             'reward_label': self.reward_label,
             'district': {
                 'stride': self.stride,
-                'max_records': self.max_records,
+                # 0 = 不限。调用方为省事可能传 1e9 表示"别截断"，落盘时归一成 0，
+                # 免得界面/脚本把这个魔数当成真实上限（两者的截断语义完全一致）。
+                'max_records': (0 if self.max_records >= 10 ** 8 else self.max_records),
                 'seen_steps': int(self.seen_steps),
                 'recorded_steps': int(self.recorded_steps),
                 # max_records=0 表示不限 ⇒ 永不截断
                 'truncated': bool(self.max_records and self.recorded_steps >= self.max_records),
-                'action_dims': ['dhw', 'ele', 'tmp'],
+                'action_dims': self._dim_names(),
+                # 每 agent 动作维数 & 社区合计标量数（3 栋 × 3 维 = 9，别与"9 维观测"混淆）
+                'action_dim_per_agent': (None if self.action_dim is None
+                                         else int(self.action_dim)),
+                'action_dim_total': (None if self.action_dim is None
+                                     else int(self.action_dim) * int(self.n_buildings)),
                 'peak_net_kw': float(self.peak_net) if self.peak_net else None,
                 'collect_failures': int(self.failures),
             },
@@ -425,8 +490,10 @@ def build_decision_log(
         max_records=max_records,
     )
     if log_console is not None:
-        _cap = '不限' if log.max_records == 0 else f'{log.max_records} 条'
+        _cap = ('不限' if (log.max_records >= 10 ** 8)
+                else f'{log.max_records} 条')
         log_console(f'决策推演日志=ON（每 {log.stride} 步一条，条数上限 {_cap} '
-                    f'⇒ decision_trace.json；动作维 dhw/ele/tmp 全量；'
+                    f'⇒ decision_trace.json；动作维按实际向量自适应'
+                    f'（3 = dhw/ele/tmp，方案 3 开启则 4 = +a_peak_resp）；'
                     f'奖励={log.reward_label}）')
     return log
