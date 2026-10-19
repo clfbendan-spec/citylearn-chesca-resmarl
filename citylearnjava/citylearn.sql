@@ -1,3 +1,11 @@
+--
+-- 【2026-10-19 清理】building_1 / building_2 / building_3 / pricing / weather /
+--   carbon_intensity / community 这 7 张表已不再被任何代码读取
+--   （原始数据改由 CHESCA schema 目录下的 CSV 提供），已从库中 DROP。
+--   建表语句在此以注释保留，仅作历史痕迹；完整结构与数据备份见
+--   同目录 legacy_tables_20261019.sql（可整体恢复）。
+--
+
 -- MySQL dump 10.13  Distrib 9.3.0, for Win64 (x86_64)
 --
 -- Host: localhost    Database: citylearn
@@ -76,102 +84,102 @@ CREATE TABLE `algorithm_param_config_set` (
 -- Table structure for table `building_1`
 --
 
-DROP TABLE IF EXISTS `building_1`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `building_1` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `month` int DEFAULT NULL,
-  `hour` int DEFAULT NULL,
-  `day_type` int DEFAULT NULL,
-  `daylight_savings_status` int DEFAULT NULL,
-  `indoor_dry_bulb_temperature` decimal(14,9) DEFAULT NULL,
-  `average_unmet_cooling_setpoint_difference` decimal(14,9) DEFAULT NULL,
-  `indoor_relative_humidity` decimal(14,9) DEFAULT NULL,
-  `non_shiftable_load` decimal(14,9) DEFAULT NULL,
-  `dhw_demand` decimal(14,9) DEFAULT NULL,
-  `cooling_demand` decimal(14,9) DEFAULT NULL,
-  `heating_demand` decimal(14,9) DEFAULT NULL,
-  `solar_generation` decimal(14,9) DEFAULT NULL,
-  `occupant_count` int DEFAULT NULL,
-  `indoor_dry_bulb_temperature_cooling_set_point` decimal(14,9) DEFAULT NULL,
-  `indoor_dry_bulb_temperature_heating_set_point` decimal(14,9) DEFAULT NULL,
-  `hvac_mode` int DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `building_1`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `building_1` (
+--   `id` bigint NOT NULL AUTO_INCREMENT,
+--   `month` int DEFAULT NULL,
+--   `hour` int DEFAULT NULL,
+--   `day_type` int DEFAULT NULL,
+--   `daylight_savings_status` int DEFAULT NULL,
+--   `indoor_dry_bulb_temperature` decimal(14,9) DEFAULT NULL,
+--   `average_unmet_cooling_setpoint_difference` decimal(14,9) DEFAULT NULL,
+--   `indoor_relative_humidity` decimal(14,9) DEFAULT NULL,
+--   `non_shiftable_load` decimal(14,9) DEFAULT NULL,
+--   `dhw_demand` decimal(14,9) DEFAULT NULL,
+--   `cooling_demand` decimal(14,9) DEFAULT NULL,
+--   `heating_demand` decimal(14,9) DEFAULT NULL,
+--   `solar_generation` decimal(14,9) DEFAULT NULL,
+--   `occupant_count` int DEFAULT NULL,
+--   `indoor_dry_bulb_temperature_cooling_set_point` decimal(14,9) DEFAULT NULL,
+--   `indoor_dry_bulb_temperature_heating_set_point` decimal(14,9) DEFAULT NULL,
+--   `hvac_mode` int DEFAULT NULL,
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `building_2`
 --
 
-DROP TABLE IF EXISTS `building_2`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `building_2` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `month` int DEFAULT NULL,
-  `hour` int DEFAULT NULL,
-  `day_type` int DEFAULT NULL,
-  `daylight_savings_status` int DEFAULT NULL,
-  `indoor_dry_bulb_temperature` decimal(14,9) DEFAULT NULL,
-  `average_unmet_cooling_setpoint_difference` decimal(14,9) DEFAULT NULL,
-  `indoor_relative_humidity` decimal(14,9) DEFAULT NULL,
-  `non_shiftable_load` decimal(14,9) DEFAULT NULL,
-  `dhw_demand` decimal(14,9) DEFAULT NULL,
-  `cooling_demand` decimal(14,9) DEFAULT NULL,
-  `heating_demand` decimal(14,9) DEFAULT NULL,
-  `solar_generation` decimal(14,9) DEFAULT NULL,
-  `occupant_count` int DEFAULT NULL,
-  `indoor_dry_bulb_temperature_cooling_set_point` decimal(14,9) DEFAULT NULL,
-  `indoor_dry_bulb_temperature_heating_set_point` decimal(14,9) DEFAULT NULL,
-  `hvac_mode` int DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `building_2`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `building_2` (
+--   `id` bigint NOT NULL AUTO_INCREMENT,
+--   `month` int DEFAULT NULL,
+--   `hour` int DEFAULT NULL,
+--   `day_type` int DEFAULT NULL,
+--   `daylight_savings_status` int DEFAULT NULL,
+--   `indoor_dry_bulb_temperature` decimal(14,9) DEFAULT NULL,
+--   `average_unmet_cooling_setpoint_difference` decimal(14,9) DEFAULT NULL,
+--   `indoor_relative_humidity` decimal(14,9) DEFAULT NULL,
+--   `non_shiftable_load` decimal(14,9) DEFAULT NULL,
+--   `dhw_demand` decimal(14,9) DEFAULT NULL,
+--   `cooling_demand` decimal(14,9) DEFAULT NULL,
+--   `heating_demand` decimal(14,9) DEFAULT NULL,
+--   `solar_generation` decimal(14,9) DEFAULT NULL,
+--   `occupant_count` int DEFAULT NULL,
+--   `indoor_dry_bulb_temperature_cooling_set_point` decimal(14,9) DEFAULT NULL,
+--   `indoor_dry_bulb_temperature_heating_set_point` decimal(14,9) DEFAULT NULL,
+--   `hvac_mode` int DEFAULT NULL,
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `building_3`
 --
 
-DROP TABLE IF EXISTS `building_3`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `building_3` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `month` int DEFAULT NULL,
-  `hour` int DEFAULT NULL,
-  `day_type` int DEFAULT NULL,
-  `daylight_savings_status` int DEFAULT NULL,
-  `indoor_dry_bulb_temperature` decimal(14,9) DEFAULT NULL,
-  `average_unmet_cooling_setpoint_difference` decimal(14,9) DEFAULT NULL,
-  `indoor_relative_humidity` decimal(14,9) DEFAULT NULL,
-  `non_shiftable_load` decimal(14,9) DEFAULT NULL,
-  `dhw_demand` decimal(14,9) DEFAULT NULL,
-  `cooling_demand` decimal(14,9) DEFAULT NULL,
-  `heating_demand` decimal(14,9) DEFAULT NULL,
-  `solar_generation` decimal(14,9) DEFAULT NULL,
-  `occupant_count` int DEFAULT NULL,
-  `indoor_dry_bulb_temperature_cooling_set_point` decimal(14,9) DEFAULT NULL,
-  `indoor_dry_bulb_temperature_heating_set_point` decimal(14,9) DEFAULT NULL,
-  `hvac_mode` int DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `building_3`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `building_3` (
+--   `id` bigint NOT NULL AUTO_INCREMENT,
+--   `month` int DEFAULT NULL,
+--   `hour` int DEFAULT NULL,
+--   `day_type` int DEFAULT NULL,
+--   `daylight_savings_status` int DEFAULT NULL,
+--   `indoor_dry_bulb_temperature` decimal(14,9) DEFAULT NULL,
+--   `average_unmet_cooling_setpoint_difference` decimal(14,9) DEFAULT NULL,
+--   `indoor_relative_humidity` decimal(14,9) DEFAULT NULL,
+--   `non_shiftable_load` decimal(14,9) DEFAULT NULL,
+--   `dhw_demand` decimal(14,9) DEFAULT NULL,
+--   `cooling_demand` decimal(14,9) DEFAULT NULL,
+--   `heating_demand` decimal(14,9) DEFAULT NULL,
+--   `solar_generation` decimal(14,9) DEFAULT NULL,
+--   `occupant_count` int DEFAULT NULL,
+--   `indoor_dry_bulb_temperature_cooling_set_point` decimal(14,9) DEFAULT NULL,
+--   `indoor_dry_bulb_temperature_heating_set_point` decimal(14,9) DEFAULT NULL,
+--   `hvac_mode` int DEFAULT NULL,
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `carbon_intensity`
 --
 
-DROP TABLE IF EXISTS `carbon_intensity`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `carbon_intensity` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `carbon_intensity` decimal(14,9) DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `carbon_intensity`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `carbon_intensity` (
+--   `id` bigint NOT NULL AUTO_INCREMENT,
+--   `carbon_intensity` decimal(14,9) DEFAULT NULL,
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `citylearn_dataset`
@@ -202,18 +210,18 @@ CREATE TABLE `citylearn_dataset` (
 -- Table structure for table `community`
 --
 
-DROP TABLE IF EXISTS `community`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `community` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '社区ID主键',
-  `community_name` varchar(100) NOT NULL COMMENT '社区名称(如CityLearn_2023)',
-  `description` text COMMENT '社区描述信息',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='社区基础信息表';
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `community`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `community` (
+--   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '社区ID主键',
+--   `community_name` varchar(100) NOT NULL COMMENT '社区名称(如CityLearn_2023)',
+--   `description` text COMMENT '社区描述信息',
+--   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+--   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='社区基础信息表';
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `community_building`
@@ -296,18 +304,18 @@ CREATE TABLE `permission` (
 -- Table structure for table `pricing`
 --
 
-DROP TABLE IF EXISTS `pricing`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `pricing` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `electricity_pricing` decimal(12,5) DEFAULT NULL,
-  `electricity_pricing_predicted_1` decimal(12,5) DEFAULT NULL,
-  `electricity_pricing_predicted_2` decimal(12,5) DEFAULT NULL,
-  `electricity_pricing_predicted_3` decimal(12,5) DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `pricing`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `pricing` (
+--   `id` bigint NOT NULL AUTO_INCREMENT,
+--   `electricity_pricing` decimal(12,5) DEFAULT NULL,
+--   `electricity_pricing_predicted_1` decimal(12,5) DEFAULT NULL,
+--   `electricity_pricing_predicted_2` decimal(12,5) DEFAULT NULL,
+--   `electricity_pricing_predicted_3` decimal(12,5) DEFAULT NULL,
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `py_file`
@@ -402,30 +410,30 @@ CREATE TABLE `user_permission` (
 -- Table structure for table `weather`
 --
 
-DROP TABLE IF EXISTS `weather`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `weather` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `outdoor_dry_bulb_temperature` decimal(12,2) DEFAULT NULL,
-  `outdoor_relative_humidity` decimal(12,2) DEFAULT NULL,
-  `diffuse_solar_irradiance` decimal(12,2) DEFAULT NULL,
-  `direct_solar_irradiance` decimal(12,2) DEFAULT NULL,
-  `outdoor_dry_bulb_temperature_predicted_1` decimal(12,6) DEFAULT NULL,
-  `outdoor_dry_bulb_temperature_predicted_2` decimal(12,6) DEFAULT NULL,
-  `outdoor_dry_bulb_temperature_predicted_3` decimal(12,6) DEFAULT NULL,
-  `outdoor_relative_humidity_predicted_1` decimal(12,6) DEFAULT NULL,
-  `outdoor_relative_humidity_predicted_2` decimal(12,6) DEFAULT NULL,
-  `outdoor_relative_humidity_predicted_3` decimal(12,6) DEFAULT NULL,
-  `diffuse_solar_irradiance_predicted_1` decimal(12,6) DEFAULT NULL,
-  `diffuse_solar_irradiance_predicted_2` decimal(12,6) DEFAULT NULL,
-  `diffuse_solar_irradiance_predicted_3` decimal(12,6) DEFAULT NULL,
-  `direct_solar_irradiance_predicted_1` decimal(12,5) DEFAULT NULL,
-  `direct_solar_irradiance_predicted_2` decimal(12,5) DEFAULT NULL,
-  `direct_solar_irradiance_predicted_3` decimal(12,5) DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
+-- DROP TABLE IF EXISTS `weather`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `weather` (
+--   `id` bigint NOT NULL AUTO_INCREMENT,
+--   `outdoor_dry_bulb_temperature` decimal(12,2) DEFAULT NULL,
+--   `outdoor_relative_humidity` decimal(12,2) DEFAULT NULL,
+--   `diffuse_solar_irradiance` decimal(12,2) DEFAULT NULL,
+--   `direct_solar_irradiance` decimal(12,2) DEFAULT NULL,
+--   `outdoor_dry_bulb_temperature_predicted_1` decimal(12,6) DEFAULT NULL,
+--   `outdoor_dry_bulb_temperature_predicted_2` decimal(12,6) DEFAULT NULL,
+--   `outdoor_dry_bulb_temperature_predicted_3` decimal(12,6) DEFAULT NULL,
+--   `outdoor_relative_humidity_predicted_1` decimal(12,6) DEFAULT NULL,
+--   `outdoor_relative_humidity_predicted_2` decimal(12,6) DEFAULT NULL,
+--   `outdoor_relative_humidity_predicted_3` decimal(12,6) DEFAULT NULL,
+--   `diffuse_solar_irradiance_predicted_1` decimal(12,6) DEFAULT NULL,
+--   `diffuse_solar_irradiance_predicted_2` decimal(12,6) DEFAULT NULL,
+--   `diffuse_solar_irradiance_predicted_3` decimal(12,6) DEFAULT NULL,
+--   `direct_solar_irradiance_predicted_1` decimal(12,5) DEFAULT NULL,
+--   `direct_solar_irradiance_predicted_2` decimal(12,5) DEFAULT NULL,
+--   `direct_solar_irradiance_predicted_3` decimal(12,5) DEFAULT NULL,
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB AUTO_INCREMENT=721 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping events for database 'citylearn'
