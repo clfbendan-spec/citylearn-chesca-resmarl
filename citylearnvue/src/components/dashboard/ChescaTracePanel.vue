@@ -82,7 +82,28 @@
 
       <el-tabs v-model="activeChartTab" type="card" class="chart-tabs">
         <el-tab-pane label="决策推演日志" name="decisionLog">
+          <div class="trace-mode-bar">
+            <el-radio-group v-model="traceViewMode" size="mini">
+              <el-radio-button label="single">单线回放</el-radio-button>
+              <el-radio-button label="compare">同步对比</el-radio-button>
+            </el-radio-group>
+            <span class="mode-hint">
+              <template v-if="traceViewMode === 'compare'">
+                取两个 run 按 step 对齐并排推进；训练/评估的 step 起点或抽稀不同也能对齐
+              </template>
+              <template v-else>
+                当前只看「{{ activeSim || '—' }}」一个 run 的逐步推演
+              </template>
+            </span>
+          </div>
+          <decision-trace-compare
+            v-if="traceViewMode === 'compare'"
+            :decision-trace-by-sim="decisionTraceBySim"
+            :sim-names="traceSimNames"
+            :active-sim="activeSim"
+          />
           <decision-trace-log
+            v-else
             :decision-trace="decisionTrace"
             :selected-episode="selectedEpisode"
             :selected-building="logBuildingFilter"
@@ -117,6 +138,7 @@
 <script>
 import * as echarts from 'echarts'
 import DecisionTraceLog from '@/components/dashboard/DecisionTraceLog.vue'
+import DecisionTraceCompare from '@/components/dashboard/DecisionTraceCompare.vue'
 import {
   TRACE_METRICS,
   buildingLabel,
@@ -130,7 +152,7 @@ import { formatResmarlLabel } from '@/utils/resmarlLabels'
 
 export default {
   name: 'ChescaTracePanel',
-  components: { DecisionTraceLog },
+  components: { DecisionTraceLog, DecisionTraceCompare },
   props: {
     activeSim: { type: String, default: '' },
     parsedTrace: { type: Object, default: () => ({}) },
@@ -149,6 +171,8 @@ export default {
       actionBuildingScope: 'all',
       logBuildingFilter: null,
       activeChartTab: 'decisionLog',
+      // 决策推演日志的两种看法：single = 单 run 逐步回放；compare = 两个 run 同步并排
+      traceViewMode: 'single',
       stepRange: [0, 0],
       charts: {
         stepActions: null,
@@ -160,6 +184,20 @@ export default {
     }
   },
   computed: {
+    /** 有决策日志的 sim 列表；当前 tab 的 sim 排最前（对比模式默认「左」）。 */
+    traceSimNames() {
+      const all = this.decisionTraceBySim || {}
+      const names = Object.keys(all).filter((k) => {
+        const t = all[k]
+        return !!(t && Array.isArray(t.steps) && t.steps.length)
+      })
+      if (!names.length) return []
+      return names.sort((a, b) => {
+        if (a === this.activeSim) return -1
+        if (b === this.activeSim) return 1
+        return a.localeCompare(b)
+      })
+    },
     activeResmarlHint() {
       const label = formatResmarlLabel(this.resmarlBySim[this.activeSim])
       return label || ''
@@ -627,6 +665,17 @@ export default {
   margin-bottom: var(--space-3);
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+.trace-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.trace-mode-bar .mode-hint {
+  font-size: 12px;
+  color: var(--secondary-text-color, #909399);
 }
 .title {
   margin: 0 0 4px;
