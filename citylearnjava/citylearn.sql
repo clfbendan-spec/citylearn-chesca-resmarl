@@ -1,9 +1,12 @@
 --
--- 【2026-10-19 清理】building_1 / building_2 / building_3 / pricing / weather /
---   carbon_intensity / community 这 7 张表已不再被任何代码读取
---   （原始数据改由 CHESCA schema 目录下的 CSV 提供），已从库中 DROP。
---   建表语句在此以注释保留，仅作历史痕迹；完整结构与数据备份见
---   同目录 legacy_tables_20261019.sql（可整体恢复）。
+-- 【2026-10-19 清理】以下 8 张表已无任何页面/代码读取，均已从库中 DROP：
+--   building_1 / building_2 / building_3 / pricing / weather / carbon_intensity
+--   （原始数据改由 CHESCA schema 目录下的 CSV 提供）
+--   community（从未建过实体，0 行）
+--   community_building（前端无菜单入口、permission 表无该项）
+--   建表语句在此以注释保留，仅作历史痕迹。可恢复的备份：
+--     legacy_tables_20261019.sql              —— 前 7 张表
+--     legacy_community_building_20261019.sql  —— community_building
 --
 
 -- MySQL dump 10.13  Distrib 9.3.0, for Win64 (x86_64)
@@ -224,23 +227,28 @@ CREATE TABLE `citylearn_dataset` (
 -- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- 【2026-10-19 清理】community_building 已无任何前端入口（App.vue 有组件映射但
+--   侧边菜单与 permission 表均无该项），后端仅剩按需调用的 Service，已从库中 DROP。
+--   结构与数据备份见同目录 legacy_community_building_20261019.sql（可整体恢复）。
+--
+--
 -- Table structure for table `community_building`
 --
-
-DROP TABLE IF EXISTS `community_building`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `community_building` (
-  `id` varchar(64) NOT NULL COMMENT '建筑ID主键',
-  `name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '建筑名称',
-  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '建筑信息',
-  `image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '图片地址',
-  `if_delete` bit(1) DEFAULT NULL COMMENT '删除标记',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='建筑基础信息表';
-/*!40101 SET character_set_client = @saved_cs_client */;
+--
+-- DROP TABLE IF EXISTS `community_building`;
+-- /*!40101 SET @saved_cs_client     = @@character_set_client */;
+-- /*!50503 SET character_set_client = utf8mb4 */;
+-- CREATE TABLE `community_building` (
+--   `id` varchar(64) NOT NULL COMMENT '建筑ID主键',
+--   `name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '建筑名称',
+--   `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '建筑信息',
+--   `image_url` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT '图片地址',
+--   `if_delete` bit(1) DEFAULT NULL COMMENT '删除标记',
+--   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+--   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+--   PRIMARY KEY (`id`)
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='建筑基础信息表';
+-- /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `kpis`
