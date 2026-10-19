@@ -139,7 +139,6 @@ import axios from 'axios'
 import DataList from './components/DataList.vue'
 import KpiList from './components/KpiList.vue'
 import MonacoEditor from './components/MonacoEditor.vue'
-import BuildingManagement from './components/BuildingManagement.vue'
 import ResMarlConfig from './views/ResMarlConfig.vue'
 import AlgorithmParamConfig from './views/AlgorithmParamConfig.vue'
 import HomePage from './views/HomePage.vue'
@@ -171,7 +170,6 @@ export default {
     DataList,
     KpiList,
     MonacoEditor,
-    BuildingManagement,
     ResMarlConfig,
     AlgorithmParamConfig,
     HomePage,
@@ -436,7 +434,6 @@ export default {
         kpiList: 'KpiList',
         codeEditor: 'MonacoEditor',
         taskList: 'TaskList',
-        buildingManagement: 'BuildingManagement',
         resMarlConfig: 'ResMarlConfig',
         algorithmParam: 'AlgorithmParamConfig',
         userManagement: 'UserManagement'
