@@ -256,6 +256,8 @@ export default {
   },
   mounted() {
     this.loadTasks()
+    // 顶栏气泡里点了「设为已读」→ 本页所有未读标记一起消失（不用重新拉列表）
+    window.addEventListener('citylearn-tasks-read', this.onAllTasksRead)
     // 有任务在跑时每 5 秒静默刷新一次，让状态实时更新；全部结束即停止请求。
     // 静默刷新不显示 loading、也不重置页码，避免打断正在翻页的用户。
     this.refreshTimer = setInterval(() => {
@@ -265,12 +267,22 @@ export default {
     }, 5000)
   },
   beforeDestroy() {
+    window.removeEventListener('citylearn-tasks-read', this.onAllTasksRead)
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer)
       this.refreshTimer = null
     }
   },
   methods: {
+    /** 顶栏「设为已读」后同步本地未读标记，避免红点残留到下次刷新 */
+    onAllTasksRead() {
+      (this.tasks || []).forEach((row) => {
+        if (!row.ifNotified) {
+          this.$set(row, 'ifNotified', true)
+        }
+      })
+    },
+
     /**
      * 加载全部任务列表。
      * @param {object} [options] silent=true 不显示 loading / 不弹错误提示；keepPage=true 不重置页码

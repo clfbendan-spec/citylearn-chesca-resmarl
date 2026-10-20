@@ -8,7 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import javax.annotation.Resource;
 
 /**
- * Web MVC：登录拦截 + CORS（携带 Cookie）
+ * Web MVC：登录拦截 + 接口级权限拦截 + CORS（携带 Cookie）
  */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
@@ -16,21 +16,33 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Resource
     private LoginInterceptor loginInterceptor;
 
+    @Resource
+    private PermissionInterceptor permissionInterceptor;
+
+    /** 登录与鉴权都不管的路径（登录/登出/当前用户、文件资源、接口文档） */
+    private static final String[] OPEN_PATHS = {
+            "/web/auth/login",
+            "/web/auth/logout",
+            "/web/auth/current",
+            "/web/file/**",
+            "/doc.html",
+            "/swagger-resources/**",
+            "/v2/api-docs",
+            "/v3/api-docs",
+            "/webjars/**"
+    };
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 顺序：先判登录（401），再判权限（403）
         registry.addInterceptor(loginInterceptor)
                 .addPathPatterns("/web/**")
-                .excludePathPatterns(
-                        "/web/auth/login",
-                        "/web/auth/logout",
-                        "/web/auth/current",
-                        "/web/file/**",
-                        "/doc.html",
-                        "/swagger-resources/**",
-                        "/v2/api-docs",
-                        "/v3/api-docs",
-                        "/webjars/**"
-                );
+                .excludePathPatterns(OPEN_PATHS)
+                .order(1);
+        registry.addInterceptor(permissionInterceptor)
+                .addPathPatterns("/web/**")
+                .excludePathPatterns(OPEN_PATHS)
+                .order(2);
     }
 
     @Override

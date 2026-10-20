@@ -340,7 +340,7 @@ CREATE TABLE `py_file` (
   `create_time` datetime DEFAULT NULL COMMENT '创建时间',
   `create_user` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '创建人用户名',
   `name` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '代码名',
-  `if_show` bit(1) DEFAULT NULL COMMENT '是否展示此文件对应结果',
+  `if_show` bit(1) DEFAULT NULL COMMENT '历史字段：已不参与文件列表过滤/展示（展示语义见 py_task.if_show）',
   `script_type` varchar(16) COLLATE utf8mb4_general_ci DEFAULT 'both' COMMENT '脚本类型：train 只训练 / eval 只评估 / both 训练+评估一体',
   `algorithm_config` text COLLATE utf8mb4_general_ci COMMENT '该脚本的算法配置（JSON 数组：[{"id":..,"param_name":"..","value":".."}]）',
   PRIMARY KEY (`id`)

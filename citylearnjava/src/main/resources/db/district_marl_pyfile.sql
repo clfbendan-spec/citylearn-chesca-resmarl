@@ -26,8 +26,8 @@
 
 -- ---------------------------------------------------------------------------
 -- 1) 登记两行 ---------------------------------------------------------------
---    if_system=1 ⇒ 系统预置：列表可见（getPyFileList 条件为 if_show=1 AND
---                  (create_user='admin' OR if_system=1)）、且不可被前端删除
+--    if_system=1 ⇒ 系统预置：不可被前端删除（getPyFileList 条件为
+--                  (create_user='admin' OR if_system=1)，已不按 if_show 过滤）
 --    script_type：train / eval（代码编辑器页的 tain/eval/both 筛选依据）
 -- ---------------------------------------------------------------------------
 INSERT INTO `py_file`

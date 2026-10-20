@@ -57,16 +57,16 @@ public class UserController {
         }
     }
 
-    @ApiOperation("编辑系统管理员")
+    @ApiOperation("编辑系统管理员（不含密码）")
     @RequestMapping(value = "/edit", method = RequestMethod.POST)
     public Result<String> edit(@RequestParam("id") String id,
                                @RequestParam(name = "username", required = false) String username,
-                               @RequestParam(name = "password", required = false) String password,
                                @RequestParam(name = "nickname", required = false) String nickname,
                                HttpSession session) {
         try {
             userService.requireSuperAdmin(session);
-            userService.editAdmin(id, username, password, nickname);
+            // 不接受 password：即使调用方传了也会被忽略，改密码统一走 /web/user/resetPassword
+            userService.editAdmin(id, username, nickname);
             return Result.success();
         } catch (IllegalStateException e) {
             Result<String> result = Result.fail(e.getMessage());

@@ -60,7 +60,8 @@ public class PyFileVO implements Serializable {
     private String createUser;
 
     /**
-     * 是否展示此文件对应结果
+     * 历史字段（对应 py_file.if_show）：已废弃，前端不再读取。
+     * 「展示/未展示」只看执行记录的 {@code py_task.if_show}。
      */
     private Boolean ifShow;
 

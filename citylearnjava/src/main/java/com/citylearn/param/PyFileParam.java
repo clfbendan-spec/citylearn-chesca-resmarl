@@ -49,11 +49,6 @@ public class PyFileParam implements Serializable {
     private String code;
 
     /**
-     * 是否展示此文件对应结果
-     */
-    private Boolean ifShow;
-
-    /**
      * 脚本类型：train=只训练 / eval=只评估 / both=训练+评估一体
      */
     private String scriptType;

@@ -12,11 +12,13 @@ CREATE TABLE IF NOT EXISTS `user` (
   UNIQUE KEY `uk_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='系统用户';
 
--- 默认超管：admin / 000000
+-- 默认超管：admin / 000000（库里存的是 bcrypt 哈希，明文口令见此行注释）
+-- 哈希 = bcrypt(cost 10) + 随机盐，格式 '{bcrypt}$2a$10$...'，长 68 字符。
+-- ⚠️ ON DUPLICATE 里**故意不再带 password**：否则重跑本脚本会把用户自己改过的口令
+--    重置回 000000（历史上就是这么写的，属于隐性坑）。
 INSERT INTO `user` (`id`, `username`, `password`, `nickname`, `role`, `if_delete`, `create_time`, `update_time`)
-VALUES ('1', 'admin', '000000', 'Admin', 'SUPER_ADMIN', 0, NOW(), NOW())
+VALUES ('1', 'admin', '{bcrypt}$2a$10$hPyWJFln/aq3.vlCq2/LfOgMeJqZrPQ/jjwtmRFfOpixwXogdh8b.', 'Admin', 'SUPER_ADMIN', 0, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
-  `password` = VALUES(`password`),
   `nickname` = VALUES(`nickname`),
   `role` = VALUES(`role`),
   `if_delete` = 0;

@@ -1393,7 +1393,7 @@ public class BaseDataService implements SystemConfig {
         pyFile.setDescription("无");
         pyFile.setCreateUser("admin");
         pyFile.setIfSystem(false);
-        pyFile.setIfShow(false);
+        // py_file.if_show 列保留但已不参与文件列表过滤（展示语义只认 py_task.if_show）
         // 新建文件默认「训练+评估一体」；需要区分时改 py_file.script_type（train/eval/both）
         pyFile.setScriptType("both");
         pyFile.setCreateTime(newDate);
@@ -1414,16 +1414,6 @@ public class BaseDataService implements SystemConfig {
             throw new RuntimeException("系统内置文件不可删除");
         }
         pyFileMapper.deleteById(pyFileParam.getId());
-    }
-
-    public PyFileVO updatePyFileIfShow(String id, Boolean ifShow) {
-        PyFile pyFile = pyFileMapper.selectById(id);
-        if (pyFile == null) {
-            throw new RuntimeException("文件不存在");
-        }
-        pyFile.setIfShow(ifShow);
-        pyFileMapper.updateById(pyFile);
-        return JSON.parseObject(JSON.toJSONString(pyFile), PyFileVO.class);
     }
 
     /**
@@ -3382,6 +3372,73 @@ public class BaseDataService implements SystemConfig {
             markParentNotifiedIfAllChildrenRead(parentId);
         }
         return buildPyTaskVO(task, null, null);
+    }
+
+    /**
+     * 一键把「所有未读的执行记录」标记为已读（顶栏「待查看」气泡里的按钮调用）。
+     *
+     * <p>判定口径**刻意与 {@link #getPyTaskNoticeSummary()} 完全一致**：
+     * 已结束（status 既不是 0-执行中、也不是 5-待执行）、未删除、{@code if_notified} 为 0 或 NULL、
+     * 且所属脚本仍然存在。口径不一致会出现「点了已读但顶栏数字降不到 0」的假 bug。
+     *
+     * <p>子任务被标记后，顺带触发父任务的汇总（{@link #markParentNotifiedIfAllChildrenRead}）；
+     * 父任务本身 py_id 为空、不参与未读统计，但列表里也想立刻显示成已读。
+     *
+     * @return 实际被标记的记录条数
+     */
+    public int markAllPyTaskNotified() {
+        List<PyTask> unread = pyTaskMapper.selectList(new QueryWrapper<PyTask>().lambda()
+                .eq(PyTask::getIfDelete, false)
+                .ne(PyTask::getStatus, 0)
+                .ne(PyTask::getStatus, PyTaskVO.TASK_STATUS_PENDING)
+                .and(w -> w.eq(PyTask::getIfNotified, false).or().isNull(PyTask::getIfNotified)));
+        if (unread == null || unread.isEmpty()) {
+            return 0;
+        }
+
+        // 只处理「脚本仍存在」的记录 —— 与统计口径保持一致
+        Set<String> pyIds = new HashSet<>();
+        for (PyTask task : unread) {
+            if (task.getPyId() != null && !task.getPyId().isEmpty()) {
+                pyIds.add(task.getPyId());
+            }
+        }
+        Set<String> existingPyIds = new HashSet<>();
+        if (!pyIds.isEmpty()) {
+            List<PyFile> files = pyFileMapper.selectBatchIds(pyIds);
+            if (files != null) {
+                for (PyFile file : files) {
+                    existingPyIds.add(file.getId());
+                }
+            }
+        }
+
+        List<String> ids = new ArrayList<>();
+        Set<String> parentIds = new LinkedHashSet<>();
+        for (PyTask task : unread) {
+            if (task.getPyId() == null || !existingPyIds.contains(task.getPyId())) {
+                continue;
+            }
+            ids.add(task.getId());
+            String parentId = PyTaskVO.parentTaskIdOf(task.getId());
+            if (parentId != null) {
+                parentIds.add(parentId);
+            }
+        }
+        if (ids.isEmpty()) {
+            return 0;
+        }
+
+        PyTask update = new PyTask();
+        update.setIfNotified(true);
+        update.setUpdateTime(new Date());
+        pyTaskMapper.update(update, new QueryWrapper<PyTask>().lambda().in(PyTask::getId, ids));
+
+        for (String parentId : parentIds) {
+            markParentNotifiedIfAllChildrenRead(parentId);
+        }
+        log.info("一键已读：标记 {} 条执行记录为已读", ids.size());
+        return ids.size();
     }
 
     /**

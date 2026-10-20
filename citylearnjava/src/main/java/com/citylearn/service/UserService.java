@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.citylearn.common.PageBean;
+import com.citylearn.common.PasswordHasher;
 import com.citylearn.common.SessionKeys;
 import com.citylearn.common.UserRoles;
 import com.citylearn.config.SystemConfig;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +46,9 @@ public class UserService implements SystemConfig {
     @Resource
     private UserPermissionMapper userPermissionMapper;
 
+    @Resource
+    private PasswordHasher passwordHasher;
+
     public UserVO login(String username, String password, HttpSession session) {
         if (StringUtils.isBlank(username) || StringUtils.isBlank(password)) {
             throw new IllegalArgumentException("用户名和密码不能为空");
@@ -53,12 +58,51 @@ public class UserService implements SystemConfig {
                 .eq(User::getIfDelete, false)
                 .last("LIMIT 1");
         User user = userMapper.selectOne(wrapper);
-        if (user == null || !password.equals(user.getPassword())) {
+        if (user == null || !passwordHasher.matches(password, user.getPassword())) {
             throw new IllegalArgumentException("用户名或密码错误");
         }
+        upgradeLegacyPassword(user, password);
         UserVO vo = toVO(user);
         session.setAttribute(SessionKeys.LOGIN_USER, vo);
+        writeSessionPermissions(user, session);
         return vo;
+    }
+
+    /**
+     * 历史遗留的明文密码：登录成功后顺手改写成 bcrypt 哈希（不改变用户的密码本身）。
+     *
+     * <p>这样不用停机、也不用让任何人改密码，账号会在「下一次登录时」各自完成升级；
+     * 全部账号登录过一遍后，库里就不再有明文。写库失败不影响登录，只记日志下次再试。
+     */
+    private void upgradeLegacyPassword(User user, String rawPassword) {
+        if (passwordHasher.isHashed(user.getPassword())) {
+            return;
+        }
+        try {
+            String hashed = passwordHasher.encode(rawPassword);
+            user.setPassword(hashed);
+            user.setUpdateTime(new Date());
+            userMapper.updateById(user);
+        } catch (Exception e) {
+            System.err.println("[密码迁移] 用户 " + user.getUsername() + " 明文密码升级失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 把用户的权限码集合写入 session（登录时调用；接口鉴权读的就是这份）。
+     *
+     * <p>SUPER_ADMIN 拿到的是「全部启用权限码」，即默认拥有全部权限；
+     * {@code PermissionInterceptor} 另有角色直通兜底，即使这里漏写也不会把超管锁在外面。
+     *
+     * <p>权限码集合在登录时写入；{@code currentUser} 每次刷新用户信息时也会重新写入，
+     * 所以管理员改完权限后对方刷新页面即可生效（不必重新登录）。
+     */
+    public void writeSessionPermissions(User user, HttpSession session) {
+        if (user == null || session == null) {
+            return;
+        }
+        Set<String> codes = new LinkedHashSet<>(listUserPermissionCodes(user.getId()));
+        session.setAttribute(SessionKeys.LOGIN_PERMS, codes);
     }
 
     public void logout(HttpSession session) {
@@ -84,6 +128,9 @@ public class UserService implements SystemConfig {
         }
         UserVO fresh = toVO(user);
         session.setAttribute(SessionKeys.LOGIN_USER, fresh);
+        // 顺带刷新权限集合：管理员改完权限后，用户刷新页面（会请求 /web/auth/current）即可生效，
+        // 不必等到重新登录
+        writeSessionPermissions(user, session);
         return fresh;
     }
 
@@ -120,7 +167,8 @@ public class UserService implements SystemConfig {
         User user = new User();
         user.setId(getUUID());
         user.setUsername(name);
-        user.setPassword(password);
+        // 只存 bcrypt 哈希，明文不落库、不写日志
+        user.setPassword(passwordHasher.encode(password));
         user.setNickname(StringUtils.isBlank(nickname) ? name : nickname.trim());
         user.setRole(UserRoles.ADMIN);
         user.setIfDelete(false);
@@ -130,7 +178,14 @@ public class UserService implements SystemConfig {
         userMapper.insert(user);
     }
 
-    public void editAdmin(String id, String username, String password, String nickname) {
+    /**
+     * 编辑系统管理员：只改用户名与显示名称，**不改密码**。
+     *
+     * <p>密码统一走 {@link #resetPassword(String, String)}（前端「重置密码」按钮），
+     * 这样「编辑」是一个不会撤销凭证信息的低风险操作，也避免两个入口给出不同的密码规则。
+     * 需要改密码时调用 resetPassword，本方法不再接受 password 参数。
+     */
+    public void editAdmin(String id, String username, String nickname) {
         if (StringUtils.isBlank(id)) {
             throw new IllegalArgumentException("用户 ID 不能为空");
         }
@@ -147,9 +202,6 @@ public class UserService implements SystemConfig {
                 throw new IllegalArgumentException("用户名已存在");
             }
             user.setUsername(name);
-        }
-        if (StringUtils.isNotBlank(password)) {
-            user.setPassword(password);
         }
         if (nickname != null) {
             user.setNickname(nickname.trim());
@@ -187,7 +239,7 @@ public class UserService implements SystemConfig {
         if (user == null || Boolean.TRUE.equals(user.getIfDelete())) {
             throw new IllegalArgumentException("用户不存在");
         }
-        user.setPassword(newPassword);
+        user.setPassword(passwordHasher.encode(newPassword));
         user.setUpdateTime(new Date());
         userMapper.updateById(user);
     }

@@ -48,6 +48,16 @@
             <artifactId>fastjson</artifactId>
             <version>1.2.83</version>
         </dependency>
+        <!--
+          密码哈希（bcrypt）。只取 spring-security-crypto 一个 jar，不引入 spring-security 全家桶。
+          ⚠️ 版本必须写死：父 BOM（spring-boot 2.6.13）会把它管理成 5.6.x，
+             而本机离线仓库只有 5.3.6.RELEASE，不写死会直接构建失败。
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+            <version>5.3.6.RELEASE</version>
+        </dependency>
         <dependency>
             <groupId>p6spy</groupId>
             <artifactId>p6spy</artifactId>

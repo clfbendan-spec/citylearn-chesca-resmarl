@@ -62,22 +62,22 @@
         <el-form-item label="用户名" prop="username">
           <el-input v-model="dialogForm.username" maxlength="64" clearable />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item v-if="dialogMode === 'add'" label="密码" prop="password">
           <el-input
             v-model="dialogForm.password"
             type="password"
             show-password
-            :placeholder="dialogMode === 'edit' ? '留空则不修改密码' : '请输入密码'"
+            placeholder="请输入密码"
             maxlength="128"
             clearable
           />
         </el-form-item>
-        <el-form-item v-if="dialogMode === 'add' || dialogForm.password" label="确认密码" prop="confirmPassword">
+        <el-form-item v-if="dialogMode === 'add'" label="确认密码" prop="confirmPassword">
           <el-input
             v-model="dialogForm.confirmPassword"
             type="password"
             show-password
-            :placeholder="dialogMode === 'edit' ? '再次输入新密码' : '请再次输入密码'"
+            placeholder="请再次输入密码"
             maxlength="128"
             clearable
           />
@@ -160,8 +160,9 @@ export default {
       }
       callback()
     }
+    // 密码只在「新增」时设置；「编辑」不再改密码（改密码走「重置密码」）
     const dialogConfirmPasswordValidator = (rule, value, callback) => {
-      if (this.dialogMode === 'add' || this.dialogForm.password) {
+      if (this.dialogMode === 'add') {
         if (!value) {
           callback(new Error('请再次输入密码'))
           return
@@ -462,9 +463,9 @@ export default {
               this.$message.error((res.data && res.data.message) || '新增失败')
             }
           } else {
+            // 编辑只改用户名/显示名称；密码不在此处提交（改密码走「重置密码」）
             body.append('id', this.dialogForm.id)
             body.append('username', this.dialogForm.username.trim())
-            if (this.dialogForm.password) body.append('password', this.dialogForm.password)
             body.append('nickname', this.dialogForm.nickname || '')
             const res = await axios.post('/api/web/user/edit', body)
             if (res.data && res.data.code === 0) {

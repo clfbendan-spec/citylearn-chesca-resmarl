@@ -7,8 +7,14 @@ export const PERMS = {
   MENU_TASK_LIST: 'menu:taskList',
   MENU_RES_MARL: 'menu:resMarlConfig',
   MENU_ALGORITHM_PARAM: 'menu:algorithmParam',
-  CODE_EDITOR_OPERATE: 'codeEditor:operate',
-  CODE_EDITOR_DELETE: 'codeEditor:delete',
+  // 代码编辑器：脚本级（保存 / 执行 / 删除脚本）
+  CODE_SAVE: 'codeEditor:save',
+  CODE_RUN: 'codeEditor:run',
+  CODE_DELETE_FILE: 'codeEditor:deleteFile',
+  // 代码编辑器：执行记录级（删除 / 改名 / 展示）
+  CODE_DELETE_RECORD: 'codeEditor:deleteRecord',
+  CODE_RENAME_RECORD: 'codeEditor:renameRecord',
+  CODE_SHOW_RECORD: 'codeEditor:showRecord',
   RES_MARL_OPERATE: 'resMarlConfig:operate',
   // 任务管理：新建 / 编辑 / 删除 / 执行
   TASK_CREATE: 'taskList:create',

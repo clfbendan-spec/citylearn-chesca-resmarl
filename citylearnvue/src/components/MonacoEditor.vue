@@ -8,20 +8,11 @@
           <button
             v-if="canConfigureCurrentFile"
             @click="algorithmConfigVisible = true"
-            :disabled="!canCodeOperate"
+            :disabled="!canCodeSave"
             class="btn-config"
             title="配置该脚本的算法参数（训练/评估数据集等）"
           >
             配置
-          </button>
-          <button
-            @click="toggleIfShow"
-            :disabled="!canCodeOperate || !currentFile || isTogglingIfShow"
-            class="btn-show"
-            :class="{ 'btn-show-active': currentFileIfShow }"
-            :title="!canCodeOperate ? '无操作权限' : (currentFileIfShow ? '当前结果将在前端展示，点击设为未展示' : '当前结果未展示，点击设为展示中')"
-          >
-            {{ isTogglingIfShow ? '更新中...' : (currentFileIfShow ? '展示中' : '未展示') }}
           </button>
           <button
             @click="enterTaskRecordMode"
@@ -33,7 +24,7 @@
           </button>
           <!-- 断点续训（P19-1）：点击后选择「从哪个已完成任务」续训，选中的任务折点会复制到本次任务 -->
           <label
-            v-if="resumeSupported"
+            v-if="resumeSupported && canCodeRun"
             class="resume-switch"
             :class="{ 'is-on': resumeEnabled, 'is-disabled': isCodeEditLocked }"
             :title="resumeSwitchTitle"
@@ -49,26 +40,26 @@
           </label>
           <button
             @click="runPyFile"
-            :disabled="!canCodeOperate || runButtonDisabled"
+            :disabled="!canCodeRun || runButtonDisabled"
             class="btn-run"
-            :title="!canCodeOperate ? '无操作权限' : runButtonTitle"
+            :title="!canCodeRun ? '无执行权限' : runButtonTitle"
           >
             {{ runButtonLabel }}
           </button>
           <button
             v-if="isCurrentFileRunning || isStopping"
             @click="stopPyFile"
-            :disabled="!canCodeOperate || isStopping"
+            :disabled="!canCodeRun || isStopping"
             class="btn-stop"
-            :title="!canCodeOperate ? '无操作权限' : '终止当前运行的任务（任务状态将标记为「运行终止」）'"
+            :title="!canCodeRun ? '无执行权限' : '终止当前运行的任务（任务状态将标记为「运行终止」）'"
           >
             {{ isStopping ? '终止中...' : '终止' }}
           </button>
           <button
             @click="saveCode"
-            :disabled="!canCodeOperate || isSaving || !currentFile || !codeDirty || isCodeEditLocked"
+            :disabled="!canCodeSave || isSaving || !currentFile || !codeDirty || isCodeEditLocked"
             class="btn-save"
-            :title="!canCodeOperate ? '无操作权限' : (isCodeEditLocked ? '执行中不可保存' : (codeDirty ? '保存' : '没有需要保存的更改'))"
+            :title="!canCodeSave ? '无保存权限' : (isCodeEditLocked ? '执行中不可保存' : (codeDirty ? '保存' : '没有需要保存的更改'))"
           >
             {{ isSaving ? '保存中...' : '保存' }}
           </button>
@@ -77,9 +68,9 @@
           <button
             v-if="isCurrentFileRunning || isStopping"
             @click="stopPyFile"
-            :disabled="!canCodeOperate || isStopping"
+            :disabled="!canCodeRun || isStopping"
             class="btn-stop"
-            :title="!canCodeOperate ? '无操作权限' : '终止当前运行的任务（任务状态将标记为「运行终止」）'"
+            :title="!canCodeRun ? '无执行权限' : '终止当前运行的任务（任务状态将标记为「运行终止」）'"
           >
             {{ isStopping ? '终止中...' : '终止' }}
           </button>
@@ -100,7 +91,7 @@
           <h4 v-if="listMode === 'files'">
             文件列表
             <button
-              v-if="canCodeOperate"
+              v-if="canCodeSave"
               style="float: right;"
               @click.stop="addPyFile()"
               class="rename-btn"
@@ -148,16 +139,16 @@
                   :class="'tag-' + normalizeScriptType(file.scriptType)"
                 >{{ scriptTypeLabel(file) }}</em>
                 <button
-                  v-if="canCodeOperate"
+                  v-if="canCodeSave"
                   @click.stop="startEditing(file)"
                   class="rename-btn"
                   title="改名"
                 ><i class="el-icon-edit"></i></button>
                 <button
-                  v-if="canCodeDelete && !file.ifSystem"
+                  v-if="canCodeDeleteFile && !file.ifSystem"
                   @click.stop="deletePyFile(file)"
                   class="rename-btn"
-                  title="删除"
+                  title="删除脚本"
                 ><i class="el-icon-folder-delete"></i></button>
               </div>
               <div v-else class="edit-mode">
@@ -199,7 +190,7 @@
                 <span v-if="task.showName" class="task-show-name" :title="task.showName">{{ task.showName }}</span>
                 <span class="task-status" :class="'task-status-' + task.status">{{ task.statusDesc }}</span>
                 <button
-                  v-if="canCodeOperate"
+                  v-if="canCodeRenameRecord"
                   type="button"
                   class="btn-task-name"
                   :disabled="editingShowNameTaskId === task.taskId"
@@ -209,7 +200,7 @@
                   {{ editingShowNameTaskId === task.taskId ? '...' : (task.showName ? '改名' : '名称') }}
                 </button>
                 <button
-                  v-if="canCodeOperate && Number(task.status) === 1"
+                  v-if="canCodeShowRecord && Number(task.status) === 1"
                   type="button"
                   class="btn-task-show"
                   :class="{ 'btn-task-show-active': !!task.ifShow }"
@@ -220,7 +211,7 @@
                   {{ togglingTaskId === task.taskId ? '...' : (task.ifShow ? '展示' : '未展示') }}
                 </button>
                 <button
-                  v-if="canCodeDelete"
+                  v-if="canCodeDeleteRecord"
                   type="button"
                   class="btn-task-delete"
                   :disabled="deletingTaskId === task.taskId || isWaitingTask(task)"
@@ -232,7 +223,7 @@
                   {{ deletingTaskId === task.taskId ? '...' : '删除' }}
                 </button>
                 <button
-                  v-if="canCodeOperate && Number(task.status) === 0"
+                  v-if="canCodeRun && Number(task.status) === 0"
                   type="button"
                   class="btn-task-stop"
                   :disabled="stoppingTaskId === task.taskId"
@@ -251,8 +242,8 @@
           <textarea 
             v-model="currentFileDescription" 
             placeholder="添加文件简介..."
-            :disabled="!canCodeOperate"
-            :readonly="!canCodeOperate"
+            :disabled="!canCodeSave"
+            :readonly="!canCodeSave"
             @blur="updateFileDescription()"
           ></textarea>
         </div>
@@ -477,7 +468,6 @@ export default {
       editor: null,
       code: '',
       isSaving: false,
-      isTogglingIfShow: false,
       isRunning: false,
       /** 「续训」开关：执行时是否给脚本追加 --resume（默认关；只对支持的脚本显示） */
       resumeEnabled: false,
@@ -577,11 +567,31 @@ export default {
     };
   },
   computed: {
-    canCodeOperate() {
-      return this.hasPermission(PERMS.CODE_EDITOR_OPERATE);
+    /* ---------------- 代码编辑器：脚本级权限 ---------------- */
+    /** 保存：保存代码 / 新建脚本 / 脚本改名 / 文件简介 / 算法配置 / 编辑器可写 */
+    canCodeSave() {
+      return this.hasPermission(PERMS.CODE_SAVE);
     },
-    canCodeDelete() {
-      return this.hasPermission(PERMS.CODE_EDITOR_DELETE);
+    /** 执行：运行脚本 / 终止运行中的任务 / 续训开关 */
+    canCodeRun() {
+      return this.hasPermission(PERMS.CODE_RUN);
+    },
+    /** 删除脚本文件 */
+    canCodeDeleteFile() {
+      return this.hasPermission(PERMS.CODE_DELETE_FILE);
+    },
+    /* ---------------- 代码编辑器：执行记录级权限 ---------------- */
+    /** 删除执行记录 */
+    canCodeDeleteRecord() {
+      return this.hasPermission(PERMS.CODE_DELETE_RECORD);
+    },
+    /** 记录改名（模型优选的展示名称） */
+    canCodeRenameRecord() {
+      return this.hasPermission(PERMS.CODE_RENAME_RECORD);
+    },
+    /** 记录「展示 / 未展示」 */
+    canCodeShowRecord() {
+      return this.hasPermission(PERMS.CODE_SHOW_RECORD);
     },
     /** 按脚本类型筛选后的文件列表（py_file.script_type：train/eval/both） */
     filteredFiles() {
@@ -614,9 +624,6 @@ export default {
     /** 启动中或当前文件执行中：禁止改代码与保存 */
     isCodeEditLocked() {
       return this.isRunning || this.isCurrentFileRunning;
-    },
-    currentFileIfShow() {
-      return !!(this.currentFile && this.currentFile.ifShow);
     },
     runButtonLabel() {
       if (this.isCurrentFileRunning) {
@@ -729,7 +736,10 @@ export default {
     scriptTypeFilter() {
       this.fetchFiles();
     },
-    canCodeOperate: {
+    /**
+     * 「保存」权限变化时同步编辑器可写状态（无保存权限 ⇒ 强制只读并退出改名模式）。
+     */
+    canCodeSave: {
       immediate: true,
       handler(val) {
         if (!val) {
@@ -776,6 +786,8 @@ export default {
     // 留住首次加载的 promise：「任务管理」页可能在列表还没回来时就要求跳转
     this.filesLoadedPromise = this.fetchFiles();
     window.addEventListener('resize', this.handleResize);
+    // 顶栏「设为已读」后同步清掉本页的未读标记（否则要等下一次刷新）
+    window.addEventListener('citylearn-tasks-read', this.onAllTasksRead);
   },
   beforeDestroy() {
     this.stopPollTask();
@@ -791,6 +803,7 @@ export default {
       this.resumePreviewChart = null;
     }
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('citylearn-tasks-read', this.onAllTasksRead);
   },
   methods: {
     /**
@@ -963,6 +976,19 @@ export default {
         console.error('标记任务已读失败:', error)
       }
     },
+
+    /**
+     * 顶栏气泡里点了「设为已读」：本页所有记录都不再是未读，文件列表红点也一起刷掉。
+     * 由 App.vue 广播的 citylearn-tasks-read 事件触发。
+     */
+    onAllTasksRead() {
+      (this.taskList || []).forEach((task) => {
+        if (!task.ifNotified) {
+          this.$set(task, 'ifNotified', true)
+        }
+      })
+      this.refreshTaskNotice()
+    },
     
     async selectFile(file) {
       this.stopPollTask();
@@ -1011,25 +1037,43 @@ export default {
     setEditorReadOnly(readOnly) {
       if (this.editor) {
         this.editor.updateOptions({
-          readOnly: !!(readOnly || !this.canCodeOperate || this.isCodeEditLocked)
+          // 编辑器可写 = 有「保存」权限（编辑的目的就是保存；只有执行权的用户只读）
+          readOnly: !!(readOnly || !this.canCodeSave || this.isCodeEditLocked)
         });
       }
     },
 
-    ensureCodeOperate() {
-      if (!this.canCodeOperate) {
-        this.$message.warning('无代码编辑操作权限');
+    /** 权限兜底：按钮被 v-if 隐藏时，快捷键 / 程序化路径仍可能触发，这里再拦一次 */
+    ensurePermission(ok, message) {
+      if (!ok) {
+        this.$message.warning(message);
         return false;
       }
       return true;
     },
 
-    ensureCodeDelete() {
-      if (!this.canCodeDelete) {
-        this.$message.warning('无代码删除权限');
-        return false;
-      }
-      return true;
+    ensureCodeSave() {
+      return this.ensurePermission(this.canCodeSave, '无代码保存权限');
+    },
+
+    ensureCodeRun() {
+      return this.ensurePermission(this.canCodeRun, '无代码执行权限');
+    },
+
+    ensureCodeDeleteFile() {
+      return this.ensurePermission(this.canCodeDeleteFile, '无删除脚本权限');
+    },
+
+    ensureCodeDeleteRecord() {
+      return this.ensurePermission(this.canCodeDeleteRecord, '无删除记录权限');
+    },
+
+    ensureCodeRenameRecord() {
+      return this.ensurePermission(this.canCodeRenameRecord, '无记录改名权限');
+    },
+
+    ensureCodeShowRecord() {
+      return this.ensurePermission(this.canCodeShowRecord, '无记录展示权限');
     },
 
     formatTaskTime(time) {
@@ -1044,39 +1088,8 @@ export default {
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     },
 
-    async toggleIfShow() {
-      if (!this.ensureCodeOperate() || !this.currentFile) {
-        return;
-      }
-      this.isTogglingIfShow = true;
-      const nextIfShow = !this.currentFileIfShow;
-      try {
-        const response = await axios.post('/api/web/basedata/updatePyFileIfShow', {
-          id: this.currentFile.id,
-          ifShow: nextIfShow
-        });
-        if (!this.isApiSuccess(response)) {
-          this.$message.error(response.data.message || '更新展示状态失败');
-          return;
-        }
-        const updated = response.data.data || {};
-        const ifShow = updated.ifShow != null ? updated.ifShow : nextIfShow;
-        this.currentFile = { ...this.currentFile, ifShow };
-        const fileIndex = this.files.findIndex((file) => file.id === this.currentFile.id);
-        if (fileIndex >= 0) {
-          this.$set(this.files, fileIndex, { ...this.files[fileIndex], ifShow });
-        }
-        this.$message.success(ifShow ? '已设为展示中' : '已设为未展示');
-      } catch (error) {
-        console.error('更新展示状态失败:', error);
-        this.$message.error('更新展示状态失败');
-      } finally {
-        this.isTogglingIfShow = false;
-      }
-    },
-
     async toggleTaskIfShow(task) {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeShowRecord()) return;
       if (!task || !task.taskId || Number(task.status) !== 1) {
         return;
       }
@@ -1107,7 +1120,7 @@ export default {
     },
 
     async editTaskShowName(task) {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeRenameRecord()) return;
       if (!task || !task.taskId) {
         return;
       }
@@ -1176,7 +1189,7 @@ export default {
     },
 
     async deletePyTask(task) {
-      if (!this.ensureCodeDelete()) return;
+      if (!this.ensureCodeDeleteRecord()) return;
       if (!task || !task.taskId) {
         return;
       }
@@ -1371,7 +1384,7 @@ export default {
       }
     },
     async deletePyFile(file){
-      if (!this.ensureCodeDelete()) return;
+      if (!this.ensureCodeDeleteFile()) return;
       if (!file) return
       if (file.ifSystem) {
         this.$message.warning('系统内置文件不可删除')
@@ -1393,7 +1406,7 @@ export default {
       } 
     },
     async addPyFile(){
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeSave()) return;
       if(this.isSaving==true){
         return
       }
@@ -1418,7 +1431,7 @@ export default {
     },
 
     async updateFileDescription(){
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeSave()) return;
       if(null==this.currentFile){
         return;
       }
@@ -1506,7 +1519,7 @@ export default {
     },
     
     async saveCode() {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeSave()) return;
       if (!this.currentFile) {
         return;
       }
@@ -1825,7 +1838,7 @@ export default {
      * 终止当前文件正在运行的任务（编辑器头部「终止」按钮）。
      */
     async stopPyFile() {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeRun()) return;
       const pyId = this.currentFileId || (this.currentFile && this.currentFile.id);
       const running = pyId ? this.runningTasks[pyId] : null;
       const taskId = (running && running.taskId) || this.activePollTaskId;
@@ -1850,7 +1863,7 @@ export default {
      * 编辑器头部按钮与任务列表共用此方法。
      */
     async requestStopTask(taskId, pyId) {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeRun()) return;
       if (!taskId) {
         this.$message.warning('缺少任务 ID，无法终止');
         return;
@@ -1909,7 +1922,7 @@ export default {
     },
 
     async runPyFile() {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeRun()) return;
       if (!this.currentFile) {
         this.$message.warning('请先选择文件');
         return;
@@ -2407,7 +2420,7 @@ export default {
     },
     
     startEditing(file) {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeSave()) return;
       this.editingFileId = file.id;
       this.editingFileName = file.fileName;
       this.editingFileOriginalName = file.fileName;
@@ -2417,7 +2430,7 @@ export default {
     },
     
     async confirmRename() {
-      if (!this.ensureCodeOperate()) return;
+      if (!this.ensureCodeSave()) return;
       if (!this.editingFileName.trim()) {
         this.$message.error('文件名不能为空');
         return;
@@ -2751,25 +2764,6 @@ export default {
 
 .btn-save:hover:not(:disabled) {
   background: #1177bb;
-}
-
-.btn-show {
-  background: #5a5a5a;
-  color: #ccc;
-}
-
-.btn-show:hover:not(:disabled) {
-  background: #6e6e6e;
-  color: #fff;
-}
-
-.btn-show-active {
-  background: #e6a23c;
-  color: #fff;
-}
-
-.btn-show-active:hover:not(:disabled) {
-  background: #ebb563;
 }
 
 .btn-record {

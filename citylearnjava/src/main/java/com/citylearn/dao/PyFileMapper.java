@@ -24,7 +24,12 @@ import java.util.List;
 public interface PyFileMapper extends BaseMapper<PyFile> {
 
     /**
-     * 代码编辑器「文件列表」：返回可展示的脚本，可选按脚本类型筛选。
+     * 代码编辑器「文件列表」：返回该用户可见的脚本，可选按脚本类型筛选。
+     *
+     * <p><b>不再按 if_show 过滤</b>：脚本级「展示/未展示」按钮已移除（展示语义只认
+     * 执行记录的 {@code py_task.if_show}）。历史数据里仍有 if_show=0 的脚本（如
+     * local_evaluation.py），若继续过滤会导致它们永久不可见且无入口恢复；
+     * 新建脚本过去也默认写 if_show=0，会直接从列表消失。
      *
      * @param createUser 创建人（当前固定 admin）
      * @param scriptType 脚本类型 train / eval / both；传 null（或空串，由 Service 归一化）
@@ -32,8 +37,7 @@ public interface PyFileMapper extends BaseMapper<PyFile> {
      *                   会抛 "JdbcType must be specified for all nullable parameters"。
      */
     @Select("SELECT * FROM py_file "
-            + "WHERE if_show = 1 "
-            + "  AND (create_user = #{createUser} OR if_system = 1) "
+            + "WHERE (create_user = #{createUser} OR if_system = 1) "
             + "  AND (#{scriptType,jdbcType=VARCHAR} IS NULL "
             + "       OR script_type = #{scriptType,jdbcType=VARCHAR})")
     List<PyFile> getPyFileList(@Param("createUser") String createUser,

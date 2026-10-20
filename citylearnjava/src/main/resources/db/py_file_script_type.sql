@@ -49,7 +49,7 @@ WHERE NOT EXISTS (SELECT 1 FROM `py_file` WHERE `file_name` = 'Multi-agent-eval.
 UPDATE `py_file` SET `script_type` = 'train' WHERE `file_name` = 'Multi-agent-train.py';
 UPDATE `py_file` SET `script_type` = 'eval'  WHERE `file_name` = 'Multi-agent-eval.py';
 
--- 保证这两个入口在代码编辑器页可见（if_show=1；if_system=1 时不可被删除）
+-- 保证这两个入口在代码编辑器页可见（if_system=1 时不可被删除；列表已不按 if_show 过滤）
 UPDATE `py_file`
 SET `if_show` = 1, `if_system` = 1
 WHERE `file_name` IN ('Multi-agent-train.py', 'Multi-agent-eval.py');

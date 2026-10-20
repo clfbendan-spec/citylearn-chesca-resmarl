@@ -18,10 +18,21 @@ public final class PermissionCodes {
     /** 参数配置：维护算法参数定义目录（algorithm_param_config） */
     public static final String MENU_ALGORITHM_PARAM = "menu:algorithmParam";
 
-    /** 代码编辑器：执行 / 保存 / 新建 / 改名等 */
-    public static final String CODE_EDITOR_OPERATE = "codeEditor:operate";
-    /** 代码编辑器：删除文件 / 删除执行记录 */
-    public static final String CODE_EDITOR_DELETE = "codeEditor:delete";
+    /* ---------------- 代码编辑器：脚本级 ---------------- */
+    /** 保存代码（含新建脚本、脚本改名、文件简介、算法配置） */
+    public static final String CODE_SAVE = "codeEditor:save";
+    /** 执行脚本（含终止运行中的任务、续训开关） */
+    public static final String CODE_RUN = "codeEditor:run";
+    /** 删除脚本文件 */
+    public static final String CODE_DELETE_FILE = "codeEditor:deleteFile";
+
+    /* ---------------- 代码编辑器：执行记录级 ---------------- */
+    /** 删除执行记录 */
+    public static final String CODE_DELETE_RECORD = "codeEditor:deleteRecord";
+    /** 执行记录改名（模型优选的展示名称） */
+    public static final String CODE_RENAME_RECORD = "codeEditor:renameRecord";
+    /** 执行记录「展示 / 未展示」 */
+    public static final String CODE_SHOW_RECORD = "codeEditor:showRecord";
 
     /** ResMARL 配置：修改 / 保存 / 恢复默认 */
     public static final String RES_MARL_OPERATE = "resMarlConfig:operate";

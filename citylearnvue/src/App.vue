@@ -94,16 +94,36 @@
               <i class="el-icon-loading header-notice-spin"></i>
               <span>执行中 {{ runningCount }}</span>
             </button>
-            <button
+            <!-- 待查看：悬浮显示气泡，气泡里可一键「设为已读」；点按钮本身仍然跳到任务管理 -->
+            <el-popover
               v-if="unreadCount && hasPermission(PERMS.MENU_TASK_LIST)"
-              type="button"
-              class="header-notice-btn header-notice-unread"
-              :title="`有 ${unreadCount} 条执行完成但尚未查看的记录，点击查看`"
-              @click="handleMenuSelect('taskList')"
+              placement="bottom-start"
+              width="248"
+              trigger="hover"
+              popper-class="header-notice-popover"
             >
-              <i class="el-icon-bell"></i>
-              <span>待查看 {{ unreadCount }}</span>
-            </button>
+              <div class="notice-popover">
+                <div class="notice-popover-title">有 {{ unreadCount }} 条执行完成但尚未查看的记录</div>
+                <div class="notice-popover-actions">
+                  <el-button
+                    type="primary"
+                    size="mini"
+                    :loading="markingAllRead"
+                    @click.stop="markAllRead"
+                  >设为已读</el-button>
+                </div>
+              </div>
+              <button
+                slot="reference"
+                type="button"
+                class="header-notice-btn header-notice-unread"
+                :title="`有 ${unreadCount} 条执行完成但尚未查看的记录，点击查看`"
+                @click="handleMenuSelect('taskList')"
+              >
+                <i class="el-icon-bell"></i>
+                <span>待查看 {{ unreadCount }}</span>
+              </button>
+            </el-popover>
           </div>
           <el-dropdown trigger="click" @command="handleUserCommand">
             <button type="button" class="header-user-btn">
@@ -203,6 +223,8 @@ export default {
       runningTasks: [],
       /** 执行完但未被查看（未读）的记录数 */
       unreadCount: 0,
+      /** 「设为已读」请求进行中（气泡按钮 loading） */
+      markingAllRead: false,
       /** 上一轮运行中的任务，用于检测"刚刚结束"并提示结果 */
       knownRunning: [],
       /** 首次轮询只建立基线不提示，避免把启动前遗留的已结束任务报成"刚完成" */
@@ -233,11 +255,13 @@ export default {
     }
     this.fetchCurrentUser()
     window.addEventListener('citylearn-auth-required', this.onAuthRequired)
+    window.addEventListener('citylearn-permission-denied', this.onPermissionDenied)
     // 全局轮询任务通知汇总：任何页面都能看到运行中/待查看数量与完成提示
     this.runningPollTimer = setInterval(this.pollTaskNotice, 5000)
   },
   beforeDestroy() {
     window.removeEventListener('citylearn-auth-required', this.onAuthRequired)
+    window.removeEventListener('citylearn-permission-denied', this.onPermissionDenied)
     if (this.runningPollTimer) {
       clearInterval(this.runningPollTimer)
       this.runningPollTimer = null
@@ -293,12 +317,57 @@ export default {
       this.resetRunningPoll()
     },
 
+    /** 接口级鉴权失败（code=403）：提示一次，说明是权限问题而不是数据加载失败 */
+    onPermissionDenied(event) {
+      const detail = (event && event.detail) || {}
+      const msg = detail.message || '无权限访问该接口'
+      this.$message.warning(`权限不足：${msg}`)
+    },
+
+    /**
+     * 气泡里的「设为已读」：二次确认后，把所有未读的执行记录（含编排任务的子任务）标为已读。
+     * 成功后顶栏计数清零，并广播 citylearn-tasks-read 让任务管理页 / 代码编辑器
+     * 同步清掉本地的未读红点（否则要等它们各自下一次轮询）。
+     */
+    async markAllRead() {
+      if (this.markingAllRead) {
+        return
+      }
+      try {
+        await this.$confirm(
+          `确认将全部 ${this.unreadCount} 条未读记录标记为已读？标记后「待查看」红点会消失，且不可撤销。`,
+          '设为已读',
+          { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+        )
+      } catch (e) {
+        return
+      }
+      this.markingAllRead = true
+      try {
+        const res = await axios.post('/api/web/basedata/markAllPyTaskNotified')
+        if (!res.data || res.data.code !== 0) {
+          this.$message.error((res.data && res.data.message) || '设为已读失败')
+          return
+        }
+        const count = Number(res.data.data) || 0
+        this.unreadCount = 0
+        this.$message.success(count > 0 ? `已将 ${count} 条记录标记为已读` : '没有需要标记的记录')
+        window.dispatchEvent(new CustomEvent('citylearn-tasks-read'))
+      } catch (e) {
+        console.error('设为已读失败:', e)
+        this.$message.error('设为已读失败')
+      } finally {
+        this.markingAllRead = false
+      }
+    },
+
     /**
      * 轮询全局任务通知汇总：运行中任务列表 + 执行完未读数量。
      * 未登录 / 后端不可用时静默跳过（后者在后端重启期间会连续失败，恢复后自动续上）。
+     * 无「任务管理」菜单权限时不发起请求：后端已按菜单权限校验该接口，否则会持续收到 403。
      */
     async pollTaskNotice() {
-      if (!this.currentUser) {
+      if (!this.currentUser || !this.hasPermission(PERMS.MENU_TASK_LIST)) {
         return
       }
       try {
@@ -651,6 +720,23 @@ export default {
 .header-notice-unread {
   background: #f5222d;
   color: #ffffff;
+}
+
+/* 「待查看」悬浮气泡：内容由 popper-class 渲染到 body 下，必须是全局样式（不能 scoped） */
+.header-notice-popover.el-popover {
+  padding: 12px 14px;
+}
+
+.notice-popover-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--primary-text-color);
+}
+
+.notice-popover-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .header-notice-spin {
