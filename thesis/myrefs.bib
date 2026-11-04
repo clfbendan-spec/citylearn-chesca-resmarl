@@ -1,751 +1,719 @@
-% Encoding: UTF-8
-% 本文件与开题报告《开题报告2026年01月01日-修改》参考文献[1]-[40]一一对应，
-% 开题40篇全部收录（键名后注释标注[开题N]），另保留论文写作中增补的前沿与平台文献。
-% 期刊名首字母大写（介词连词除外），卷期页码按开题补齐。
-
-% ---------- 开题[1] ----------
-@techreport{iea2023, % [开题1]
+% 2026-11-04逐条核验版；决策和原始记录见 ../thesis_reference_audit_20261104/。
+% 内部键名保留；未核实条目隔离保存，不以开题报告收录代替真实性核验。
+@techreport{iea2023,
   author = {{International Energy Agency}},
-  title = {Energy Efficiency 2023},
+  title = {{Energy Efficiency 2023}},
   institution = {IEA},
   address = {Paris},
   year = {2023},
-  url = {https://www.iea.org/reports/energy-efficiency-2023},
-  urldate = {2026-10-18},
+  url = {https://origin.iea.org/reports/energy-efficiency-2023},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[2] ----------
-@inproceedings{mps2018, % [开题2] Zhan MPC vs RL
+@inproceedings{mps2018,
   author = {Zhan, Sizhe and Lei, Yue and Chong, Adrian},
-  title = {Comparing Model Predictive Control and Reinforcement Learning for the Optimal Operation of Building-PV-Battery Systems},
+  title = {{Comparing Model Predictive Control and Reinforcement Learning for the Optimal Operation of Building-PV-Battery Systems}},
   booktitle = {E3S Web of Conferences},
   volume = {396},
   pages = {04018},
   year = {2023},
   publisher = {EDP Sciences},
+  doi = {10.1051/e3sconf/202339604018},
+  langid = {english},
 }
 
-% ---------- 开题[3] ----------
-@article{citylearn2020, % [开题3] 预印本（该文未见 Applied Energy 正式版，按 CityLearn 官网引法）
+@online{citylearn2020,
   author = {Vazquez-Canteli, Jose R. and Dey, Sourav and Henze, Gregor and Nagy, Zoltan},
-  title = {CityLearn: Standardizing Research in Multi-Agent Reinforcement Learning for Demand Response and Urban Energy Management},
-  journal = {arXiv preprint arXiv:2012.10504},
+  title = {{CityLearn: Standardizing Research in Multi-Agent Reinforcement Learning for Demand Response and Urban Energy Management}},
   year = {2020},
+  url = {https://arxiv.org/abs/2012.10504},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.2012.10504},
+  langid = {english},
 }
 
-% ---------- 开题[4] ----------
-@inproceedings{citylearnchallenge2023, % [开题4] PMLR正式版
-  author = {Nweye, Kingsley and Nagy, Zoltan and Mohanty, Sharada and Chakraborty, Dipam and others},
-  title = {The CityLearn Challenge 2022: Overview, Results, and Lessons Learned},
+@inproceedings{citylearnchallenge2023,
+  author = {Nweye, Kingsley and Nagy, Zoltan and Mohanty, Sharada and Chakraborty, Dipam and Sankaranarayanan, Siva and Hong, Tianzhen and Dey, Sourav and Henze, Gregor and Drgona, Jan and Lin, Fangquan and Jiang, Wei and Zhang, Hanwei and Yi, Zhongkai and Zhang, Jihai and Yang, Cheng and Motoki, Matthew and Khongnawang, Sorapong and Ibrahim, Michael and Zhumabekov, Abilmansur and May, Daniel and Yang, Zhihu and Song, Xiaozhuang and Zhang, Han and Dong, Xiaoning and Zheng, Shun and Bian, Jiang},
+  title = {{The CityLearn Challenge 2022: Overview, Results, and Lessons Learned}},
   booktitle = {Proceedings of the NeurIPS 2022 Competitions Track},
   volume = {220},
   pages = {85--103},
   year = {2022},
   publisher = {PMLR},
+  url = {https://proceedings.mlr.press/v220/nweye23a.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[5] ----------
-@article{citylearn2024, % [开题5]
-  author = {Nweye, Kingsley and Kaspar, Kathryn and Buscemi, Giacomo and others},
-  title = {CityLearn v2: Energy-Flexible, Resilient, Occupant-Centric, and Carbon-Aware Management of Grid-Interactive Communities},
+@article{citylearn2024,
+  author = {Nweye, Kingsley and Kaspar, Kathryn and Buscemi, Giacomo and Fonseca, Tiago and Pinto, Giuseppe and Ghose, Dipanjan and Duddukuru, Satvik and Pratapa, Pavani and Li, Han and Mohammadi, Javad and Lino Ferreira, Luis and Hong, Tianzhen and Ouf, Mohamed and Capozzoli, Alfonso and Nagy, Zoltan},
+  title = {{CityLearn v2: Energy-Flexible, Resilient, Occupant-Centric, and Carbon-Aware Management of Grid-Interactive Communities}},
   journal = {Journal of Building Performance Simulation},
   volume = {18},
   number = {1},
   pages = {17--38},
   year = {2025},
   doi = {10.1080/19401493.2024.2418813},
+  langid = {english},
 }
 
-% ---------- 开题[6] ----------
-@inproceedings{kathirgamanathan2020, % [开题6] 集中式SAC经CityLearn做区域需求侧管理
+@inproceedings{kathirgamanathan2020,
   author = {Kathirgamanathan, Anjukan and Twardowski, Kacper and Mangina, Eleni and Finn, Donal},
-  title = {A Centralised Soft Actor Critic Deep Reinforcement Learning Approach to District Demand Side Management through CityLearn},
+  title = {{A Centralised Soft Actor Critic Deep Reinforcement Learning Approach to District Demand Side Management through CityLearn}},
   booktitle = {Proceedings of the 1st International Workshop on Reinforcement Learning for Energy Management in Buildings and Cities},
   pages = {11--14},
   year = {2020},
   publisher = {ACM},
   doi = {10.1145/3427773.3427869},
+  langid = {english},
 }
 
-% ---------- 开题[7] ----------
-@article{formanek2023, % [开题7] 离线多智能体强化学习数据集与基线（作者以原 arXiv 页面为准）
+@online{formanek2023,
   author = {Formanek, Claude and Jeewa, Asad and Shock, Jonathan and Pretorius, Arnu},
-  title = {Off-the-Grid MARL: Datasets with Baselines for Offline Multi-Agent Reinforcement Learning},
-  journal = {arXiv preprint arXiv:2302.00521},
+  title = {{Off-the-Grid MARL: Datasets with Baselines for Offline Multi-Agent Reinforcement Learning}},
   year = {2023},
+  url = {https://arxiv.org/abs/2302.00521},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.2302.00521},
+  langid = {english},
 }
 
-% ---------- 开题[8] ----------
-@inproceedings{chesca2024, % [开题8]
+@inproceedings{chesca2024,
   author = {Garmendia, Andoni I. and Morri, Francesco and Cappart, Quentin and {Le Cadre}, H{\'e}l{\`e}ne},
-  title = {Winning the 2023 CityLearn Challenge: A Community-Based Hierarchical Energy Systems Coordination Algorithm},
+  title = {{Winning the 2023 CityLearn Challenge: A Community-Based Hierarchical Energy Systems Coordination Algorithm}},
   booktitle = {Proceedings of the 27th European Conference on Artificial Intelligence (ECAI)},
   volume = {392},
   pages = {2330--2337},
   year = {2024},
   publisher = {IOS Press},
   doi = {10.3233/faia240757},
+  langid = {english},
 }
 
-% ---------- 开题[9] ----------
-@article{boptest2021, % [开题9] BOPTEST（原文[9]唯一出处；原重复的baptista2021已合并至此）
-  author = {Blum, Daniel and Arroyo, Javier and Huang, Sen and others},
-  title = {Building Optimization Testing Framework (BOPTEST) for Simulation-Based Benchmarking of Control Strategies in Buildings},
+@article{boptest2021,
+  author = {Blum, David and Arroyo, Javier and Huang, Sen and Drgoňa, Ján and Jorissen, Filip and Walnum, Harald Taxt and Chen, Yan and Benne, Kyle and Vrabie, Draguna and Wetter, Michael and Helsen, Lieve},
+  title = {{Building Optimization Testing Framework (BOPTEST) for Simulation-Based Benchmarking of Control Strategies in Buildings}},
   journal = {Journal of Building Performance Simulation},
   volume = {14},
   number = {5},
   pages = {586--610},
   year = {2021},
   doi = {10.1080/19401493.2021.1986574},
+  langid = {english},
 }
 
-% ---------- 开题[10] ----------
-@article{zhangzhen2024, % [开题10] 中国绿色建筑发展与建筑节能形势
-  author = {张贞 and 满虹},
-  title = {中国绿色建筑发展和建筑节能的形势与任务},
-  journal = {新城建科技},
-  volume = {33},
-  number = {09},
-  pages = {49--51},
-  year = {2024},
-}
-
-% ---------- 开题[11] ----------
-@article{marl2021, % [开题11]
-  author = {罗彪 and 胡天萌 and 周育豪 and others},
-  title = {多智能体强化学习控制与决策研究综述},
+@article{marl2021,
+  author = {罗彪 and 胡天萌 and 周育豪 and 黄廷文 and 阳春华 and 桂卫华},
+  title = {{多智能体强化学习控制与决策研究综述}},
   journal = {自动化学报},
   volume = {51},
   number = {3},
   pages = {510--539},
   year = {2025},
+  doi = {10.16383/j.aas.c240392},
+  url = {https://www.aas.net.cn/cn/article/doi/10.16383/j.aas.c240392},
+  urldate = {2026-11-04},
+  langid = {chinese},
 }
 
-% ---------- 开题[12] ----------
-@article{lingfei2025, % [开题12] PID-Lagrange-SAC楼宇用能调控，解决智能体行为越界
+@article{lingfei2025,
   author = {凌飞 and 陈涛 and 高赐威},
-  title = {基于PID-Lagrange-SAC的深度强化学习楼宇建筑用能行为调控策略},
+  title = {{基于PID-Lagrange-SAC的深度强化学习楼宇建筑用能行为调控策略}},
   journal = {电力需求侧管理},
   volume = {27},
   number = {05},
   pages = {90--96},
   year = {2025},
+  doi = {10.3969/j.issn.1009-1831.2025.05.014},
+  url = {http://dsm.ijournals.cn/dlxqcgl/article/abstract/20250514},
+  urldate = {2026-11-04},
+  langid = {chinese},
 }
 
-% ---------- 开题[13] ----------
-@mastersthesis{occupant2024, % [开题13] 学位论文用[D]类（biblatex用mastersthesis）
-  author = {张蒙蒙},
-  title = {基于智慧交互理念的建筑节能优化研究},
-  school = {中国矿业大学},
-  address = {徐州},
-  year = {2024},
-}
-
-% ---------- 开题[14] ----------
-@mastersthesis{xuejuxing2023, % [开题14] 联邦强化学习保护住户隐私
-  author = {薛聚星},
-  title = {基于强化学习的智慧楼宇综合能源系统低碳运行研究},
-  school = {浙江大学},
-  address = {杭州},
-  year = {2023},
-}
-
-% ---------- 开题[15] ----------
-@mastersthesis{dinglifu2023, % [开题15] MARL可观测性/收敛性与电力系统应用结合
-  author = {丁俐夫},
-  title = {基于多智能体强化学习的智能电网分布式能量管理研究},
-  school = {浙江大学},
-  address = {杭州},
-  year = {2023},
-}
-
-% ---------- 开题[16] ----------
-@mastersthesis{bowanlin2024, % [开题16] 深度强化学习多区域建筑HVAC控制
-  author = {薄婉琳},
-  title = {基于深度强化学习的多区域建筑暖通空调系统控制方法研究},
-  school = {山东大学},
-  address = {济南},
-  year = {2024},
-}
-
-% ---------- 开题[17] ----------
-@article{liujian2020, % [开题17] 建筑节能统计信息管理系统
-  author = {刘健},
-  title = {建筑节能与绿色建筑统计信息管理系统设计与应用},
-  journal = {信息记录材料},
-  volume = {21},
-  number = {12},
-  pages = {123--124},
-  year = {2020},
-}
-
-% ---------- 开题[18] ----------
-@article{wangyonghe2016, % [开题18] Spring Boot研究和应用
-  author = {王永和 and 张劲松 and 邓安明 and others},
-  title = {Spring Boot研究和应用},
-  journal = {信息通信},
-  number = {10},
-  pages = {91--94},
-  year = {2016},
-}
-
-% ---------- 开题[19] ----------
-@article{ouyangguixiu2022, % [开题19] 基于Java和MySQL的数据库管理系统
-  author = {欧阳桂秀},
-  title = {基于Java和MySQL的数据库管理系统的设计与实现},
-  journal = {信息记录材料},
-  volume = {23},
-  number = {09},
-  pages = {240--242},
-  year = {2022},
-}
-
-% ---------- 开题[20] ----------
-% [2026-10-08 删除] @mayuxing2015 条目：原文对应 Redis 队列/缓存表述；实现实际为 Spring Boot 线程池异步调度 + MySQL 状态轮询，系统无 Redis 组件，正文表述已同步移除。
-
-@mastersthesis{xupengtao2020, % [开题21] 基于Vue的前端开发框架
-  author = {徐鹏涛},
-  title = {基于Vue的前端开发框架的设计与实现},
-  school = {山东大学},
-  address = {济南},
-  year = {2020},
-}
-
-% ---------- 开题[22] ----------
-@article{wangzhiwen2020, % [开题22] Vue+ElementUI+ECharts在项目管理平台中的应用
-  author = {王志文},
-  title = {Vue+ElementUI+ECharts在项目管理平台中的应用},
-  journal = {山西科技},
-  volume = {35},
-  number = {06},
-  pages = {45--47},
-  year = {2020},
-}
-
-% ---------- 开题[23] ----------
-% ---------- 开题[23] 原 gRPC 文献，论文改为 HTTP/REST 方案后删除 ----------
-
-% ---------- 开题[24] ----------
-@article{raschka2020, % [开题24] 电子期刊有编号无页码，按开题保留卷期号
+@article{raschka2020,
   author = {Raschka, Sebastian and Patterson, Joshua and Nolet, Corey},
-  title = {Machine Learning in Python: Main Developments and Technology Trends in Data Science, Machine Learning, and Artificial Intelligence},
+  title = {{Machine Learning in Python: Main Developments and Technology Trends in Data Science, Machine Learning, and Artificial Intelligence}},
   journal = {Information},
   volume = {11},
   number = {4},
   pages = {193},
   year = {2020},
+  doi = {10.3390/info11040193},
+  langid = {english},
 }
 
-% ---------- 开题[25] ----------
-@inproceedings{liang2018rllib, % [开题25] RLlib：支持PPO/DQN/DDPG/MADDPG与CTDE
-  author = {Liang, Eric and Liaw, Richard and Nishihara, Robert and others},
-  title = {RLlib: Abstractions for Distributed Reinforcement Learning},
+@inproceedings{liang2018rllib,
+  author = {Liang, Eric and Liaw, Richard and Nishihara, Robert and Moritz, Philipp and Fox, Roy and Goldberg, Ken and Gonzalez, Joseph and Jordan, Michael and Stoica, Ion},
+  title = {{RLlib: Abstractions for Distributed Reinforcement Learning}},
   booktitle = {Proceedings of the International Conference on Machine Learning},
   pages = {3053--3062},
   year = {2018},
   publisher = {PMLR},
+  volume = {80},
+  url = {https://proceedings.mlr.press/v80/liang18b.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[26] ----------
-@inproceedings{paszke2019, % [开题26] PyTorch动态计算图
-  author = {Paszke, Adam and Gross, Sam and Massa, Francisco and others},
-  title = {PyTorch: An Imperative Style, High-Performance Deep Learning Library},
+@inproceedings{paszke2019,
+  author = {Paszke, Adam and Gross, Sam and Massa, Francisco and Lerer, Adam and Bradbury, James and Chanan, Gregory and Killeen, Trevor and Lin, Zeming and Gimelshein, Natalia and Antiga, Luca and Desmaison, Alban and Köpf, Andreas and Yang, Edward and DeVito, Zach and Raison, Martin and Tejani, Alykhan and Chilamkurthy, Sasank and Steiner, Benoit and Fang, Lu and Bai, Junjie and Chintala, Soumith},
+  title = {{PyTorch: An Imperative Style, High-Performance Deep Learning Library}},
   booktitle = {Advances in Neural Information Processing Systems},
   volume = {32},
-  pages = {8024--8035},
   year = {2019},
+  url = {https://papers.nips.cc/paper/2019/hash/bdbca288fee7f92f2bfa9f7012727740-Abstract.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[27] ----------
-@inproceedings{abadi2016, % [开题27] TensorFlow（含TensorBoard）
-  author = {Abadi, Martin and Agarwal, Ashish and Barham, Paul and others},
-  title = {TensorFlow: A System for Large-Scale Machine Learning},
+@inproceedings{abadi2016,
+  author = {Abadi, Martin and Barham, Paul and Chen, Jianmin and Chen, Zhifeng and Davis, Andy and Dean, Jeffrey and Devin, Matthieu and Ghemawat, Sanjay and Irving, Geoffrey and Isard, Michael and Kudlur, Manjunath and Levenberg, Josh and Monga, Rajat and Moore, Sherry and Murray, Derek G. and Steiner, Benoit and Tucker, Paul and Vasudevan, Vijay and Warden, Pete and Wicke, Martin and Yu, Yuan and Zheng, Xiaoqiang},
+  title = {{TensorFlow: A System for Large-Scale Machine Learning}},
   booktitle = {Proceedings of the 12th USENIX Symposium on Operating Systems Design and Implementation (OSDI)},
   pages = {265--283},
   year = {2016},
+  url = {https://www.usenix.org/conference/osdi16/technical-sessions/presentation/abadi},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[28] ----------
-@article{towers2024gymnasium, % [开题28] Gymnasium标准接口（预印本，未见正式发表，保留arXiv）
-  author = {Towers, Mark and Kwiatkowski, Ariel and Terry, Jordan and others},
-  title = {Gymnasium: A Standard Interface for Reinforcement Learning Environments},
-  journal = {arXiv preprint arXiv:2407.17032},
+@online{towers2024gymnasium,
+  author = {Towers, Mark and Kwiatkowski, Ariel and Terry, Jordan and Balis, John U. and De Cola, Gianluca and Deleu, Tristan and Goulão, Manuel and Kallinteris, Andreas and Krimmel, Markus and KG, Arjun and Perez-Vicente, Rodrigo and Pierré, Andrea and Schulhoff, Sander and Tai, Jun Jet and Tan, Hannah and Younis, Omar G.},
+  title = {{Gymnasium: A Standard Interface for Reinforcement Learning Environments}},
   year = {2024},
+  url = {https://arxiv.org/abs/2407.17032},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.2407.17032},
+  langid = {english},
 }
 
-% ---------- 开题[29] ----------
-@article{kaelbling1996, % [开题29] 强化学习综述：Agent/环境/状态/动作/奖励
+@article{kaelbling1996,
   author = {Kaelbling, Leslie P. and Littman, Michael L. and Moore, Andrew W.},
-  title = {Reinforcement Learning: A Survey},
+  title = {{Reinforcement Learning: A Survey}},
   journal = {Journal of Artificial Intelligence Research},
   volume = {4},
   pages = {237--285},
   year = {1996},
+  url = {https://www.jair.org/index.php/jair/article/view/10166},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[30] ----------
-@article{sumiea2024, % [开题30] DDPG系统性综述
-  author = {Sumiea, Eric H. and Abdulkadir, Said J. and Alhussian, Hitham S. and others},
-  title = {Deep Deterministic Policy Gradient Algorithm: A Systematic Review},
+@article{sumiea2024,
+  author = {Sumiea, Ebrahim Hamid and Abdulkadir, Said Jadid and Alhussian, Hitham Seddig and Al-Selwi, Safwan Mahmood and Alqushaibi, Alawi and Ragab, Mohammed Gamal and Fati, Suliman Mohamed},
+  title = {{Deep Deterministic Policy Gradient Algorithm: A Systematic Review}},
   journal = {Heliyon},
   volume = {10},
   number = {9},
   pages = {e30697},
   year = {2024},
   doi = {10.1016/j.heliyon.2024.e30697},
+  langid = {english},
 }
 
-% ---------- 开题[31] ----------
-@article{chu2017, % [开题31] 参数共享DDPG协同多智能体（CTDE框架）。该文仅有 arXiv 预印本，正文未引用本条
+@online{chu2017,
   author = {Chu, Xiangxiang and Ye, Hang},
-  title = {Parameter Sharing Deep Deterministic Policy Gradient for Cooperative Multi-Agent Reinforcement Learning},
-  journal = {arXiv preprint arXiv:1710.00336},
+  title = {{Parameter Sharing Deep Deterministic Policy Gradient for Cooperative Multi-Agent Reinforcement Learning}},
   year = {2017},
+  url = {https://arxiv.org/abs/1710.00336},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.1710.00336},
+  langid = {english},
 }
 
-% ---------- 开题[32] ----------
-@article{ppo2017, % [开题32]
+@online{ppo2017,
   author = {Schulman, John and Wolski, Filip and Dhariwal, Prafulla and Radford, Alec and Klimov, Oleg},
-  title = {Proximal Policy Optimization Algorithms},
-  journal = {arXiv preprint arXiv:1707.06347},
+  title = {{Proximal Policy Optimization Algorithms}},
   year = {2017},
+  url = {https://arxiv.org/abs/1707.06347},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.1707.06347},
+  langid = {english},
 }
 
-% ---------- 开题[33] ----------
-@inproceedings{wang2025mappo, % [开题33] 协同多智能体MAPPO设计与实现（作者以 NSTL/SPIE 元数据为准）
+@inproceedings{wang2025mappo,
   author = {Wang, Haolong and Fei, Rong and Chen, Ruizhu},
-  title = {Design and Implementation of Cooperative Multi-Agent Based on MAPPO},
+  title = {{Design and Implementation of Cooperative Multi-Agent Based on MAPPO}},
   booktitle = {Proceedings of the Fifth International Conference on Telecommunications, Optics, and Computer Science (TOCS 2024)},
-  volume = {13629},
-  pages = {136291I--136291I10},
   year = {2025},
   publisher = {SPIE},
   doi = {10.1117/12.3067567},
+  langid = {english},
 }
 
-% ---------- 开题[34] ----------
-@phdthesis{huyujing2015, % [开题34] MARL博弈/均衡/知识迁移
-  author = {胡裕靖},
-  title = {多智能体强化学习中的博弈、均衡和知识迁移},
-  school = {南京大学},
-  address = {南京},
-  year = {2015},
-}
-
-% ---------- 开题[35] ----------
-@inproceedings{chen2023xgboost, % [开题35] XGBoost可扩展树提升
+@inproceedings{chen2023xgboost,
   author = {Chen, Tianqi and Guestrin, Carlos},
-  title = {XGBoost: A Scalable Tree Boosting System},
+  title = {{XGBoost: A Scalable Tree Boosting System}},
   booktitle = {Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining},
   pages = {785--794},
   year = {2016},
+  doi = {10.1145/2939672.2939785},
+  langid = {english},
 }
 
-% ---------- 开题[36] ----------
-@article{hart1968astar, % [开题36] A*最小代价路径形式化基础
+@article{hart1968astar,
   author = {Hart, Peter E. and Nilsson, Nils J. and Raphael, Bertram},
-  title = {A Formal Basis for the Heuristic Determination of Minimum Cost Paths},
+  title = {{A Formal Basis for the Heuristic Determination of Minimum Cost Paths}},
   journal = {IEEE Transactions on Systems Science and Cybernetics},
   volume = {4},
   number = {2},
   pages = {100--107},
   year = {1968},
+  doi = {10.1109/tssc.1968.300136},
+  langid = {english},
 }
 
-% ---------- 开题[37] ----------
-@online{citylearnnet2025, % [开题37] CityLearn官网
+@online{citylearnnet2025,
   author = {{CityLearn}},
-  title = {CityLearn},
-  year = {2025},
+  title = {{CityLearn}},
   url = {https://www.citylearn.net/},
-  urldate = {2026-10-18},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 开题[38] ----------
-@inproceedings{nagy2025fouryears, % [开题38] 四年通用任务框架进展
+@inproceedings{nagy2025fouryears,
   author = {Nagy, Zoltan and Nweye, Kingsley},
-  title = {The CityLearn Challenge: Four Years of Advancing Common Task Frameworks for Energy Management in Smart Buildings},
+  title = {{The CityLearn Challenge: Four Years of Advancing Common Task Frameworks for Energy Management in Smart Buildings}},
   booktitle = {Proceedings of the 16th ACM International Conference on Future and Sustainable Energy Systems},
   pages = {944--948},
   year = {2025},
   publisher = {ACM},
   doi = {10.1145/3679240.3734667},
+  langid = {english},
 }
 
-% ---------- 开题[39] ----------
-@inproceedings{residual2019, % [开题39]
-  author = {Johannink, Tobias and Bahl, Shikhar and Nair, Ashvin and Luo, Jianlan and Kumar, Avinash and Losey, Dylan and Levine, Sergey},
-  title = {Residual Reinforcement Learning for Robot Control},
+@inproceedings{residual2019,
+  author = {Johannink, Tobias and Bahl, Shikhar and Nair, Ashvin and Luo, Jianlan and Kumar, Avinash and Loskyll, Matthias and Ojea, Juan Aparicio and Solowjow, Eugen and Levine, Sergey},
+  title = {{Residual Reinforcement Learning for Robot Control}},
   booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
   pages = {6023--6029},
   year = {2019},
   publisher = {IEEE},
+  doi = {10.1109/icra.2019.8794127},
+  langid = {english},
 }
 
-% ---------- 开题[40] ----------
-@article{nweye2024applications, % [开题40] CityLearn gym多目标控制基准（预印本，未见正式发表，保留arXiv）
+@online{nweye2024applications,
   author = {Nweye, Kingsley and Nagy, Zoltan},
-  title = {Applications in CityLearn Gym Environment for Multi-Objective Control Benchmarking in Grid-Interactive Buildings and Districts},
-  journal = {arXiv preprint arXiv:2408.15170},
+  title = {{Applications in CityLearn Gym Environment for Multi-Objective Control Benchmarking in Grid-Interactive Buildings and Districts}},
   year = {2024},
+  url = {https://arxiv.org/abs/2408.15170},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.2408.15170},
+  langid = {english},
 }
-
-% ================= 论文增补文献（开题之外，前沿与平台支撑） =================
 
 @article{wilk2024,
   author = {Wilk, Patrick and Wang, Ning and Li, Jie},
-  title = {Multi-Agent Reinforcement Learning for Smart Community Energy Management},
+  title = {{Multi-Agent Reinforcement Learning for Smart Community Energy Management}},
   journal = {Energies},
   volume = {17},
   number = {20},
   pages = {5211},
   year = {2024},
   doi = {10.3390/en17205211},
+  langid = {english},
 }
 
-@misc{ccaibl2023,
-  author = {{Climate Change AI}},
-  title = {Using Reinforcement Learning to Improve Energy Management for Grid-Interactive Buildings},
+@online{ccaibl2023,
+  author = {Nagy, Zoltan and Nweye, Kingsley},
+  title = {{Using Reinforcement Learning to Improve Energy Management for Grid-Interactive Buildings}},
   year = {2023},
   url = {https://www.climatechange.ai/blog/2023-06-02-citylearn},
-  urldate = {2026-10-18},
-  note = {ICLR 2023 配套 blog 资料，原 Qin et al. ICLR workshop 论文检索未获唯一对应文本，本项目改引 Climate Change AI 综述资源以保证可验证性},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @article{mnih2015,
-  author = {Mnih, Volodymyr and Kavukcuoglu, Koray and Silver, David and Rusu, Andrei A. and Veness, Joel and Bellemare, Marc G. and Graves, Alex and Riedmiller, Martin and Fidjeland, Andreas K. and Ostrovski, Georg and others},
-  title = {Human-Level Control through Deep Reinforcement Learning},
+  author = {Mnih, Volodymyr and Kavukcuoglu, Koray and Silver, David and Rusu, Andrei A. and Veness, Joel and Bellemare, Marc G. and Graves, Alex and Riedmiller, Martin and Fidjeland, Andreas K. and Ostrovski, Georg and Petersen, Stig and Beattie, Charles and Sadik, Amir and Antonoglou, Ioannis and King, Helen and Kumaran, Dharshan and Wierstra, Daan and Legg, Shane and Hassabis, Demis},
+  title = {{Human-Level Control through Deep Reinforcement Learning}},
   journal = {Nature},
   volume = {518},
   number = {7540},
   pages = {529--533},
   year = {2015},
+  doi = {10.1038/nature14236},
+  langid = {english},
 }
 
-@article{ddpg2016,
+@online{ddpg2016,
   author = {Lillicrap, Timothy P. and Hunt, Jonathan J. and Pritzel, Alexander and Heess, Nicolas and Erez, Tom and Tassa, Yuval and Silver, David and Wierstra, Daan},
-  title = {Continuous Control with Deep Reinforcement Learning},
-  journal = {arXiv preprint arXiv:1509.02971},
+  title = {{Continuous Control with Deep Reinforcement Learning}},
   year = {2015},
+  url = {https://arxiv.org/abs/1509.02971},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.1509.02971},
+  langid = {english},
 }
 
 @inproceedings{lowe2017,
   author = {Lowe, Ryan and Wu, Yi and Tamar, Aviv and Harb, Jean and Abbeel, Pieter and Mordatch, Igor},
-  title = {Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environments},
+  title = {{Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environments}},
   booktitle = {Advances in Neural Information Processing Systems},
   volume = {30},
-  pages = {6379--6390},
   year = {2017},
+  url = {https://papers.nips.cc/paper/2017/hash/68a9750337a418a86fe06c1991a1d64c-Abstract.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @book{sutton2018,
   author = {Sutton, Richard S. and Barto, Andrew G.},
-  title = {Reinforcement Learning: An Introduction},
+  title = {{Reinforcement Learning: An Introduction}},
   publisher = {MIT Press},
   edition = {2},
   year = {2018},
+  url = {http://incompleteideas.net/book/the-book-2nd.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@article{haarnoja2018,
+@inproceedings{haarnoja2018,
   author = {Haarnoja, Tuomas and Zhou, Aurick and Abbeel, Pieter and Levine, Sergey},
-  title = {Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor},
-  journal = {arXiv preprint arXiv:1801.01290},
+  title = {{Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor}},
   year = {2018},
+  booktitle = {Proceedings of the 35th International Conference on Machine Learning},
+  volume = {80},
+  publisher = {PMLR},
+  url = {https://proceedings.mlr.press/v80/haarnoja18b.html},
+  pages = {1861--1870},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@article{rashid2018,
+@inproceedings{rashid2018,
   author = {Rashid, Tabish and Samvelyan, Mikayel and Schroeder, Christian and Farquhar, Gregory and Foerster, Jakob and Whiteson, Shimon},
-  title = {QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning},
-  journal = {arXiv preprint arXiv:1803.11485},
+  title = {{QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning}},
   year = {2018},
+  booktitle = {Proceedings of the 35th International Conference on Machine Learning},
+  volume = {80},
+  publisher = {PMLR},
+  url = {https://proceedings.mlr.press/v80/rashid18a.html},
+  pages = {4295--4304},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @inproceedings{yu2022mappo,
   author = {Yu, Chao and Velu, Akash and Vinitsky, Eugene and Gao, Jiaxuan and Wang, Yu and Bayen, Alexandre and Wu, Yi},
-  title = {The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games},
+  title = {{The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games}},
   booktitle = {Advances in Neural Information Processing Systems},
   volume = {35},
   pages = {24611--24624},
   year = {2022},
+  url = {https://papers.nips.cc/paper_files/paper/2022/hash/9c1535a02f0ce079433344e14d910597-Abstract-Datasets_and_Benchmarks.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @inproceedings{foerster2018counterfactual,
-  author = {Foerster, Jakob and Farquhar, Gregory and Afouras, Triant and Nardelli, Nantas and Whiteson, Shimon},
-  title = {Counterfactual Multi-Agent Policy Gradients},
+  author = {Foerster, Jakob and Farquhar, Gregory and Afouras, Triantafyllos and Nardelli, Nantas and Whiteson, Shimon},
+  title = {{Counterfactual Multi-Agent Policy Gradients}},
   booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
   volume = {32},
   pages = {2974--2982},
   year = {2018},
   doi = {10.1609/aaai.v32i1.11794},
+  langid = {english},
 }
 
 @article{chen2020hvac,
   author = {Chen, Yujiao and Norford, Leslie K. and Samuelson, Holly W. and Malkawi, Ali},
-  title = {Optimal Control of HVAC and Window Systems for Natural Ventilation through Reinforcement Learning},
+  title = {{Optimal Control of HVAC and Window Systems for Natural Ventilation through Reinforcement Learning}},
   journal = {Energy and Buildings},
   volume = {169},
   pages = {195--205},
   year = {2018},
   doi = {10.1016/j.enbuild.2018.03.051},
+  langid = {english},
 }
 
 @article{wang2021review,
   author = {Wang, Zhe and Hong, Tianzhen},
-  title = {Reinforcement Learning for Building Controls: The Opportunities and Challenges},
+  title = {{Reinforcement Learning for Building Controls: The Opportunities and Challenges}},
   journal = {Applied Energy},
   volume = {269},
   pages = {115036},
   year = {2020},
   doi = {10.1016/j.apenergy.2020.115036},
+  langid = {english},
 }
-
-% [2026-10-18 删除] @zhang2022ems 条目：与正文引用无对应、且 DOI/卷页无法在 Crossref 复核，按冗余条目剔除。
 
 @article{mbuwir2017residential,
   author = {Mbuwir, Brida V. and Ruelens, Frederik and Spiessens, Fred and Deconinck, Geert},
-  title = {Battery Energy Management in a Microgrid Using Batch Reinforcement Learning},
+  title = {{Battery Energy Management in a Microgrid Using Batch Reinforcement Learning}},
   journal = {Energies},
   volume = {10},
   number = {11},
   pages = {1846},
   year = {2017},
+  doi = {10.3390/en10111846},
+  langid = {english},
 }
 
 @inproceedings{nagy2018marlbuilding,
   author = {Moriyama, Takao and De Magistris, Giovanni and Tatsubori, Michiaki and Pham, Tu-Hoa and Munawar, Asim and Tachibana, Ryuki},
-  title = {Reinforcement Learning Testbed for Power-Consumption Optimization},
-  booktitle = {Proceedings of the 10th Asian Conference on Machine Learning (ACML)},
+  title = {{Reinforcement Learning Testbed for Power-Consumption Optimization}},
+  booktitle = {Methods and Applications for Modeling and Simulation of Complex Systems},
   pages = {45--59},
   year = {2018},
-  publisher = {PMLR},
+  publisher = {Springer},
+  doi = {10.1007/978-981-13-2853-4_4},
+  langid = {english},
 }
 
 @inproceedings{prasad2019zec,
   author = {Prasad, Amit and Dusparic, Ivana},
-  title = {Multi-Agent Deep Reinforcement Learning for Zero Energy Communities},
+  title = {{Multi-Agent Deep Reinforcement Learning for Zero Energy Communities}},
   booktitle = {Proceedings of the IEEE PES Innovative Smart Grid Technologies Europe (ISGT-Europe)},
   pages = {1--5},
   year = {2019},
   publisher = {IEEE},
-  doi = {10.1109/ISGT-Europe.2019.8905628},
+  doi = {10.1109/ISGTEurope.2019.8905628},
+  langid = {english},
 }
 
 @inproceedings{khanna2024fedmarl,
   author = {Khanna, Abhirup and Maheshwari, Piyush},
-  title = {Federated Multi-Agent Reinforcement Learning for Incentive-Based DRS over Blockchain Enabled Microgrids},
+  title = {{Federated Multi-Agent Reinforcement Learning for Incentive-Based DRS over Blockchain Enabled Microgrids}},
   booktitle = {Proceedings of the 7th International Conference on Signal Processing and Information Security (ICSPIS)},
   pages = {1--6},
   year = {2024},
   publisher = {IEEE},
   doi = {10.1109/ICSPIS63676.2024.10812651},
+  langid = {english},
 }
 
 @inproceedings{mcmahan2017fedavg,
   author = {McMahan, Brendan and Moore, Eider and Ramage, Daniel and Hampson, Seth and Ag{\"u}era y Arcas, Blaise},
-  title = {Communication-Efficient Learning of Deep Networks from Decentralized Data},
+  title = {{Communication-Efficient Learning of Deep Networks from Decentralized Data}},
   booktitle = {Proceedings of the 20th International Conference on Artificial Intelligence and Statistics (AISTATS)},
   volume = {54},
   pages = {1273--1282},
   year = {2017},
   publisher = {PMLR},
+  url = {https://proceedings.mlr.press/v54/mcmahan17a.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @inproceedings{li2020fedprox,
   author = {Li, Tian and Sahu, Anit Kumar and Zaheer, Manzil and Sanjabi, Maziar and Talwalkar, Ameet and Smith, Virginia},
-  title = {Federated Optimization in Heterogeneous Networks},
+  title = {{Federated Optimization in Heterogeneous Networks}},
   booktitle = {Proceedings of Machine Learning and Systems (MLSys)},
   volume = {2},
   pages = {429--450},
   year = {2020},
+  url = {https://proceedings.mlsys.org/paper_files/paper/2020/hash/1f5fe83998a09396ebe6477d9475ba0c-Abstract.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{ielabcitylearn,
+@online{ielabcitylearn,
   author = {{Intelligent Environments Laboratory}},
-  title = {CityLearn Project},
-  year = {2024},
+  title = {{CityLearn Project}},
   url = {https://www.ie-lab.org/project/citylearn/},
-  urldate = {2026-10-18},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @article{drgona2020mpc,
-  author = {Drgo{\v n}a, J{\'a}n and Arroyo, Javier and Cuesta Bretos, Iago and Helsen, Lieve},
-  title = {All You Need to Know about Model Predictive Control for Buildings},
+  author = {Drgoňa, Ján and Arroyo, Javier and Cupeiro Figueroa, Iago and Blum, David and Arendt, Krzysztof and Kim, Donghun and Ollé, Enric Perarnau and Oravec, Juraj and Wetter, Michael and Vrabie, Draguna L. and Helsen, Lieve},
+  title = {{All You Need to Know about Model Predictive Control for Buildings}},
   journal = {Annual Reviews in Control},
   volume = {50},
   pages = {190--232},
   year = {2020},
+  doi = {10.1016/j.arcontrol.2020.09.001},
+  langid = {english},
 }
 
 @inproceedings{wei2017hvacdrl,
   author = {Wei, Tianshu and Wang, Yanzhi and Zhu, Qi},
-  title = {Deep Reinforcement Learning for Building HVAC Control},
+  title = {{Deep Reinforcement Learning for Building HVAC Control}},
   booktitle = {Proceedings of the 54th Annual Design Automation Conference (DAC)},
   pages = {1--6},
   year = {2017},
   publisher = {ACM},
   doi = {10.1145/3061639.3062224},
+  langid = {english},
 }
 
 @article{zou2020rlsurvey,
   author = {李茹杨 and 彭慧民 and 李仁刚 and 赵坤},
-  title = {强化学习算法与应用综述},
+  title = {{强化学习算法与应用综述}},
   journal = {计算机系统应用},
   volume = {29},
   number = {12},
   pages = {13--25},
   year = {2020},
+  doi = {10.15888/j.cnki.csa.007701},
+  url = {https://www.c-s-a.org.cn/csa/article/abstract/7701},
+  urldate = {2026-11-04},
+  langid = {chinese},
 }
 
 @article{wang2021magame,
   author = {王军 and 曹雷 and 陈希亮 and 赖俊 and 章乐贵},
-  title = {多智能体博弈强化学习研究综述},
+  title = {{多智能体博弈强化学习研究综述}},
   journal = {计算机工程与应用},
   volume = {57},
   number = {21},
   pages = {1--13},
   year = {2021},
+  doi = {10.3778/j.issn.1002-8331.2104-0432},
+  url = {http://cea.ceaj.org/CN/Y2021/V57/I21/1},
+  urldate = {2026-11-04},
+  langid = {chinese},
 }
 
-@misc{vue2024,
+@online{vue2024,
   author = {{Vue.js Team}},
-  title = {Vue.js: The Progressive JavaScript Framework},
-  year = {2024},
-  url = {https://vuejs.org/},
-  urldate = {2026-10-18},
+  title = {{Vue.js 2 Guide}},
+  url = {https://v2.vuejs.org/v2/guide/},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{elementui2024,
+@online{elementui2024,
   author = {{Element Team}},
-  title = {Element UI: A Vue 2.0 Based Component Library for Developers},
-  year = {2024},
+  title = {{Element UI: A Vue 2.0 Based Component Library for Developers}},
   url = {https://element.eleme.io/},
-  urldate = {2026-10-18},
-  note = {表单、表格、对话框、消息提示等组件的官方文档},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{echarts2024,
+@online{echarts2024,
   author = {{Apache ECharts Team}},
-  title = {Apache ECharts Documentation},
-  year = {2024},
-  url = {https://echarts.apache.org/},
-  urldate = {2026-10-18},
+  title = {{Apache ECharts Documentation}},
+  url = {https://echarts.apache.org/handbook/en/get-started/},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{springboot2024,
+@online{springboot2024,
   author = {{Spring Team}},
-  title = {Spring Boot Reference Documentation},
-  year = {2024},
-  url = {https://spring.io/projects/spring-boot},
-  urldate = {2026-10-18},
+  title = {{Spring Boot 2.6.13 Reference Documentation}},
+  url = {https://docs.spring.io/spring-boot/docs/2.6.13/reference/htmlsingle/},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{postman2024,
+@online{postman2024,
   author = {{Postman Team}},
-  title = {Postman API Platform},
-  year = {2024},
+  title = {{Postman API Platform}},
   url = {https://www.postman.com/},
-  urldate = {2026-10-18},
-  note = {后端 RESTful 接口契约测试与回归测试工具},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
 @inproceedings{ke2017lightgbm,
   author = {Ke, Guolin and Meng, Qi and Finley, Thomas and Wang, Taifeng and Chen, Wei and Ma, Weidong and Ye, Qiwei and Liu, Tie-Yan},
-  title = {LightGBM: A Highly Efficient Gradient Boosting Decision Tree},
+  title = {{LightGBM: A Highly Efficient Gradient Boosting Decision Tree}},
   booktitle = {Advances in Neural Information Processing Systems},
   volume = {30},
-  pages = {3146--3154},
   year = {2017},
+  url = {https://papers.nips.cc/paper/2017/hash/6449f44a102fde848669bdd9eb6b76fa-Abstract.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{mysql2024,
+@online{mysql2024,
   author = {{Oracle}},
-  title = {MySQL 8.0 Reference Manual},
-  year = {2024},
-  url = {https://dev.mysql.com/doc/},
-  urldate = {2026-10-18},
+  title = {{MySQL 8.0 Reference Manual}},
+  url = {https://docs.oracle.com/cd/E17952_01/mysql-8.0-en/index.html},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 同类对照论文（用于第2章分类表、第5章横向对照） ----------
-% Costea C C. 学位论文，都灵理工大学能源与核工程系，2025/2026 学年；
-% 内容：提出六轴 MARL 分类体系，并在 CityLearn 中对比 PPO / IPPO / IPPO-SP / MAPPO。
 @mastersthesis{costea2024,
-  author = {Costea, Costantin Cosmin},
-  title = {Multi-Agent Reinforcement Learning Building Energy Optimization: Taxonomy and Experimental Evaluation in CityLearn},
+  author = {Costea, Constantin Cosmin},
+  title = {{Multi-Agent Reinforcement Learning Building Energy Optimization: Taxonomy and Experimental Evaluation in CityLearn}},
   school = {Politecnico di Torino},
   address = {Torino},
   year = {2026},
+  url = {https://webthesis.biblio.polito.it/40396/},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% Javeed A. 隆德大学自动控制系硕士论文 TFRT-6242，2024；
-% 内容：针对数据中心冷站对比 CTDE 与价值分解，提出 LINMIX 线性价值混合与轮流博弈两项 MARL 增强。
 @mastersthesis{javeed2024,
   author = {Javeed, Arshad},
-  title = {Distributed Reinforcement Learning for Building Energy Optimization},
+  title = {{Distributed Reinforcement Learning for Building Energy Optimization}},
   school = {Lund University},
   address = {Lund},
   year = {2024},
+  url = {https://lup.lub.lu.se/student-papers/search/publication/9174186},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% [2026-10-08 删除] @redis2024 条目：原文对应 Redis 队列/缓存表述；实现实际为 Spring Boot 线程池异步调度 + MySQL 状态轮询，系统无 Redis 组件，正文表述已同步移除。
-
-@misc{elk2024,
+@online{elk2024,
   author = {{Elastic}},
-  title = {Elastic Stack: Elasticsearch, Logstash, Kibana and Filebeat},
-  year = {2024},
+  title = {{Elastic Stack: Elasticsearch, Logstash, Kibana and Filebeat}},
   url = {https://www.elastic.co/elastic-stack/},
-  urldate = {2026-10-18},
-  note = {日志集中采集与检索分析的备选方案，本项目当前以 Logback 文件日志 + 任务目录归档为主，ELK/Loki 作为后续扩展},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@misc{openai_gym2016,
+@online{openai_gym2016,
   author = {Brockman, Greg and Cheung, Vicki and Pettersson, Ludwig and Schneider, Jonas and Schulman, John and Tang, Jie and Zaremba, Wojciech},
-  title = {OpenAI Gym},
+  title = {{OpenAI Gym}},
   year = {2016},
-  url = {https://gym.openai.com/},
+  url = {https://arxiv.org/abs/1606.01540},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.1606.01540},
+  langid = {english},
 }
 
-@misc{gymnasium2024,
+@online{gymnasium2024,
   author = {{Farama Foundation}},
-  title = {Gymnasium Documentation},
-  year = {2024},
+  title = {{Gymnasium Documentation}},
   url = {https://gymnasium.farama.org/},
-  urldate = {2026-10-18},
-  note = {CityLearn 仿真环境所依赖的 Gymnasium 接口标准},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-% ---------- 参考两篇英文学位论文增补的权威国际文献 ----------
 @book{albrecht2024marl,
   author = {Albrecht, Stefano V. and Christianos, Filippos and Sch{\"a}fer, Lukas},
-  title = {Multi-Agent Reinforcement Learning: Foundations and Modern Approaches},
+  title = {{Multi-Agent Reinforcement Learning: Foundations and Modern Approaches}},
   publisher = {MIT Press},
   address = {Cambridge, MA},
   year = {2024},
   url = {https://www.marl-book.com/},
-  urldate = {2026-10-18},
+  urldate = {2026-11-04},
+  langid = {english},
 }
 
-@inproceedings{schroeder2021ippo,
+@online{schroeder2021ippo,
   author = {Schroeder de Witt, Christian and Gupta, Tarun and Makoviichuk, Denys and Makoviychuk, Viktor and Torr, Philip H. S. and Sun, Mingfei and Whiteson, Shimon},
-  title = {Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge?},
-  booktitle = {International Conference on Learning Representations (ICLR)},
-  year = {2021},
+  title = {{Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge?}},
+  year = {2020},
+  url = {https://arxiv.org/abs/2011.09533},
+  urldate = {2026-11-04},
+  doi = {10.48550/arXiv.2011.09533},
+  langid = {english},
 }
 
 @article{charbonnier2022,
   author = {Charbonnier, Flora and Morstyn, Thomas and McCulloch, Malcolm D.},
-  title = {Scalable Multi-Agent Reinforcement Learning for Distributed Control of Residential Energy Flexibility},
+  title = {{Scalable Multi-Agent Reinforcement Learning for Distributed Control of Residential Energy Flexibility}},
   journal = {Applied Energy},
   volume = {314},
   pages = {118825},
   year = {2022},
   doi = {10.1016/j.apenergy.2022.118825},
+  langid = {english},
 }
 
 @book{powell2022,
   author = {Powell, Warren B.},
-  title = {Reinforcement Learning and Stochastic Optimization: A Unified Framework for Sequential Decisions},
+  title = {{Reinforcement Learning and Stochastic Optimization: A Unified Framework for Sequential Decisions}},
   publisher = {John Wiley \& Sons},
   address = {Hoboken, NJ},
   year = {2022},
+  url = {https://www.wiley.com/en-us/Reinforcement+Learning+and+Stochastic+Optimization%3A+A+Unified+Framework+for+Sequential+Decisions-p-9781119815051},
+  urldate = {2026-11-04},
+  langid = {english},
 }
-

@@ -8,7 +8,7 @@ style=gb7714-2015,%utf8,
     natbib
     ]{biblatex}
 
-\hypersetup{hidelinks,colorlinks=false,citecolor=black}
+\hypersetup{hidelinks,colorlinks=false,citecolor=black,hypertexnames=false}
 \addbibresource{myrefs.bib}
 %\usepackage[numbers,super]{gbt7714}
 %\newcommand{\upcite}[1]{\textsuperscript{\textsuperscript{\cite{#1}}}}
@@ -72,6 +72,19 @@ style=gb7714-2015,%utf8,
 \SubmissionDate{2026年12月}
 \EnglishSubmissionDate{Dec, 2026}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%封面信息%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% 长题名仅在内封信息页换行；保留学校模板类文件、字号和下划线样式。
+\makeatletter
+\newlength{\thesisTitleLabelWidth}
+\RenewDocumentCommand{\ThirdPageTitleInfo}{}{%
+  \begin{raggedright}\zihao{4}
+  \settowidth{\thesisTitleLabelWidth}{{\bfseries 论文题目：}}%
+  \noindent {\bfseries 论文题目：}%
+  \wideunderline[\dimexpr\linewidth-\thesisTitleLabelWidth-2pt\relax]{\parbox[t]{\dimexpr\linewidth-\thesisTitleLabelWidth-2pt\relax}{\centering\zihao{4}\ustb@Title}}
+  \end{raggedright}
+}
+\makeatother
+
 \begin{document}
 
 \TitlePage
@@ -79,6 +92,9 @@ style=gb7714-2015,%utf8,
 \SecondPage
 
 \ThirdPage
+
+% 封面沿用学校模板的零列间距；正文表格恢复列间留白。
+\setlength{\tabcolsep}{3pt}
 
 \pagestyle{fancy}
 
@@ -88,6 +104,8 @@ style=gb7714-2015,%utf8,
 \tableofcontents
 
 \mainmatter
+% 正文按顺序连续排版，避免双面排版规则在章节间生成只有页眉和页码的空白页。
+\let\cleardoublepage\clearpage
 \pagenumbering{arabic}\setcounter{page}{1}
 \pagestyle{fancy}
 

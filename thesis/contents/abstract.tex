@@ -1,63 +1,28 @@
 % !Mode:: "TeX:UTF-8"
 \begin{ChineseAbstract}
+建筑群能源系统受到天气、住户用电、分时电价、光伏发电及室内热舒适需求的共同影响，具有跨建筑、跨时段耦合和多目标冲突的特点。如何结合规则先验与学习修正，并建立实验配置、模型、指标和轨迹的对应关系，是建筑群协同控制与实验管理需要解决的问题。
 
-建筑群能源系统同时受天气、住户用电、分时电价、屋顶光伏与室内热舒适这五类信号的耦合影响，
-在不确定性与目标冲突上明显高于单建筑。固定规则控制缺乏自适应能力，模型预测控制依赖精确
-物理建模且算力较重，纯多智能体强化学习则会陷入局部视野受限、跨楼功劳分配模糊、训练不稳
-定、安全边界难保证四类问题。围绕分层规则基线自适应、纯学习协同上限、实验可复现性、真实电费
-核算、算法过程可查五个维度，既有研究在每一项上均留有可量化的提升空间。
+本文以CityLearn为仿真环境，围绕多智能体协同控制方法与可视化管理平台两条主线开展研究，主要工作如下。
 
-本文的工作分两条线。第一条线解决“不同社区该用哪种控制方法”：社区如果已有专家经验和物理
-模型，就让规则先打底、让学习只做小幅修正；如果社区完全没有先验，就让多个智能体从零开始
-自己学会协同削峰。第二条线解决“算法怎么才能被看懂、被管住”：搭一个可视化管理平台，把训
-练进度、方法对比和逐小时的决策过程都摊开在同一个界面上，每一步为什么这么调都能回放查看。
-主要贡献集中在以下四点。
+（一）面向具备控制先验的社区，实现CHESCA-ResMARL受限残差多智能体控制框架。复现CHESCA的负荷预测、单楼温控、社区储能规划与动作回写流程，修复仿真环境中生活热水储能更新的容量引用问题，并实现依据不可调负荷突增程度调节动作的连续分级软门控。在此基础上，利用动作通道掩码、修正幅度和状态门控约束学习策略的修正，区分基线动作、请求修正与最终执行动作。通过环境修复对照、幅度消融和逐种子比较，分析削峰、费用、碳排与舒适度之间的关系。实验中出现小幅残差同时改善多项指标的个例，同一幅度在不同种子下的收益仍不稳定。
 
-（1）面向具备物理热力学模型与负荷预测先验的社区，本文独立提出一种基于“负荷预测 $\to$
-单楼温控初稿 $\to$ 社区储能路径搜索 $\to$ 动作回写”的分层规则流水线，并修复了其中生活热
-水储热通道的状态更新闭环，使其恢复移峰能力。在此之上，叠加一条由当前步不可调负荷突增量
-驱动的连续分级软门控：突增量越大、对储能充放动作的允许下调越深。本文首次实证：在标准月
-度评估集上，社区峰值与峰值比相对零动作基线均显著降低，且在更长周期评估集上进一步下降，住
-户热舒适越界全程保持为零；最优配置不经再训练可直接迁移到更长评估窗口与更大社区规模，零
-样本条件下实现显著削峰；多智能体残差学习策略叠加三类约束（动作通道屏蔽、修正幅度裁剪、
-低电量保护），在多档修正幅度下室内热舒适越界均保持零恶化；本文首次表明，同策略稳步更新
-机制贡献了集中训练–分散执行范式内绝大部分早期削峰收益。
+（二）面向直接学习控制与实验分析，实现区域协同观测、奖励机制及全栈可视化管理平台。通过环境包装器附加社区负荷和电池相对状态特征，以区域奖励及配对实验分析峰前储能准备与最终峰值之间的关系，并建立包含需量费用与电池吞吐折旧的情景核算模型。平台采用Vue、Spring Boot、Python与MySQL协同架构，贯通实验配置、训练与评估编排、模型复用、结果对比和逐时决策回放。关系库存储任务与配置等元数据，任务目录保存模型、日志、指标和运行轨迹；界面通过能源流向、购售电和设备动作视图支持结果核查。
 
-（2）面向缺乏专家规则先验的社区与工程落地，本文独立设计了一种不改动仿真器代码的外部数
-据转换插件（环境包装器），把社区整体用电水平与本楼电池相对排名这两个区域协同特征动态注
-入各智能体局部观测，使平台层与算法层解耦。奖励侧，对“本步向电网买电的电度贡献”分摊惩
-罚，并用本局历史最高峰值动态锚定目标，迫使策略协同削峰而非各自为战；训练侧，把经验回放
-池显著扩大，并叠加多步累积回报引导，将软演员—评论家（SAC）算法的训练–评估节奏稳定下来。本文首次实证：纯
-多智能体策略的社区峰值比较单楼独立 SAC 基线显著降低，室内热舒适越界率从较高水平大幅下降，
-分时电度电费降至各对比组最低水平。本文同时把全月尖峰时刻的功率平衡做了构成分解：剩余差
-距主要源于峰前电池电量已被日常分时电价套利消耗，部分源于稳态空调下限保护限制了大幅关
-停——这是无预测纯学习策略的物理能力边界，也是后续研究必须正视的客观上限。
+本文形成了从控制动作生成到结果可视化诊断的工作流程，通过强基线上的残差对照与储能轨迹分析，为优化学习目标和评价协议提供了依据。
 
-（3）在经济核算上，本文独立构建了社区并网点处“两部制需量 + 度电 + 电池循环折旧”三段
-账单模型：度电部分按分时电价，需量部分按整月社区峰值最大需量计一次容量费，电池部分按等
-效循环数折算为折旧扣回。按月扣除电池折旧后，社区综合电费仍较纯 SAC 显著下降一个量级，
-与园区目前已有的纯电度电费核算方式相比，更贴合工商业社区微电网的实际账单结构。
-
-（4）在可视化上，平台基于前后端分离与异步进程调度，把“模型拓扑前置校验、训练进度实时
-监控、多维性能对比、逐小时决策过程回放”打通，把算法层与工程层的工作流统一在同一界
-面，使算法决策与工程操作可被同一团队在同一界面下完整审计。
-
-\ChineseKeywords{建筑群节能；多智能体强化学习；区域协同削峰；残差强化学习；两部制需量电价；可视化管理}
+\ChineseKeywords{建筑群节能；多智能体强化学习；残差控制；区域协同；实验管理；可视化诊断}
 \end{ChineseAbstract}
 
 \begin{EnglishAbstract}
+Building-cluster energy systems are influenced by weather, occupant demand, time-of-use electricity prices, photovoltaic generation, and thermal comfort requirements. Their operation involves coupling across buildings and time, together with conflicting objectives. Combining rule-based priors with learned corrections, and linking configurations, models, metrics, and trajectories, are central issues in cooperative control and experiment management.
 
-Building-cluster energy systems are jointly driven by weather conditions, occupant loads, time-of-use electricity prices, rooftop photovoltaic generation, and indoor thermal comfort requirements. The resulting coupling, uncertainty, and multi-objective conflicts are markedly more severe than for single buildings. Fixed-rule control cannot adapt; model predictive control leans on accurate physical models and carries heavy compute cost; pure multi-agent reinforcement learning (MARL) tends to suffer from four recurring issues: partial observability, ambiguous inter-building credit assignment, training instability, and difficulty in strictly enforcing safety constraints. Although the literature is rich, clear gaps remain in baseline adaptability, the cooperation upper bound of pure MARL, experimental reproducibility, realistic electricity-cost accounting, and white-box algorithm management.
+Using CityLearn, this thesis studies multi-agent cooperative control and a visualization platform through two main lines of work.
 
-To address these gaps, this thesis follows two lines of work. The first asks which control method suits which community: where expert rules and physical models already exist, the rules carry the basic control and learning only makes small corrections; where no such prior exists, multiple agents learn cooperative peak shaving from scratch. The second asks how the algorithm can be seen and supervised: a management platform lays out training progress, method comparison, and hour-by-hour decision traces on one screen, so that every adjustment can be replayed and explained. The main contributions are summarized in four points.
+First, CHESCA-ResMARL is implemented as a constrained residual multi-agent control framework for communities with an existing control baseline. The CHESCA workflow is reproduced, including load forecasting, local temperature control, community storage planning, and action write-back. A capacity-reference problem in the simulator's domestic hot-water storage update is repaired, and a continuous graded gate responds to surges in non-shiftable load. Learned corrections are constrained by action-channel masks, amplitude limits, and state-dependent gates. Baseline actions, requested corrections, and executed actions are recorded separately. Repair comparisons, amplitude ablations, and per-seed evaluations examine the relationships among peak demand, cost, carbon emissions, and comfort. A small residual improves several metrics in an individual run, while gains at the same amplitude remain inconsistent across seeds.
 
-\textit{Contribution 1 (rule-prior communities).} We reformulate the hierarchical pipeline ``load forecast $\rightarrow$ per-building temperature draft $\rightarrow$ community-battery path search $\rightarrow$ action write-back,'' and repair the closed-loop state update of its domestic hot-water storage channel so that the thermal buffering capacity is actually exercised. On top of that, we add a continuous graded soft gate whose depth grows with the current-step non-shiftable load surge: the larger the surge, the deeper the admissible cut into battery charge and discharge. We empirically show that community peak demand and peak ratio drop substantially relative to the no-control baseline on the standard monthly benchmark, decrease further on a longer-horizon benchmark, and that thermal-comfort violations stay exactly zero throughout. The resulting policy transfers zero-shot to a longer horizon and to a larger six-building cluster, producing marked peak reductions that are further amplified by load-signature recalibration. Stacked on the rule prior is a multi-agent residual learning policy constrained by three envelopes---action-channel masking, amplitude clipping, and low-SOC protection---and we show that indoor thermal comfort stays exactly zero-violation across all tested amplitude levels. We further provide the first empirical evidence that on-policy iterative updates account for the great majority of early-stage peak-shaving gains within the centralized-training-with-decentralized-execution (CTDE) family.
+Second, district observations, reward mechanisms, and a full-stack visualization platform are implemented for direct learning control and experimental analysis. An environment wrapper adds district load and relative battery-state features. District rewards and paired experiments support analysis of storage preparation before peaks and final peak demand. A scenario accounting model includes demand charges and battery-throughput depreciation. The platform combines Vue, Spring Boot, Python, and MySQL to support configuration, training and evaluation orchestration, model reuse, result comparison, and hourly decision replay. Relational tables hold task and configuration metadata, while task directories preserve models, logs, metrics, and trajectories. Energy-flow, grid-exchange, and equipment-action views support inspection of experimental results.
 
-\textit{Contribution 2 (no-prior communities and engineering deployment).} We design a non-intrusive external data-augmentation plugin (an environment wrapper) that injects district-level electricity awareness and the relative battery rank of each building into every agent's local observation, without touching the simulator source. On the reward side, we attribute penalty to the net grid-import contribution of each building and anchor the target to the running season-maximum peak, forcing cooperation over selfishness. On the training side, we substantially enlarge the replay buffer and add multi-step return bootstrapping, which stabilizes the train--eval loop of soft actor--critic (SAC). The resulting MARL policy drives the district peak ratio substantially below the per-building SAC baseline, lowers indoor overheating discomfort from a high level to a much lower one, and yields the lowest time-of-use energy charge among all compared groups. We also decompose the monthly peak moment into power-balance channels: the residual gap traces mainly to the battery being drained ahead of the peak by routine time-of-use arbitrage, and partially to the steady-state cooling-load floor that limits aggressive shutdown. We argue that this split pinpoints the physical capability boundary of forecast-free pure MARL and should be taken as the objective upper limit by future work.
+The thesis connects action generation with visual diagnosis. Residual comparisons against a strong baseline and analysis of storage trajectories inform further refinement of learning objectives and evaluation protocols.
 
-\textit{Contribution 3 (economic accounting).} We build a three-part community point-of-common-coupling tariff model that combines a time-of-use energy charge, a two-part demand charge tied to the monthly peak, and a battery depreciation charge converted from equivalent cycle counts. Even after deducting battery depreciation, the integrated monthly bill still drops by a significant margin relative to pure SAC, making the result directly relevant to industrial and commercial parks.
-
-\textit{Contribution 4 (visualization).} A frontend-backend decoupled platform with asynchronous process scheduling unifies four workflows---pre-flight topology validation, training progress monitoring, multi-dimensional performance comparison, and hourly decision-trace replay---into a single engineering interface where algorithm decisions and operations can be jointly reviewed by the same team.
-
-\EnglishKeywords{building cluster energy saving; multi-agent reinforcement learning; district cooperative peak shaving; residual reinforcement learning; two-part demand tariff; visualization management}
+\EnglishKeywords{building cluster energy saving; multi-agent reinforcement learning; residual control; district coordination; experiment management; visual diagnostics}
 \end{EnglishAbstract}

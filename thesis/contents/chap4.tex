@@ -1,210 +1,250 @@
 \chapter{系统构建与技术实现}\label{chap:4}
-\section{前端页面架构与交互设计}
-前端需覆盖“查看数据—配置算法—提交运行—对比分析—回放决策过程”的完整操作链。本节按 Vue 框架与 Element UI 组件库交付四个核心页面——首页总览、算法与数据集配置、能源与 KPI 分析、逐小时决策过程\cite{vue2024,elementui2024}。各页面的主要功能区域与前后端通信接口如表\ref{tab:frontend-pages}所示。
+本章按前端交互、数据接入、产物归档和任务执行说明系统实现。页面截图用于展示现有交互，表结构与接口说明来自项目代码和实际数据库。系统运行证据与算法优劣分别讨论，避免把界面可用直接解释为策略有效。
 
+\section{前端页面架构与交互设计}
+Vue端通过接口封装调用Java服务，组件承担任务配置、指标解析与图表展示。界面以任务选择为分析入口，选择任务后加载其评估指标、导出数据、CHESCA轨迹和配置。表\ref{tab:frontend-pages}列出实际接口名称，不将功能分区写成不存在的独立页面。
 \begin{table}[!htbp]
-    \centering\bicaption{前端四大核心页面功能布局与后端通信接口一览表}{Summary of functional layouts and backend API endpoints for the four core frontend pages}
-    \label{tab:frontend-pages}
-    \begin{tabular}{P{5.8em}P{5.7em}P{9.2em}P{8.5em}}
-        \toprule
-        页面名称 & \makecell{页面路由\\路径} & 核心功能区域划分 & 调用的后端接口与更新方式 \\\midrule
-        系统首页 & \texttt{/dashboard} & 社区建筑与任务统计卡片、核心功能快捷入口、平台操作流程引导图 & \texttt{GET /api/summary}（进入页面加载） \\
-        参数配置页 & \texttt{/config} & 数据集与算法选择框、四组折叠参数面板、在线代码编辑器、任务状态列表 & \texttt{POST /api/tasks}（提交）+\texttt{GET}进度（5秒轮询） \\
-        能源与KPI页 & \texttt{/analysis} & 多任务KPI对比柱状图、五维归一化雷达图、负荷与电价时序曲线、数据导出 & \texttt{GET /api/kpis}（切换勾选任务时即时刷新） \\
-        决策过程页 & \texttt{/trajectory} & 建筑与小时步选择器、基线/残差/最终动作三轨对比图、室温与电池SOC联动图 & \texttt{GET /api/trajectory}（切换楼宇或时段时加载） \\
-        \bottomrule
-    \end{tabular}
+\centering
+\bicaption{主要前端功能及实际接口}{Frontend functions and actual API methods}
+\label{tab:frontend-pages}
+\begin{tabular}{P{7em}P{12em}P{10em}}
+\toprule
+功能 & 接口方法名 & 数据与用途 \\ \midrule
+任务管理 & \texttt{getAllPyTaskList} & 任务列表与状态 \\
+任务编排 & \texttt{createPipelineTask} & 创建配置记录 \\
+执行编排 & \texttt{executePipelineTask} & 启动训练和评估链路 \\
+结果详情 & \texttt{getDashboard}\allowbreak\texttt{SimulationDetail} & 按任务读取评估指标及轨迹 \\
+脚本摘要 & \texttt{getPyFileKpiRows} & 按脚本查询评估指标 \\
+首页能源 & \texttt{getHomeEnergyFlow} & 任务及时间范围内的能源流向 \\
+\bottomrule
+\end{tabular}
 \end{table}
+任务管理与结果展示功能分别封装，供前端页面调用。仿真结果展示区域汇总任务运行结果，指标分析区域呈现评估指标，控制轨迹区域展示各时刻的决策变化；任务配置窗口用于填写训练与评估设置，脚本编辑器用于查看和编辑算法脚本。
 
 \subsection{系统首页设计}
-系统首页作为用户登录后的第一站，顶部摆放社区建筑总数、已接入数据集个数、已登记控制算法数量与历史完成实验总数的统计卡片；中部提供“浏览数据集”、“新建仿真任务”、“多任务指标对比”与“高峰时刻决策诊断”四个一键跳转卡片；底部用清晰的流程图提示用户标准实验步骤，降低初次使用者的操作门槛。
+首页以能源流向和环境信息帮助用户了解选定任务的运行状态。能源流图需标明统计窗口与单位，累计电量使用kWh，逐时功率或等效平均功率使用kW。两类量不能因每步为一小时而在图注中混写。任务选择和时间范围切换决定图中数据来源，界面中的日历日期也不能自动代表仿真数据的年度。
 
 \subsection{算法与数据集配置页面设计}
-配置页面采用“先选数据集和控制器类型，再自动展示对应参数”的智能联动设计，五类可选控制器的差异详见表\ref{tab:baselines}：
-\begin{itemize}
-    \item 当用户选择纯分层规则基线时，页面只显示负荷脉冲软门控下限$m_{\text{下限}}$与上限$m_{\text{上限}}$等规则参数，自动隐藏强化学习训练轮数等无关选项；
-    \item 当选择CHESCA-ResMARL：先验引导残差混合控制时，页面自动展开残差幅度上限$\alpha$、三维动作通道屏蔽掩码与安全门控开关，并强制检查用户选择的预训练模型文件是否与目标数据集的建筑栋数一致；
-    \item 当选择MARL：端到端区域协同多智能体控制时，页面展开训练总轮数、评估间隔轮数、区域峰值惩罚权重、经验回放池大小与多步累积回报步数等训练参数。
-\end{itemize}
-页面右侧内置代码查看与编辑窗口，研究人员可在该窗口直接检查或微调 Python 脚本；点击“提交运行”后，下方任务表格每隔 5 秒自动刷新一次当前训练轮数和最佳削峰指标。
+配置界面将训练脚本、评估脚本及各自参数组织为配置卡。数据集选择最终转换为脚本使用的环境定义，参数显示名与命令行键分开。对于复用历史模型的操作，前端通过脚本标识筛选候选训练任务，减少不同算法模型混用。
 
-\subsection{能源与KPI分析页面设计}
-能源与KPI分析页面采用左右分栏设计：左侧支持同时勾选多个历史完成的仿真任务，利用ECharts绘制分组柱状图与五维雷达图\cite{echarts2024}，将不同策略在全时段峰值、日均峰值、电度电费、碳排放与负荷爬坡率五个维度上的优劣并排呈现；右侧结合分时电价背景色带（平谷期浅色、高电价期深色），绘制社区总负荷与光伏发电随时间变化的折线图，并支持将对比数据一键导出为CSV表格。
+页面创建任务后形成待执行记录，执行操作再交给后端编排。该设计允许用户在耗时计算开始前检查配置。不同控制器支持的参数依赖脚本登记和参数定义，不能将所有参数表述为任意控制器均适用。
+
+\subsection{能源与评估指标分析页面设计}
+指标面板将建筑与社区结果分开，并支持多个任务的比较。比较前应统一数据窗口、控制模式和评价定义。社区不适比例是汇总结果，不能代替逐栋舒适约束；相对峰值与绝对峰值也需分别标注。
+
+能源明细用于核查购售电与储能使用时段。费用差异可能同时受到负荷变化、温控和电池行为影响，页面展示可帮助定位这些变化，但不会自动完成控制变量实验或因果归因。
 
 \subsection{决策过程页面设计}
-决策过程页面专门用来把强化学习的决策摊开。页面将单栋建筑在每个小时步的动作拆解为三条并排曲线：分层规则基线动作$a_{\text{基线}}$、强化学习残差修正量$\delta$以及经过三层安全防护裁剪后的最终动作$a_{\text{最终}}$，并在下方同步对齐展示该建筑同一小时的室内温度、目标温度、电池剩余电量（SOC）与当步电价。鼠标悬停在晚间用电尖峰时刻时，几张图表同步显示该小时的具体数值，记录控制器提前储电、尖峰时刻协同放电压低社区峰值的过程。
+决策过程视图按建筑和时间步读取轨迹。规则内部的动作初稿与回写动作描述CHESCA自身流程，残差字段描述学习策略接入后的变化，二者不能互相替代。对含残差的任务，分析时需核对是否启用残差、幅度、跳过原因、基线和最终动作。
+
+轨迹步号还需要与状态时间区分。动作发生在状态转移之前，导出负荷可能表示执行后结果。分析人员应使用字段说明和相邻状态确定对应关系，不能仅以图表从零编号就认定不存在时序错位。
 
 \section{实验数据集管理与多控制器统一接入实现}
 \subsection{实验数据集来源与标准化预处理}
-实验数据的真实性是评估算法可比性的前提。本平台接入的实验数据源自美国加利福尼亚州真实零净能耗住宅社区的实测运行记录与典型气象年数据（由国际开源基准CityLearn整理发布\cite{citylearn2020,citylearn2024}）。每栋住宅均配备了冷暖空调热泵、生活热水储水箱、屋顶太阳能光伏板以及户用磷酸铁锂蓄电池（单楼电池容量为$3.2\text{ kWh}$、最大充放电功率为$2.7\text{ kW}$）。在将原始测量数据导入平台前，统一执行三步标准化预处理：
-\begin{enumerate}
-    \item 时间粒度统一按小时对齐：将原本按分钟记录的电表功率数据汇总转换为以1个小时为1步的逐时用电量数据（单位：$\text{kWh}$），例如连续测试30天即对应约$30 \times 24 = 720$个小时步的月度测试期。
-    \item 缺失值插补与物理边界检查：对传感器偶发的单点缺失采用前后相邻小时线性插值补齐，并严格检查所有电池剩余电量（SOC）是否在$[0, 1]$之间、不可调家电负荷与光伏发电功率是否均大于等于$0$。
-    \item 按测试目的划分为四套直观的中文命名数据集（具体用途见表\ref{tab:datasets}）。
-\end{enumerate}
+平台复用CityLearn提供的环境定义及其引用的数据文件\cite{citylearn2020}。CityLearn的后续版本也用于核对平台所接入的接口\cite{citylearn2024}。本文主要证据来自2023年挑战赛第二阶段本地数据，历史在线运行用于补充观察。平台负责登记、选择和读取数据资源，不把数据发布方完成的测量、插值或分钟聚合写成本项目的预处理工作。
 
+数据身份由环境定义、建筑集合、时间范围和文件版本共同确定。本地数据窗口有720个状态位置，对应完整回合中的719次状态转移；较长的在线数据窗口有2208个状态位置，对应2207次动作。论文分别记录状态数和动作数，不把两者混写成训练样本数。建筑设备容量以各楼环境定义为准，不假定所有电池容量相同。
 \begin{table}[!htbp]
-    \centering\bicaption{本文实验使用的四套标准社区数据集具体情况与测试用途一览表}{Summary of specifications and experimental purposes of the four standard community datasets}
-    \label{tab:datasets}
-    \begin{tabular}{P{5.9em}P{3.1em}P{5.8em}P{5.9em}P{7.4em}}
-        \toprule
-        本文中文数据集名称 & 建筑数 & 测试时长 & 气候与特殊压力事件 & 在本文实验中的核心测试用途 \\\midrule
-        标准月度评估集 & 3栋 & 连续30天（约720小时） & 盛夏酷热期（含第17天电网突发停电压力测试） & 核心主实验数据集：用于训练和对比所有控制算法的削峰、节费与舒适度表现 \\
-        长周期三月评估集 & 3栋 & 连续约92天（2208小时） & 完整整个夏季（6月至8月连续高温） & 跨时长稳定性测试：检验30天训练出的策略在3倍长周期夏季中的持续削峰能力 \\
-        六建筑扩容测试集 & 6栋 & 连续30天（约720小时） & 盛夏酷热期（社区建筑规模翻倍至6栋） & 跨规模扩展性测试：检验建筑数量翻倍后策略的零样本迁移与用电特征自适应能力 \\
-        全年跨季节测试集 & 3栋 & 完整1年（8760小时） & 覆盖春夏秋冬四季（含寒冷冬季采暖负荷） & 跨季节边界测试：检验仅针对夏季制冷设计的控制器在冬季采暖场景下的适用边界 \\
-        \bottomrule
-    \end{tabular}
+\centering
+\bicaption{数据资源与本文使用范围}{Data resources and scope of use}
+\label{tab:datasets}
+\begin{tabular}{P{7em}P{10em}P{12em}}
+\toprule
+资源 & 身份与时间窗口 & 本文用途 \\ \midrule
+2023年本地数据 & 第二阶段本地数据；720个状态 & 残差幅度消融与历史算法比较 \\
+2023年在线数据 & 第二阶段在线数据；2208个状态 & 已有长窗口结果及环境诊断 \\
+扩规模资源 & 需单独登记建筑、环境定义与版本 & 说明兼容与迁移评估条件 \\
+其他年度资源 & 与2023数据分开标识 & 不混入本章2023定量比较 \\
+\bottomrule
+\end{tabular}
 \end{table}
+历史在线数据已用于多次观察和参数分析，因此不能重新称为未接触的独立测试集。跨规模与全年资源不能仅凭名称视为同分布扩展，其设备、季节及动作通道需要另行核对。
 
 \subsection{对比基准与本文多智能体控制器统一注册}
-对照基准需在统一接口下调度，后端通过统一的控制器注册表（\texttt{ControllerRegistry}）将三类传统/先验基准与本文提出的两类多智能体控制方案封装为标准接口，具体对比如表\ref{tab:baselines}所示。
-
+平台通过算法脚本信息表登记可用脚本，并由任务配置选择执行入口；具体控制器由Python程序实现。不同执行入口需约定配置、模型和结果文件的格式，才能由同一看板读取和分析。
 \begin{table}[!htbp]
-    \centering\bicaption{平台统一接入的五类对比基准与多智能体控制器一览表}{Summary of five baseline and multi-agent controllers uniformly integrated into the platform}
-    \label{tab:baselines}
-    \begin{tabular}{P{9.0em}P{5.3em}P{8.3em}P{8.0em}}
-        \toprule
-        控制器中文名称 & 控制类别 & 核心控制逻辑简述 & 在本文实验中的定位与作用 \\\midrule
-        无控制参考基准 & 物理基准 & 蓄电池与热水储罐完全停用，仅靠空调维持基本室温 & 作为所有归一化指标（式\ref{eq:kpi-norm}）的分母基准（各项指标恒为$1.0000$） \\
-        \makecell{传统冷热电\\规则控制} & 简单规则 & 按一天24小时固定时间表充放电（如早晚固定充放） & 检验不看实时负荷与电价的传统死板规则在社区中的表现 \\
-        分层规则基线 & 专家规则 & 24h负荷预测 + 本地PID温控 + 社区电池A*树搜索 + 本文脉冲软门控与热水修复 & 本文第一条路线的高水平安全底座，提供极强的确定性削峰基准 \\
-        \makecell{CHESCA-ResMARL：\\先验残差混合控制} & 混合智能 & 在分层规则基线之上叠加多智能体残差修正$\delta$，配齐三层安全防护 & 本文核心方法一：面向有专家规则场景，验证零热舒适越界保证与同策略（IPPO）更新归因 \\
-        \makecell{MARL：区域\\协同多智能体} & 纯强化学习 & 完全不用分层规则基线，靠9维区域特征 + 买电责任归因与峰值目标 + 20万大回放池与3步回报从零学习 & 本文核心方法二：面向无先验规则场景，验证纯多智能体自主协同削峰与电度省钱能力 \\
-        \bottomrule
-    \end{tabular}
+\centering
+\bicaption{控制器类别及比较职责}{Controller categories and comparison roles}
+\label{tab:baselines}
+\begin{tabular}{P{7em}P{10em}P{12em}}
+\toprule
+控制器 & 动作来源 & 比较时应明确的条件 \\ \midrule
+零动作/简单规则 & 固定动作或时间表 & 不等同于所有官方评估指标的反事实分母 \\
+原CHESCA & 预测、局部控制与社区规划 & 标明原方法归属和版本 \\
+增强CHESCA & 规则调整及统一环境适配 & 作为残差的直接对照 \\
+CHESCA-ResMARL & 同一基线叠加受限学习修正 & 保持基线、环境及配置一致 \\
+纯MARL & 策略直接产生控制动作 & 单独记录观测、奖励和保护条件 \\
+\bottomrule
+\end{tabular}
 \end{table}
-
 \section{运行日志的自动化解析与归档实现}
-Python 仿真进程在后台运行时，会产生两类输出信息：一类是打印在控制台里的实时文字日志，另一类是保存在任务文件夹里的结构化结果文件。后端设计了双通道解析归档器来自动处理这两类信息，流程如图\figref{日志归档流程图}所示。
+后端利用Python进程日志与导出文件两类信息组织结果。进程输出用于判断执行过程和捕获错误；表格数据文件与结构化配置文件用于后续分析。二者互为补充，日志中出现指标文本不能替代完整结果文件，也不代表全部约束已经验收。
+
 \begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.88\textwidth]{./images/pictures/日志归档流程图.png}
-    \centering\bicaption{仿真运行日志与评估指标自动化解析归档流程图}{Flowchart of automated parsing and archiving for simulation logs and evaluation KPIs}
-    \label{日志归档流程图}
+\centering
+\includegraphics[width=0.98\textwidth]{images/architecture_20261104/artifact_flow.pdf}
+\bicaption{任务日志、文件与可视化的数据链路}{Data path from process logs and artifacts to visualization}
+\label{日志归档流程图}
 \end{figure}
 
-具体实现包含三个步骤：
-\begin{enumerate}
-    \item 训练期间的原子进度更新：在100轮强化学习训练过程中，Python端每完成一次评估，就把当前轮数、总轮数和历史最佳峰值比写入临时进度文件，再通过操作系统原子替换指令瞬间发布为最新版本，确保Java后端每隔5秒读取时不会读到写了一半的残缺文件。
-    \item 任务结束后的指标自动归档：当仿真进程正常结束时，Java后端的日志解析器自动读取任务文件夹下的评估指标汇总文件（含全时段峰值比、日均峰值比、电度成本比、碳排放比、爬坡率比、热舒适越界率等关键指标）与社区评估摘要文件（包含关键小时步的电池充放电与室温等摘要），将上述指标自动批量归档到任务专属输出目录。
-    \item 异常报错的自动捕获与留痕：如果Python进程因参数配置错误等原因中途失败，后端立即将数据库中的任务状态更新为“失败”，并将最后50行错误堆栈保存到错误日志文件中，前端页面可点击该记录查看完整报错原因。
-\end{enumerate}
+当前配置下，任务产物位于按任务标识命名的目录中。研究脚本直接生成的结果目录是另一条实验路径，不能默认其中内容都存在网页任务记录中。后端会解析任务目录或其下符合导出文件约定的子目录，读取评估指标、建筑数据、配置与决策轨迹。
+
+后端的指标保存程序从日志标记后解析建筑与社区指标，按脚本标识写入数据库指标汇总表。该程序会删除同一脚本的旧摘要后写入新值，因此表中保存的是最新摘要；任务级历史仍由文件保存。不同建筑数量的导出兼容性需要单独验证，当前解析程序预设的建筑行不能证明任意规模均可直接接入。
 
 \section{数据库表结构设计与文件混合存储实现}
-查询速度与存储空间往往难以兼得。本系统将第3章设计的概念模型转化为MySQL关系表与磁盘CSV文件相结合的双层存储结构：高频查询的摘要信息存入MySQL数据库表（代表性核心表结构如表\ref{tab:db-task}、表\ref{tab:db-kpi}与表\ref{tab:db-param}所示），而动辄数万行的逐小时设备功率与动作轨迹则保存为磁盘上的CSV文件，数据库中仅记录文件的存放路径。
-
+实际表结构由MySQL只读查询核对。表\ref{tab:db-task}列出任务表的主要字段，表\ref{tab:db-kpi}说明评估指标汇总表的结构，表\ref{tab:db-param}区分配置值、参数定义与分组。下表列示代表性字段和用途，不将程序中的逻辑关联写成数据库已经建立的物理外键。
 \begin{table}[!htbp]
-    \centering\bicaption{仿真任务主表（\texttt{simulation\_task}）物理字段结构定义}{Physical field structure definition of the simulation task table}
-    \label{tab:db-task}
-    \begin{tabular}{P{6.3em}P{6.6em}P{2.8em}P{3.1em}P{8.6em}}
-        \toprule
-        字段名 & 数据类型 & 主键 & 允许空 & 字段中文含义与状态说明 \\\midrule
-        \texttt{task\_id} & \texttt{VARCHAR(64)} & 是 & 否 & 全局唯一任务编号（UUID字符串） \\
-        \texttt{task\_name} & \texttt{VARCHAR(128)} & 否 & 否 & 用户自定义的任务名称（如“MARL\_种子3”） \\
-        \texttt{dataset\_id} & \texttt{INT} & 否 & 否 & 关联的数据集编号（外键） \\
-        \texttt{script\_id} & \texttt{INT} & 否 & 否 & 关联的控制器脚本编号（外键） \\
-        \texttt{status} & \texttt{TINYINT} & 否 & 否 & 运行状态：运行中、已完成、失败 \\
-        \texttt{output\_dir} & \texttt{VARCHAR(255)} & 否 & 否 & 该任务专属输出文件夹在磁盘上的路径 \\
-        \texttt{created\_at} & \texttt{DATETIME} & 否 & 否 & 任务提交创建时间 \\
-        \bottomrule
-    \end{tabular}
+\centering
+\bicaption{任务表py\_task的主要字段}{Main fields in py\_task}
+\label{tab:db-task}
+\begin{tabular}{P{9em}P{8em}P{12em}}
+\toprule
+字段 & 实际类型 & 用途 \\ \midrule
+\texttt{id} & \texttt{varchar(64)} & 任务主键 \\
+\texttt{py\_id} & \texttt{varchar(64)} & 关联脚本标识 \\
+\texttt{status} & \texttt{int} & 运行、成功、失败及其他生命周期状态 \\
+\texttt{task\_name} & \texttt{varchar(128)} & 用户指定的任务名称 \\
+\texttt{type/is\_subtask} & \texttt{tinyint(1)} & 编排类型与子任务标记 \\
+\texttt{config} & \texttt{text} & 当前任务的结构化配置 \\
+\texttt{train\_config} & \texttt{text} & 保留的训练配置字段 \\
+\texttt{eval\_config} & \texttt{text} & 保留的评估配置字段 \\
+\texttt{create\_time} & \texttt{datetime} & 任务创建时间 \\
+\texttt{if\_delete/if\_show} & \texttt{bit/tinyint} & 逻辑删除与看板展示标记 \\
+\bottomrule
+\end{tabular}
 \end{table}
 
 \begin{table}[!htbp]
-    \centering\bicaption{评估指标汇总表（\texttt{kpi\_result}）物理字段结构定义}{Physical field structure definition of the KPI result summary table}
-    \label{tab:db-kpi}
-    \begin{tabular}{P{6.3em}P{6.6em}P{2.8em}P{3.1em}P{9.8em}}
-        \toprule
-        字段名 & 数据类型 & 主键 & 允许空 & 字段中文含义与计算方式说明 \\\midrule
-        \texttt{id} & \texttt{BIGINT} & 是 & 否 & 自增主键编号 \\
-        \texttt{task\_id} & \texttt{VARCHAR(64)} & 否 & 否 & 所属仿真任务编号（建立索引加速查询） \\
-        \texttt{kpi\_name} & \texttt{VARCHAR(64)} & 否 & 否 & 指标名称（如峰值比、成本比、越界率等） \\
-        \texttt{kpi\_value} & \texttt{DOUBLE} & 否 & 否 & 相对于无控制基准的归一化比值 \\
-        \texttt{level\_scope} & \texttt{VARCHAR(32)} & 否 & 否 & 统计范围：\texttt{district}（全社区）或单栋建筑 \\
-        \bottomrule
-    \end{tabular}
+\centering
+\bicaption{评估指标汇总表的宽表结构}{Wide-table structure of evaluation metrics}
+\label{tab:db-kpi}
+\begin{tabular}{P{11em}P{7em}P{11em}}
+\toprule
+字段或字段组 & 实际类型 & 含义 \\ \midrule
+\texttt{id} & \texttt{bigint} & 自增主键 \\
+\texttt{name} & \texttt{varchar(64)} & 建筑或District名称 \\
+\texttt{agent\_type} & \texttt{varchar(64)} & 写入时使用脚本标识 \\
+\texttt{all\_time\_peak}\allowbreak\texttt{\_average} & \texttt{decimal(8,5)} & 全时段峰值指标 \\
+\texttt{cost\_total} & \texttt{decimal(8,5)} & 费用指标 \\
+\texttt{discomfort}\allowbreak\texttt{\_proportion} & \texttt{decimal(8,5)} & 不适比例 \\
+其余评价列 & \texttt{decimal(8,5)} & 碳排、日峰、爬坡和供能等指标 \\
+\bottomrule
+\end{tabular}
 \end{table}
-
+该汇总表没有任务标识字段，也不是按“指标名称—指标值”逐项存储的表，因此无法单独恢复同一脚本历次运行的评估结果。后端任务详情优先读取本任务导出的评估指标文件；文件缺失或解析失败时，程序可能回退到脚本最新摘要。回退结果可能与该任务的历史轨迹不属于同一次运行，因此比较实验时需核实文件是否存在、任务身份和结果来源。
 \begin{table}[!htbp]
-    \centering\bicaption{算法运行参数配置表（\texttt{algorithm\_parameter}）物理字段结构定义}{Physical field structure definition of the algorithm parameter configuration table}
-    \label{tab:db-param}
-    \begin{tabular}{P{6.3em}P{6.6em}P{2.8em}P{3.1em}P{9.3em}}
-        \toprule
-        字段名 & 数据类型 & 主键 & 允许空 & 字段中文含义与用途说明 \\\midrule
-        \texttt{param\_id} & \texttt{BIGINT} & 是 & 否 & 自增主键编号 \\
-        \texttt{task\_id} & \texttt{VARCHAR(64)} & 否 & 否 & 关联的仿真任务编号 \\
-        \texttt{param\_key} & \texttt{VARCHAR(64)} & 否 & 否 & 参数英文键名（如 \texttt{residual\_alpha}、\texttt{sac\_n\_step}） \\
-        \texttt{param\_value} & \texttt{VARCHAR(128)} & 否 & 否 & 参数设定值（统一转为字符串保存） \\
-        \texttt{param\_group} & \texttt{VARCHAR(32)} & 否 & 是 & 所属面板分组（基线组/残差组/区域协同组） \\
-        \bottomrule
-    \end{tabular}
+\centering
+\bicaption{配置相关表与任务配置文件的职责}{Responsibilities of configuration tables and task configuration files}
+\label{tab:db-param}
+\begin{tabular}{P{11em}P{9em}P{9em}}
+\toprule
+存储对象 & 关键字段 & 作用 \\ \midrule
+\texttt{algorithm\_config} & \makecell{\texttt{config\_key}\\\texttt{config\_value}} & 算法参数取值库 \\
+\texttt{algorithm\_param}\allowbreak\texttt{\_config} & \makecell{\texttt{param\_name}/\\\texttt{value\_type}} & 可选参数定义目录 \\
+\texttt{algorithm\_param}\allowbreak\texttt{\_config\_set} & \texttt{members} & 参数分组定义 \\
+\texttt{py\_task.config} & 结构化配置文本 & 本次任务的实际配置 \\
+任务文件目录 & 任务ID约定路径 & 保存历史文件 \\
+\bottomrule
+\end{tabular}
 \end{table}
-
 \section{多智能体算法集成与异步任务调度实现}
-单次 100 轮 MARL 训练需十余分钟，远超浏览器连接容忍时长。系统因此引入基于后台线程池与独立进程隔离的异步任务调度机制，前后端与 Python 算法进程的交互时序如图\figref{异步调度时序图}所示。
+训练可能超过一次HTTP请求的合理等待时间，后端因此将任务记录与Python执行分开。创建接口保存待执行任务；执行接口启动编排，训练和评估作为子任务依次运行。Java使用\texttt{ProcessBuilder}构造进程、工作目录和参数，并保存日志、进程标识及退出记录。
+
 \begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.90\textwidth]{./images/pictures/异步调度时序图.png}
-    \centering\bicaption{前后端与Python多智能体训练进程的异步任务调度时序图}{Sequence diagram of asynchronous task scheduling between frontend, backend, and Python MARL process}
-    \label{异步调度时序图}
+\centering
+\includegraphics[width=0.98\textwidth]{images/architecture_20261104/task_sequence.pdf}
+\bicaption{训练与评估编排的实际执行顺序}{Execution order of training and evaluation orchestration}
+\label{异步调度时序图}
 \end{figure}
 
-整个异步调度过程分为四步：
-\begin{enumerate}
-    \item 任务创建与快照隔离：用户在网页点击“提交任务”后，Spring Boot后端先检查数据集与模型建筑数是否匹配；检查通过后立即生成任务编号、在数据库中插入一条状态为“运行中”的记录，并在磁盘上创建该任务专属的文件夹，将用户当前填写的参数和脚本复制一份存为快照，随即向前端返回“提交成功”。
-    \item 后台拉起确定性Python子进程：后端异步线程池接手该任务，通过 Java 进程构建器启动独立的Python子进程，并在启动环境变量中强制注入进程哈希种子（取值为0），消除多智能体字典遍历顺序带来的随机分岔。
-    \item 前端周期轮询实时进度：在Python子进程训练期间，前端页面每隔5秒调用一次进度查询接口，后端直接读取任务文件夹下的训练进度文件并返回当前训练到了第几轮、当前最佳全时段峰值是多少，实现流畅的进度条展示。
-    \item 最优检查点恢复与结果归档：训练到达设定轮数后，Python程序自动重新加载整个训练过程中表现最好的检查点权重（Best Checkpoint），跑完一遍完整评估并生成评估指标汇总文件与逐时动作轨迹文件；Java后端监听到进程结束后，自动将所有评估指标与逐时轨迹归档到任务专属输出目录，并将任务状态更新为“已完成”。
-\end{enumerate}
+前端通过查询接口更新列表和结果。能够看到的训练细节取决于脚本是否导出相应日志或进度信息，不能认为所有脚本均有同一种轮次曲线。检查点的保存、选择和恢复也由具体训练入口负责；平台传递模型来源，不替代算法内部的选模协议。
+
+随机种子需在实际Python进程启动时生效。对命令行入口验证过的设置，不能自动推广到Java调用入口。异常处理同样需要区分参数校验失败、进程启动失败、训练中断和结果缺失，这些阶段的日志对系统运维具有不同作用。
 
 \section{前端系统功能实现与运行界面展示}
-前述各模块经联调后落地为可运行系统，本节按页面截图逐一展示。
+本节通过运行界面说明能源分析、任务编排、动作查看和脚本管理的交互方式。图中选定任务与时间范围属于界面示例，不作为第5章算法实验的统一数据来源。占位示意图不作为运行截图使用。
 
 \subsection{系统首页与全局导航}
-平台登录后的首页左侧为导航菜单栏，右侧上方展示当前接入的社区建筑规模、数据集数量与历史实验任务统计卡片，下方提供快速创建实验与查看分析报告的操作引导。首页核心区块“能源分配”以桑基图形式呈现选定时间窗内太阳能、电网、家庭负荷与蓄电池四类节点之间的能量流向与逐时吞吐，可直观判断某一时段社区用电究竟来自光伏、电网还是电池放电，运行界面如图\figref{能源分配桑基图}所示。
+图\ref{能源分配桑基图}展示了能源流向与环境信息。图中太阳能、电网、家庭和电池节点表达指定统计窗口内的电量分配，用户可据此检查光伏利用及电网购电。能源流向用于解释选定任务的用电构成，算法效果另按第5章的同条件实验评价。本轮在实际运行的系统中切换建筑和日期，能源数值与室内信息随选择变化。首页使用日历日期展示统计窗口，页面尚未完整呈现数据集定义和任务来源，不能据图中日期认定数据属于相同年度的观测。
 \begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.86\textwidth]{./images/pictures/能源分配桑基图.jpg}
-    \centering\bicaption{系统首页能源分配桑基图——太阳能、电网、家庭与电池四节点能量流向与吞吐}{System dashboard energy-allocation Sankey: energy flow and throughput among solar, grid, home, and battery}
-    \label{能源分配桑基图}
+\centering
+\includegraphics[width=0.92\textwidth]{images/evidence_20261104/13_home_desktop.png}
+\bicaption{能源流向与环境信息运行界面}{Energy-flow and environmental-information interface}
+\label{能源分配桑基图}
 \end{figure}
-
 \subsection{模型参数配置与任务提交}
-算法与数据集配置页面顶部提供以中文命名的数据集与控制器下拉框，选定控制器后下方自动展开对应的分组参数表单（如脉冲分级阈值、残差幅度$\alpha$、区域峰值权重与经验池大小），右侧支持直接查看或微调执行脚本。参数填写完毕后点击“新建任务”，弹出“训练 $\to$ 评估”两步编排窗口：第一步选择训练脚本与训练配置，第二步选择评估脚本与评估配置，两步均填写完毕才生成一条新任务记录，避免误点造成孤立任务，如图\figref{新建任务弹窗}所示。
+图\ref{新建任务弹窗}为训练与评估配置窗口，包含任务名称、两类脚本及其配置入口。“创建”与“执行”是不同操作，创建记录并不代表已开始训练。该图使用区域MARL脚本说明编排交互，并不表示所有控制器都必须经历训练阶段。图中评估脚本尚未选择，点击创建时前端提示“请选择评估脚本”，本次检查未新增任务。
 \begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.78\textwidth]{./images/pictures/新建任务弹窗.jpg}
-    \centering\bicaption{新建任务——训练与评估两步编排弹窗界面}{New task: two-step train-then-evaluate orchestration popup}
-    \label{新建任务弹窗}
+\centering
+\includegraphics[width=0.92\textwidth]{images/evidence_20261104/12_task_creation_desktop.png}
+\bicaption{训练与评估任务创建窗口}{Creation dialog for a training-evaluation task}
+\label{新建任务弹窗}
 \end{figure}
+图\ref{fig:runtime-parameter-card}进一步展示训练配置卡，可查看数据集、训练轮数、评估间隔和随机种子。图中保留了系统已有的历史默认值，其中评估项指向在线数据资源，仅用于说明配置交互。本文当前训练与模型选择应按已登记的本地数据协议执行，不能将默认界面截图当作实验配置凭据。
 
-\subsection{能源分析与多任务KPI对比}
-能源与KPI对比分析页面支持同屏勾选多组已完成任务，通过分组柱状图与五维雷达图对比各策略在全时段峰值、日均峰值、电度电费、碳排放与负荷爬坡率五个维度上的表现，并同步展示社区逐小时净负荷曲线与分时电价的对应关系。在“模型优选”区选中某一任务后，平台联动弹出该任务对应的逐时电网购售电柱图与电费核算明细，可据此判断不同控制器在峰谷时段的实际套利行为，如图\figref{模型优选-电网详情弹窗}所示。
 \begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.62\textwidth]{./images/pictures/模型优选-电网详情弹窗.jpg}
-    \centering\bicaption{模型优选——社区电网逐时购售电与电费核算弹窗界面}{Model selector: per-step community grid import/export and electricity-bill accounting popup}
-    \label{模型优选-电网详情弹窗}
+\centering
+\includegraphics[width=0.96\textwidth]{images/evidence_20261104/11_parameters_desktop.png}
+\bicaption{算法参数配置运行界面（历史默认值示例）}{Runtime algorithm-parameter card with historical defaults}
+\label{fig:runtime-parameter-card}
 \end{figure}
+\subsection{能源分析与多任务评估指标对比}
+图\ref{模型优选-电网详情弹窗}展示选定结果的逐时购售电明细。柱状图可以帮助检查储能是否在高价时段放电、是否发生向外送电。该图仅为能源明细，不能替代多任务评估指标比较图。指标比较功能由指标面板组织，其结果需要结合任务文件来源和统一分母核查。
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.70\textwidth]{images/pictures/模型优选-电网详情弹窗.jpg}
+\bicaption{选定结果的逐时电网购售电明细}{Hourly grid import and export for a selected result}
+\label{模型优选-电网详情弹窗}
+\end{figure}
+图\ref{fig:runtime-kpi-comparison}展示两个历史CHESCA任务的评估指标并排视图。建筑列与社区列分别保留，缺失值以横线表示。对两个任务的社区峰值和费用共四个显示值逐项核对，均与接口及各自任务结果文件中的三位小数值一致。该检查验证数值传递与展示，没有将这两个历史任务视为控制变量一致的消融实验。差值视图用于查看变化方向，收益判断还需结合各指标的优化方向，不能只看红绿颜色。
 
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.96\textwidth]{images/evidence_20261104/08_kpi_side_by_side_desktop.png}
+\bicaption{两个历史任务的建筑与社区评估指标并排展示}{Building and community evaluation metrics displayed side by side for two archived tasks}
+\label{fig:runtime-kpi-comparison}
+\end{figure}
 \subsection{逐小时决策过程与环境状态联动查看}
-决策过程页面用于查看强化学习每一步的决策依据。研究人员选中具体楼宇并把时间轴定位到晚间用电高峰时段后，页面按“每步动作”视角将每栋建筑每小时的分层规则基线动作、强化学习残差修正量与最终执行动作叠加在同一坐标系中，可直接读出基线被修正的方向与幅度，界面如图\figref{决策推演-每步动作}所示。
+图\ref{决策推演-每步动作}的纵轴为动作值，各曲线对应不同建筑和设备的最终动作。它能展示动作随时间变化，却不能单独区分神经网络请求、规则初稿与约束投影。残差归因还需读取同一任务中的基线、修正与最终动作字段。
+
+表\ref{tab:trace-example}列示同一历史任务中第一栋建筑的电池动作。以该残差任务为例，首条记录的电池基线动作为0，实际残差约为$-0.146355$，最终动作为$-0.146355$，热水和温控残差均为0。这类记录可核查残差是否实际进入执行链路，但单条非零动作不能证明产生了削峰收益。该历史任务配置没有登记预存检查点，接口据此显示“缺 checkpoint”；运行日志另记录了20轮现场训练及完成信息。因此，缺少预存模型配置并不表示没有训练，而是现有归档缺少可独立识别、加载复核的模型来源。这组材料用于残差执行与导出验证，不作为训练增益的证据。第5章将进一步核查整段轨迹。
 \begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.92\textwidth]{./images/pictures/决策推演-每步动作.jpg}
-    \centering\bicaption{决策过程——基线、残差与最终动作的每步叠加可视化}{Decision trace: per-step overlay of baseline, residual, and final actions}
-    \label{决策推演-每步动作}
+\centering
+\includegraphics[width=0.92\textwidth]{images/evidence_20261104/07_final_actions_desktop.png}
+\bicaption{逐步最终动作运行界面}{Runtime interface for final actions at each step}
+\label{决策推演-每步动作}
 \end{figure}
+\begin{table}[!htbp]
+\centering
+\bicaption{同一历史任务的电池动作字段示例}{Battery-action fields from one archived task}
+\label{tab:trace-example}
+\begin{tabular}{P{5em}P{8em}P{8em}P{8em}}
+\toprule
+步号 & 基线动作 & 实际修正 & 最终动作 \\ \midrule
+0 & 0.000000 & -0.146355 & -0.146355 \\
+643 & 0.697500 & -0.146645 & 0.550855 \\
+669 & 0.598889 & -0.147063 & 0.451826 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{任务管理自动化流程与在线脚本编辑}
-图\figref{任务列表与脚本编辑界面}展示了历史仿真任务管理列表与在线脚本编辑弹窗。列表实时显示每个任务的运行状态、训练轮次进度与耗时，支持一键跳转至KPI分析页或打开代码弹窗对照检查该任务所使用的算法脚本快照。
-\begin{figure}[!htbp]
-    \centering
-    \includegraphics[width=0.90\textwidth]{./images/pictures/任务列表与脚本编辑界面.png}
-    \centering\bicaption{异步仿真任务状态监控列表与在线Python脚本编辑界面}{Asynchronous simulation task monitoring list and online Python script editor interface}
-    \label{任务列表与脚本编辑界面}
-\end{figure}
+图\ref{任务列表与脚本编辑界面}展示脚本列表与代码编辑视图。研究人员可查看脚本和执行记录，并在具备权限时编辑代码。该视图服务于脚本检查；父子任务的编排状态由任务管理功能组织。
 
+历史任务目录中可包含入口副本，但模型、算法模块和安装环境的版本仍需另行登记。对复现实验，保留代码文件并不足够，还应核对配置、环境修复开关和输出文件清单。
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.92\textwidth]{images/pictures/任务列表与脚本编辑界面.png}
+\bicaption{脚本管理与代码编辑运行界面}{Script management and code editor interface}
+\label{任务列表与脚本编辑界面}
+\end{figure}
+图\ref{fig:runtime-parent-child-tasks}展示已有父任务展开后的训练、评估子任务，三条记录均显示执行完成。本次通过查询接口核对了父任务标识、两类脚本及完成状态，并未重新执行该历史任务。界面状态说明归档的生命周期信息，不能代替对模型完整性、评估约束或算法优劣的检查。
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.96\textwidth]{images/evidence_20261104/10_task_children_desktop.png}
+\bicaption{历史父任务及训练、评估子任务的完成状态}{Archived parent task and completed training and evaluation subtasks}
+\label{fig:runtime-parent-child-tasks}
+\end{figure}
 \section{本章小结}
-本章按“前端—数据—后台—存储—调度—界面验收”的顺序完整阐述了可视化管理平台的工程实现。前端侧覆盖四个核心交互页面；数据侧完成加州社区实测数据的标准化预处理与四套数据集的命名规范化，控制器侧通过统一的注册表接入五类对比与自研策略；后台侧实现训练进度的原子化更新、评估指标的自动入库与异常报错的自动留痕；存储侧搭建 MySQL 关系表与 CSV 文件相结合的双层结构；调度侧构建确定性哈希种子注入与最佳检查点自动恢复机制；最后给出五张界面截图作为系统可运行的工程佐证。前述各项落地模块共同支撑了第 5 章两类 MARL 算法的可比、可复现实验。
+本章说明了配置、任务编排、Python执行、任务归档和Vue分析之间的实际调用关系。系统采用关系表与文件混合存储，任务历史以专属文件为主要依据，脚本级评估指标只承担摘要用途。实际运行检查覆盖能源流向、参数卡、任务创建校验、多个任务的指标并排与差值视图、最终动作和父子任务展示，并对部分接口结果与任务文件完成一致性核对。系统能够支持这些已验证的分析操作；模型来源缺失、任务文件回退与界面日期说明仍需完善。残差分解与实验结论需通过原始轨迹核查，不能由截图代替。
