@@ -4,7 +4,6 @@
 \RequirePackage{calc,etoolbox,expl3,xparse}
 
 \RequirePackage[x11names,svgnames,table,hyperref]{xcolor}
-\RequirePackage[colorlinks,breaklinks,linkcolor=black]{hyperref}
 \ProvideDocumentCommand{\sanhao}{}{\fontsize{16pt}{24pt}\selectfont}
 \ProvideDocumentCommand{\erhao}{}{\fontsize{22pt}{33pt}\selectfont}
 \ProvideDocumentCommand{\chuhao}{}{\fontsize{42pt}{80pt}\selectfont}
@@ -671,6 +670,8 @@ ABSTRACT \addcontentsline{toc}{chapter}{ABSTRACT}
 \titlespacing{\section}{0pt}{10pt}{10pt}
 \titlespacing{\subsection}{0pt}{10pt}{10pt}
 \titlespacing{\subsubsection}{0pt}{10pt}{10pt}
+% Load after titlesec so heading anchors move with titles at page breaks.
+\RequirePackage[colorlinks,breaklinks,linkcolor=black]{hyperref}
 
 
 \setlength{\textfloatsep}{1\baselineskip plus 0.2\baselineskip minus 0.5\baselineskip}

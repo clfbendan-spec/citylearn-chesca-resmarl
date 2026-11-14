@@ -1,107 +1,50 @@
-# 学位论文 LaTeX 工程
+# 学位论文源码
 
-《基于多智能体强化学习的建筑群节能控制策略及可视化研发》的 XeLaTeX 工程，基于北京科技大学
-学位论文模板（`ustbthesis.cls`）与 GB/T 7714-2015 参考文献样式。
+论文：《基于机器学习的建筑群能源管理与仿真评估平台设计与实现》。本目录按项目2026年11月15日修订与复核记录整理，保留完整正文及编译必需资源，附77页编译稿 `main.pdf`。
 
-当前编译结果：**92 页 / 6.4 MB**，0 编译错误，0 未定义引用。
+“精简”只指文件组成：不缩写论文内容，不修改实验数值。未收录历史章节备份、未引用插图、写作过程文档、临时检查产物或本机工具链。
 
-## 目录结构
+## 文件
 
-```
-thesis/
-├── main.tex                  主文件：封面信息、宏包、章节引入
-├── ustbthesis.cls            北科大论文模板（封面、页眉页脚、标题层级）
-├── gb7714-2015*.bbx/.cbx     国标参考文献样式（biblatex）
-├── gb7714-2015-gbk.def       GBK 编码映射
-├── contents/                 正文源文件
-│   ├── abstract.tex          中英文摘要
-│   ├── chap1.tex ~ chap6.tex 六章正文
-│   ├── dataset.tex           数据集与答辩信息
-│   ├── mresume.tex           作者简历
-│   └── thanks.tex            致谢
-├── images/
-│   ├── image/                封面图（校徽等）
-│   └── pictures/             正文插图（.pdf 矢量图 + .png 位图）
-├── scripts/                  插图生成脚本（matplotlib，可重跑）
-├── myrefs.bib                参考文献库
-└── README.md                 本文件
+- `main.tex`：封面信息、排版兼容设置和章节入口。
+- `contents/`：中英文摘要、六章正文、致谢、履历和论文数据集表。
+- `myrefs.bib`：参考文献库。
+- `ustbthesis.cls`、`gb7714-2015.*`、`gb7714-2015-gbk.def`：学校模板和引用样式。
+- `images/`：当前正文实际引用的插图及封面标识资源。图片中的PDF是源图，不应作为编译垃圾删除。
+- `build.ps1`、`build.bat`：XeLaTeX、Biber、XeLaTeX两次的完整编译流程。
+- `scripts/check_manuscript.py`：可选的正文环境、图片、标签和引用键静态检查，仅依赖Python标准库。
+
+## 编译
+
+需要XeLaTeX、Biber，以及ctex、xeCJK、tabu、titlesec、biblatex等宏包。正文使用宋体、黑体及Times New Roman；保持学校版式需准备相应字体。当前版本在Windows便携MiKTeX 26.5环境验证，保留2023 LaTeX兼容层处理旧版tabu表格；其他版本需重新检查页数及目录链接。
+
+工具已经加入PATH时：
+
+```powershell
+.\build.ps1
 ```
 
-## 编译方式
+或通过参数指定同一套工具链目录，避免混用不同安装：
 
-需安装 TeX Live（或 MiKTeX），并勾选 XeLaTeX、Biber、中文字体（推荐安装 Times New Roman / SimSun，
-否则模板会回退到 ctex 内置字体，个别圈号字符可能缺字形）。
+```powershell
+.\build.ps1 -TexBin 'C:\path\to\miktex\bin\x64' -Clean
+```
 
-```bash
-# 标准四步（顺序不能换：biber 必须在第二趟 xelatex 之后才能取到 .bcf）
-xelatex -interaction=nonstopmode main.tex
+也可以设置 `THESIS_TEX_BIN` 后运行 `build.bat`。编译原地生成 `main.pdf`，日志与辅助文件由Git忽略。
+
+其他系统可在本目录执行：
+
+```sh
+xelatex -interaction=nonstopmode -halt-on-error main.tex
 biber main
-xelatex -interaction=nonstopmode main.tex
-xelatex -interaction=nonstopmode main.tex
+xelatex -interaction=nonstopmode -halt-on-error main.tex
+xelatex -interaction=nonstopmode -halt-on-error main.tex
 ```
 
-或 `latexmk -xelatex main.tex`。
+可选静态检查：`python scripts/check_manuscript.py`。静态检查不能替代编译和页面检查。使用VS Code时可安装LaTeX Workshop，选择XeLaTeX及Biber流程，保持输出目录为当前目录。
 
-> ⚠️ **不要用 `latexmk -pdf`**：它会误选 pdflatex，报 `The xeCJK package requires XeTeX to function`。
->
-> ⚠️ 新增 `\label` 后第一趟编译必然报 `undefined references`，跑完四步即消失；若四步后仍 undefined，
-> 说明 label 拼写或所在环境（如 `\caption` 之外）有问题。
+## 当前稿件状态
 
-## 在 VS Code 里写论文（LaTeX Workshop）
+已修正证据表述、目录锚点、近空白页和数据集表留白，并完成学术润色。六种子统计来自保留的历史审计，部分原始运行摘要仍未恢复；不同评估协议的结果不直接推导共同基准下的优劣。
 
-推荐扩展只有一个：**LaTeX Workshop**（`James-Yu.latex-workshop`）。它提供语法高亮、命令补全、
-侧边栏大纲、保存即编译、SyncTeX 正反向同步和内置 PDF 预览，其余扩展都是锦上添花。
-
-配置已随仓库提供，两处各一份、内容一致：
-
-- `thesis/.vscode/settings.json` —— 在 VS Code 里**直接打开 `thesis/`** 时生效
-- `.vscode/settings.json`（仓库根）—— 打开整个仓库时生效
-
-| 操作 | 快捷键 |
-|------|--------|
-| 编译（latexmk: xelatex） | `Ctrl+Alt+B` |
-| 查看 PDF（右侧分栏，跟随光标） | `Ctrl+Alt+V` |
-| 源码 ↔ PDF 双向跳转 | `Ctrl+Alt+J`；PDF 上**双击**跳回源码 |
-
-> ★★ **不能给 `latex-workshop.latex.outDir` 设子目录（如 `%DIR%/out`）。**
-> `main.tex` 用 `\include{contents/*}`，在 `-output-directory` 模式下 xelatex 会去找
-> `out/contents/` 写子 `.aux`，目录不存在即报 `I can't write on file 'contents/abstract.aux'`
-> 并 `Emergency stop`——实测只出 6 页、**PDF 根本不生成**，界面上只剩一屏编译日志。
-> 必须保持 `"latex-workshop.latex.outDir": "%DIR%"`（原地输出）。
->
-> 另两项与"好用"直接相关：`autoClean.run` 必须为 `never`（否则每次保存都删掉 `.aux`/`.fdb_latexmk`，
-> latexmk 的增量编译失效，92 页每次全量重编）；`linting.chktex.enabled` 建议 `false`
-> （chktex 对中文全角标点、CJK 间距误报极多，会把"问题"面板刷满）。
-
-## 图表复现
-
-正文插图全部由脚本生成，改口径后可重跑（**不要**手改 png/pdf）：
-
-| 图 | 文件名 | 生成脚本 |
-|----|--------|----------|
-| 图 1-1 核心难题与改进方案 | `核心难题与改进方案.png` | `_redraw_fig1_1.py` |
-| 图 2-1 CHESCA 单步流程图 | `CHESCA单步流程图.png` | `scripts/gen_chesca_step_flow_fig.py` |
-| 图 2-2 三动作技术架构 | `CHESCA三动作技术架构.png` | `scripts/gen_placeholder_figs.py::fig_three_actions` |
-| 图 2-3 CHESCA-ResMARL 框架 | `CHESCA-ResMARL框架.png` | `scripts/gen_chesca_resmarl_framework_fig.py` |
-| 图 2-4 残差合成示意 | `残差合成图.png` | `_redraw_fig2_4.py` |
-| 图 5-1 算法实验流程 | `算法实验流程图.png` | `scripts/gen_placeholder_figs.py::fig_experiment_pipeline` |
-
-> ⚠️ `scripts/gen_placeholder_figs.py` 中的 `fig_residual_fusion()` 是**已废弃**的旧版图 2-4 生成器，
-> 直接跑该脚本的 `__main__` 会覆盖`_redraw_fig2_4.py` 的成果。请只调用需要的单个函数。
->
-> 脚本用 `Path(__file__).resolve().parent.parent / "images" / "pictures"` 定位输出目录，
-> 与正文 `\includegraphics` 的相对路径一致；因此在任意工作目录下执行都能正确落盘。
-
-## 已知待补项
-
-1. `contents/mresume.tex`：教育经历、科研工作、奖励与已发表论文需按实际情况填写（当前为占位）。
-2. `contents/dataset.tex`：答辩委员会名单、资助信息待填。
-3. 全稿训练算法口径存在两处表述待统一（第五章按 CTDE-IPPO/MAPPO 叙述，第二章按独立 SAC + 凸组合
-   残差叙述），需与导师确认后择一。
-
-## 写作约定
-
-- 中文直引号必须用 `“ ”`：XeLaTeX 下英文 `"` 前后都会排成右引号。
-- 圈号字符（①②③）在 Times New Roman 中无字形，正文避免使用。
-- 参考文献的 `note` 字段在 `@mastersthesis` 中会被打印进参考文献列表，注释请写在 `%` 行。
-- 学位论文（`@mastersthesis`）必须给 `address`；电子资源必须给 `urldate`。
+履历中的入学及毕业时间、学号、学制、提交时间仍待作者最终确认；科研工作、奖励、论文条目及答辩委员会信息按真实情况补齐。仓库版保留当前稿件，不擅自填充个人事实。本目录用于论文编辑和编译，不包含重新执行实验所需的全部数据和模型。

@@ -1,6 +1,11 @@
 % !TEX program = xelatex
+% Keep the school's tabu tables compatible with the portable 2026 toolchain.
+\RequirePackage[2023-11-01]{latexrelease}
+\RequirePackage{array}[=2023-11-01]
+\makeatletter
+\providecommand\insert@pcolumn{\insert@column}
+\makeatother
 \documentclass{ustbthesis}
-
 
 \usepackage[backend=biber,
 style=gb7714-2015,%utf8,
@@ -16,19 +21,21 @@ style=gb7714-2015,%utf8,
 
 
 \usepackage{tabularx}
+% SimHei has no separate bold face; keep the template's black typeface explicitly.
+\setCJKfamilyfont{zhhei}[BoldFont=SimHei]{SimHei}
+\AddToHook{env/EnglishAbstract/begin}{\phantomsection}
 \setlength{\headheight}{13pt}
 % —— 排版微调：为个别中英混排行提供额外可伸缩量，消除行末溢出（不改变字号与行距）——
 \setlength{\emergencystretch}{3em}
-% —— 浮动体参数：放宽每页浮动体数量与占比，使图表紧跟首次引用处，避免堆积到章末 ——
+% 图表间距、正文行距和标题字号由参考模板的ustbthesis.cls统一控制。
+% 允许长篇图表就近排入，避免默认数量限制产生稀疏的独立图表页。
 \setcounter{topnumber}{4}
 \setcounter{bottomnumber}{3}
 \setcounter{totalnumber}{5}
-\renewcommand{\topfraction}{0.92}
-\renewcommand{\bottomfraction}{0.85}
-\renewcommand{\textfraction}{0.06}
-\renewcommand{\floatpagefraction}{0.72}
-\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
-\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.7}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage[labelfont=bf,textfont=bf,font=small]{subfig}
@@ -40,8 +47,8 @@ style=gb7714-2015,%utf8,
 %%%%%%%%%%%%%%%%%%%%%%%%%%%封面信息%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \Author{程立夫}
 \EnglishAuthor{Lifu Cheng}
-\Title{基于多智能体强化学习的建筑群节能控制策略及可视化研发}
-\EnglishTitle{Energy-Saving Control Strategy and Visualization Development for Building Clusters Based on Multi-Agent Reinforcement Learning}
+\Title{基于机器学习的建筑群能源管理与仿真评估平台设计与实现}
+\EnglishTitle{Design and Implementation of a Machine Learning-Based Platform for Building-Cluster Energy Management and Simulation Evaluation}
 \Date{2026年12月}
 \EnglishDate{Dec, 2026}
 \College{数理学院}
@@ -75,15 +82,48 @@ style=gb7714-2015,%utf8,
 
 % 长题名仅在内封信息页换行；保留学校模板类文件、字号和下划线样式。
 \makeatletter
+% The 2023 kernel rollback lacks the counter target socket used by hyperref 2026.
+\IfFormatAtLeastTF{2024-11-01}{}{%
+  \let\thesisRefstepcounter\refstepcounter
+  \renewcommand{\refstepcounter}[1]{%
+    \thesisRefstepcounter{#1}%
+    \ifHy@pdfstring\else
+      \Hy@MakeCurrentHrefAuto{#1}%
+      \Hy@raisedlink{\hyper@anchorstart{\@currentHref}\hyper@anchorend}%
+    \fi
+  }%
+}
 \newlength{\thesisTitleLabelWidth}
 \RenewDocumentCommand{\ThirdPageTitleInfo}{}{%
   \begin{raggedright}\zihao{4}
   \settowidth{\thesisTitleLabelWidth}{{\bfseries 论文题目：}}%
-  \noindent {\bfseries 论文题目：}%
-  \wideunderline[\dimexpr\linewidth-\thesisTitleLabelWidth-2pt\relax]{\parbox[t]{\dimexpr\linewidth-\thesisTitleLabelWidth-2pt\relax}{\centering\zihao{4}\ustb@Title}}
+  \noindent\makebox[\linewidth][l]{{\bfseries 论文题目：}%
+  \wideunderline[\dimexpr\linewidth-\thesisTitleLabelWidth-2pt\relax]{\parbox[t]{\dimexpr\linewidth-\thesisTitleLabelWidth-2pt\relax}{\centering\zihao{4}\ustb@Title}}}%
   \end{raggedright}
 }
+% 顶部全宽表格不再叠加首行缩进，保留学校模板的字段和字号。
+\RenewDocumentCommand{\ThirdPageTopInfo}{}{%
+  \begingroup\zihao{5}%
+  \par\noindent\begin{tabu} to \textwidth {>{\begin{CJKfilltwosides}{5em}}l<{\end{CJKfilltwosides}} p{1em} X[c] >{\begin{CJKfilltwosides}{4em}}l<{\end{CJKfilltwosides}} p{1em} X[c]}
+  中图分类号& ：& \ustb@CLCNumber & 学校代码 &: & \ustb@UniversityCode \\
+  U D C &：& \ustb@UDCNumber & 密级 &: & \ustb@SecurityLevel \\
+  \end{tabu}\par\endgroup
+}
+% 页眉五号宋体；页码沿用参考模板的正文字号，固定为Times New Roman小四。
+\fancypagestyle{fancy}{%
+  \fancyhf{}
+  \fancyhead[CO]{\normalfont\songti\zihao{5}北京科技大学硕士学位论文}
+  \fancyhead[CE]{\normalfont\songti\zihao{5}\ustb@Title}
+  \fancyfoot[CO,CE]{\normalfont\rmfamily\zihao{-4}\thepage}
+}
+\fancypagestyle{brief}{%
+  \fancyhf{}
+  \fancyhead[CO]{\normalfont\songti\zihao{5}北京科技大学硕士学位论文}
+}
 \makeatother
+
+% 保留模板双面页边距和交替页眉，但所有部分连续排版，不补奇偶空白页。
+\AtBeginDocument{\let\cleardoublepage\clearpage\normalfont\zihao{-4}\raggedbottom}
 
 \begin{document}
 
@@ -104,8 +144,6 @@ style=gb7714-2015,%utf8,
 \tableofcontents
 
 \mainmatter
-% 正文按顺序连续排版，避免双面排版规则在章节间生成只有页眉和页码的空白页。
-\let\cleardoublepage\clearpage
 \pagenumbering{arabic}\setcounter{page}{1}
 \pagestyle{fancy}
 

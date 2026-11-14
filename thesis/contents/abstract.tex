@@ -1,28 +1,28 @@
 % !Mode:: "TeX:UTF-8"
 \begin{ChineseAbstract}
-建筑群能源系统受到天气、住户用电、分时电价、光伏发电及室内热舒适需求的共同影响，具有跨建筑、跨时段耦合和多目标冲突的特点。如何结合规则先验与学习修正，并建立实验配置、模型、指标和轨迹的对应关系，是建筑群协同控制与实验管理需要解决的问题。
+建筑群能源管理需要综合考虑天气、用电负荷、分时电价、光伏发电与室内热舒适度。在控制实验中，数据集、算法配置、模型权重和评估结果往往分散保存，难以追溯不同算法的运行条件及结果来源。本研究基于CityLearn设计并实现了建筑群能源管理与仿真评估平台，将社区数据整理、控制任务执行与逐小时结果诊断连接为可追溯的实验流程。
 
-本文以CityLearn为仿真环境，围绕多智能体协同控制方法与可视化管理平台两条主线开展研究，主要工作如下。
+（一）实现社区数据管理与仿真数据集发布。平台按社区管理共享天气、电价和日历数据，按建筑管理负荷与设备参数，支持历史文件导入及测量数据上报。发布时自动完成时间戳对齐、单位换算、设备参数检查和建筑热动力学模型训练，将选定建筑的共同时间窗口打包为带有版本编号、来源记录及文件校验值的数据集。24步以内的试运行用于检查环境能否启动；历史轨迹上的一步预测拟合与控制策略变化后的长期闭环验证分别报告。
 
-（一）面向具备控制先验的社区，实现CHESCA-ResMARL受限残差多智能体控制框架。复现CHESCA的负荷预测、单楼温控、社区储能规划与动作回写流程，修复仿真环境中生活热水储能更新的容量引用问题，并实现依据不可调负荷突增程度调节动作的连续分级软门控。在此基础上，利用动作通道掩码、修正幅度和状态门控约束学习策略的修正，区分基线动作、请求修正与最终执行动作。通过环境修复对照、幅度消融和逐种子比较，分析削峰、费用、碳排与舒适度之间的关系。实验中出现小幅残差同时改善多项指标的个例，同一幅度在不同种子下的收益仍不稳定。
+（二）实现多控制器任务编排与模型管理。平台使用Vue、Spring Boot、Python和MySQL连接参数配置、异步执行、模型检查点保存与关联评估，接入无控制基准、CHESCA分层控制、按建筑部署的强化学习控制及演员-注意力-评论家多智能体深度强化学习适配方法。关系数据库保存任务与配置，任务目录保存模型权重、指标、日志和逐小时动作轨迹。适配入口记录模型与数据的对应关系，先在训练窗口中筛选每栋建筑均满足舒适阈值的候选，再按平均电费选取检查点；未达标候选保留为诊断记录。
 
-（二）面向直接学习控制与实验分析，实现区域协同观测、奖励机制及全栈可视化管理平台。通过环境包装器附加社区负荷和电池相对状态特征，以区域奖励及配对实验分析峰前储能准备与最终峰值之间的关系，并建立包含需量费用与电池吞吐折旧的情景核算模型。平台采用Vue、Spring Boot、Python与MySQL协同架构，贯通实验配置、训练与评估编排、模型复用、结果对比和逐时决策回放。关系库存储任务与配置等元数据，任务目录保存模型、日志、指标和运行轨迹；界面通过能源流向、购售电和设备动作视图支持结果核查。
+（三）实现多维评估对比与逐小时决策诊断。平台结合建筑及社区指标、能源流向、动作曲线和无控制基准初步评估定位异常时段，并提供以独立无控制基准为参照的舒适度费用综合评分。系统测试覆盖社区评估、任务运行与数据来源核查。在固定分档控制规则下，修复生活热水储能状态更新错误后，本地数据集的社区峰值下降，电费与碳排放略升。强化学习对比和历史六种子配对结果重算用于检验控制表现及尖峰计价奖励；关键时刻的储能轨迹则用于分析所检查策略的峰前储能不足现象。上述结果分别反映环境修复、奖励配置和具体运行轨迹，避免将其混为单一算法增益。
 
-本文形成了从控制动作生成到结果可视化诊断的工作流程，通过强基线上的残差对照与储能轨迹分析，为优化学习目标和评价协议提供了依据。
+平台支持建筑群控制实验的数据发布、任务调度、结果对比和过程追溯，为核查控制表现及其运行条件提供了统一入口。
 
-\ChineseKeywords{建筑群节能；多智能体强化学习；残差控制；区域协同；实验管理；可视化诊断}
+\ChineseKeywords{机器学习；建筑群能源管理；仿真评估；多智能体强化学习；实验管理；可视化诊断}
 \end{ChineseAbstract}
 
 \begin{EnglishAbstract}
-Building-cluster energy systems are influenced by weather, occupant demand, time-of-use electricity prices, photovoltaic generation, and thermal comfort requirements. Their operation involves coupling across buildings and time, together with conflicting objectives. Combining rule-based priors with learned corrections, and linking configurations, models, metrics, and trajectories, are central issues in cooperative control and experiment management.
+Managing energy across a group of buildings requires balancing weather, electrical load, time-of-use electricity prices, solar photovoltaics, and indoor thermal comfort. In practice, scattered datasets, configurations, model checkpoints, and evaluation outputs make multi-algorithm experiments difficult to reproduce and audit. Built on the CityLearn simulation environment, this thesis designs and implements a building-cluster energy management and simulation evaluation platform that connects community data preparation, control task management, and hour-by-hour diagnostic analysis.
 
-Using CityLearn, this thesis studies multi-agent cooperative control and a visualization platform through two main lines of work.
+First, community data management and dataset publishing link shared weather, pricing, and calendar records with building-level loads and equipment parameters through file imports and measurement submissions. During publishing, timestamp alignment, unit conversion, equipment checks, and building thermal-dynamics model training produce versioned simulation datasets with source provenance and file hashes. Short rollout checks verify runtime compatibility, whereas one-step historical temperature fit is explicitly distinguished from counterfactual closed-loop control validation.
 
-First, CHESCA-ResMARL is implemented as a constrained residual multi-agent control framework for communities with an existing control baseline. The CHESCA workflow is reproduced, including load forecasting, local temperature control, community storage planning, and action write-back. A capacity-reference problem in the simulator's domestic hot-water storage update is repaired, and a continuous graded gate responds to surges in non-shiftable load. Learned corrections are constrained by action-channel masks, amplitude limits, and state-dependent gates. Baseline actions, requested corrections, and executed actions are recorded separately. Repair comparisons, amplitude ablations, and per-seed evaluations examine the relationships among peak demand, cost, carbon emissions, and comfort. A small residual improves several metrics in an individual run, while gains at the same amplitude remain inconsistent across seeds.
+Second, Vue, Spring Boot, Python, and MySQL coordinate task configuration, asynchronous process execution, checkpoint archiving, and linked evaluation across the no-control baseline (NoControl), the Community-based Hierarchical Energy Systems Coordination Algorithm (CHESCA), per-building reinforcement learning methods (the single-agent algorithm SAC together with the multi-agent algorithms IPPO, MAPPO, and District-MARL), and Actor-Attention-Critic Multi-Agent Deep Reinforcement Learning (AAC-MADRL). Relational tables store metadata while task directories preserve models, metrics, logs, and action trajectories. The AAC-MADRL adapter enforces building-level comfort thresholds before selecting checkpoints by average training-window bill, retaining unqualified runs as diagnostic records.
 
-Second, district observations, reward mechanisms, and a full-stack visualization platform are implemented for direct learning control and experimental analysis. An environment wrapper adds district load and relative battery-state features. District rewards and paired experiments support analysis of storage preparation before peaks and final peak demand. A scenario accounting model includes demand charges and battery-throughput depreciation. The platform combines Vue, Spring Boot, Python, and MySQL to support configuration, training and evaluation orchestration, model reuse, result comparison, and hourly decision replay. Relational tables hold task and configuration metadata, while task directories preserve models, logs, metrics, and trajectories. Energy-flow, grid-exchange, and equipment-action views support inspection of experimental results.
+Third, building and community metrics, energy-flow diagrams, step-wise action traces, and no-control baseline assessments support visual diagnosis, complemented by an independent-reference comfort-and-cost score. System tests cover community assessment workflows, task lifecycles, and data provenance. Under fixed graded peak-response rules, repairing the domestic hot-water storage update bug lowers local-dataset peak demand while slightly increasing electricity bill and carbon emissions. Learning-method comparisons and a reanalysis of archived six-seed paired results examine control performance and peak-period battery pricing. Separate trajectory inspection identifies insufficient pre-peak storage in the examined policy. These findings distinguish environment repairs, reward settings, and individual operating traces rather than attributing all changes to one algorithmic improvement.
 
-The thesis connects action generation with visual diagnosis. Residual comparisons against a strong baseline and analysis of storage trajectories inform further refinement of learning objectives and evaluation protocols.
+The platform provides practical engineering support for organizing, comparing, and auditing building-cluster control experiments.
 
-\EnglishKeywords{building cluster energy saving; multi-agent reinforcement learning; residual control; district coordination; experiment management; visual diagnostics}
+\EnglishKeywords{machine learning; building-cluster energy management; simulation evaluation; multi-agent reinforcement learning; experiment management; visual diagnostics}
 \end{EnglishAbstract}
