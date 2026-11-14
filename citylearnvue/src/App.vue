@@ -17,54 +17,13 @@
           @select="handleMenuSelect"
         >
           <el-menu-item-group title="">
-            <el-menu-item v-if="hasPermission(PERMS.MENU_HOME)" index="home">
-              <i class="el-icon-s-home"></i>
-              <span slot="title">首页</span>
-            </el-menu-item>
-            <el-menu-item v-if="hasPermission(PERMS.MENU_REC_DASHBOARD)" index="recDashboard">
-              <i class="el-icon-data-line"></i>
-              <span slot="title">模型优选</span>
-            </el-menu-item>
-            <el-menu-item v-if="hasPermission(PERMS.MENU_DATA_LIST)" index="dataList">
-              <i class="el-icon-menu"></i>
-              <span slot="title">原始数据</span>
-            </el-menu-item>
-            <el-menu-item v-if="hasPermission(PERMS.MENU_CODE_EDITOR)" index="codeEditor">
-              <i class="el-icon-edit"></i>
-              <span slot="title">代码编辑器</span>
-            </el-menu-item>
-            <el-menu-item v-if="hasPermission(PERMS.MENU_TASK_LIST)" index="taskList">
-              <i class="el-icon-tickets"></i>
-              <span slot="title">任务管理</span>
-            </el-menu-item>
-            <!-- 「CHESCA-ResMARL 配置」页：2026-10-08 起按使用者要求隐藏，
-                 入口由 SHOW_RES_MARL_CONFIG_MENU 统一开关（页面组件与接口都保留） -->
             <el-menu-item
-              v-if="SHOW_RES_MARL_CONFIG_MENU && hasPermission(PERMS.MENU_RES_MARL)"
-              index="resMarlConfig"
+              v-for="menu in visibleMenus"
+              :key="menu.key"
+              :index="menu.key"
             >
-              <i class="el-icon-s-operation"></i>
-              <span slot="title">CHESCA-ResMARL配置</span>
-            </el-menu-item>
-            <el-menu-item v-if="hasPermission(PERMS.MENU_ALGORITHM_PARAM)" index="algorithmParam">
-              <i class="el-icon-setting"></i>
-              <span slot="title">参数配置</span>
-            </el-menu-item>
-            <el-menu-item v-if="showAnalysisMenus" index="forecastMape">
-              <i class="el-icon-data-analysis"></i>
-              <span slot="title">预测误差 MAPE</span>
-            </el-menu-item>
-            <el-menu-item v-if="showAnalysisMenus" index="residualDeltaEle">
-              <i class="el-icon-s-marketing"></i>
-              <span slot="title">残差 ΔELE</span>
-            </el-menu-item>
-            <el-menu-item v-if="showAnalysisMenus" index="alphaSweep">
-              <i class="el-icon-s-data"></i>
-              <span slot="title">α–KPI 扫描</span>
-            </el-menu-item>
-            <el-menu-item v-if="isSuperAdmin" index="userManagement">
-              <i class="el-icon-user-solid"></i>
-              <span slot="title">用户管理</span>
+              <i :class="menu.icon"></i>
+              <span slot="title">{{ menu.title }}</span>
             </el-menu-item>
           </el-menu-item-group>
         </el-menu>
@@ -145,6 +104,7 @@
             ref="page"
             :is="currentComponent"
             @navigate-home="handleMenuSelect('home')"
+            @navigate-back="handleNavigateBack"
             @open-task-record="handleOpenTaskRecord"
             @task-notice-changed="pollTaskNotice"
           />
@@ -155,53 +115,42 @@
 </template>
 
 <script>
-import axios from 'axios'
 import DataList from './components/DataList.vue'
-import KpiList from './components/KpiList.vue'
 import MonacoEditor from './components/MonacoEditor.vue'
 import ResMarlConfig from './views/ResMarlConfig.vue'
 import AlgorithmParamConfig from './views/AlgorithmParamConfig.vue'
 import HomePage from './views/HomePage.vue'
 import RecDashboard from './views/RecDashboard.vue'
-import ForecastMape from './views/ForecastMape.vue'
-import ResidualDeltaEle from './views/ResidualDeltaEle.vue'
-import AlphaSweep from './views/AlphaSweep.vue'
-import KpisAnalysis from './views/KpisAnalysis.vue'
-import SchemaPage from './views/SchemaPage.vue'
 import LoginPage from './views/LoginPage.vue'
 import UserManagement from './views/UserManagement.vue'
 import TaskList from './views/TaskList.vue'
-import { PERMS, MENU_PERM_MAP, userHasPermission, firstAllowedMenu } from './utils/permissions'
+import BuildingManagement from './views/BuildingManagement.vue'
+import CommunityManagement from './views/CommunityManagement.vue'
+import { PERMS, userHasPermission } from './utils/permissions'
+import { MENUS, findMenu, canUseMenu, firstAllowedMenu } from './config/menus'
+import { fetchCurrentUser as apiFetchCurrentUser, logout as apiLogout } from './api/auth'
+import {
+  fetchTaskNoticeSummary,
+  fetchTaskResult,
+  markAllTasksNotified
+} from './api/task'
 
 const SIDEBAR_COLLAPSED_KEY = 'citylearn-sidebar-collapsed'
-
-/**
- * 「CHESCA-ResMARL 配置」页（views/ResMarlConfig.vue）的显示开关。
- *
- * 2026-10-08 按使用者要求**隐藏**：这些参数（α / 残差动作掩码 / 模型路径 …）现在都在
- * 代码编辑器与任务管理页的「配置」弹窗里按任务设置，不需要再留一个全局配置页。
- * 页面组件、路由分支与后端接口都**原样保留**（一行没删）⇒ 把这里改成 true 即可恢复。
- */
-const SHOW_RES_MARL_CONFIG_MENU = false
 
 export default {
   name: 'App',
   components: {
     DataList,
-    KpiList,
     MonacoEditor,
     ResMarlConfig,
     AlgorithmParamConfig,
     HomePage,
     RecDashboard,
-    ForecastMape,
-    ResidualDeltaEle,
-    AlphaSweep,
-    KpisAnalysis,
-    SchemaPage,
     LoginPage,
     UserManagement,
-    TaskList
+    TaskList,
+    BuildingManagement,
+    CommunityManagement
   },
   provide() {
     return {
@@ -211,14 +160,12 @@ export default {
   data() {
     return {
       PERMS,
-      /** 见文件顶部的 SHOW_RES_MARL_CONFIG_MENU：CHESCA-ResMARL 配置页入口开关 */
-      SHOW_RES_MARL_CONFIG_MENU,
       authChecked: false,
       currentUser: null,
       activeMenu: 'home',
+      previousMenu: 'home',
       currentComponent: 'HomePage',
       sidebarCollapsed: false,
-      showAnalysisMenus: false,
       /** 全局「运行中任务」列表（轮询 /getPyTaskNoticeSummary），任何页面都可见 */
       runningTasks: [],
       /** 执行完但未被查看（未读）的记录数 */
@@ -235,6 +182,14 @@ export default {
   computed: {
     asideWidth() {
       return this.sidebarCollapsed ? '64px' : '240px'
+    },
+    /**
+     * 侧边栏实际渲染的菜单。三重过滤都集中在 config/menus.js 的 canUseMenu 里：
+     * 开关（enabled）→ 角色（superAdminOnly）→ 权限码（perm）。
+     * 模板只负责画，不再重复判断，避免和 handleMenuSelect 的守卫走样。
+     */
+    visibleMenus() {
+      return MENUS.filter(m => canUseMenu(this.currentUser, m))
     },
     isSuperAdmin() {
       return this.currentUser && this.currentUser.role === 'SUPER_ADMIN'
@@ -253,6 +208,8 @@ export default {
     if (saved === '1') {
       this.sidebarCollapsed = true
     }
+    if (window.innerWidth <= 680) this.sidebarCollapsed = true
+    window.addEventListener('resize', this.collapseSidebarOnSmallViewport)
     this.fetchCurrentUser()
     window.addEventListener('citylearn-auth-required', this.onAuthRequired)
     window.addEventListener('citylearn-permission-denied', this.onPermissionDenied)
@@ -260,6 +217,7 @@ export default {
     this.runningPollTimer = setInterval(this.pollTaskNotice, 5000)
   },
   beforeDestroy() {
+    window.removeEventListener('resize', this.collapseSidebarOnSmallViewport)
     window.removeEventListener('citylearn-auth-required', this.onAuthRequired)
     window.removeEventListener('citylearn-permission-denied', this.onPermissionDenied)
     if (this.runningPollTimer) {
@@ -268,16 +226,15 @@ export default {
     }
   },
   methods: {
+    collapseSidebarOnSmallViewport() {
+      if (window.innerWidth <= 680 && !this.sidebarCollapsed) this.sidebarCollapsed = true
+    },
     hasPermission(code) {
       return userHasPermission(this.currentUser, code)
     },
     navigateToAllowed(preferred) {
-      let target = preferred
-      if (target === 'userManagement') {
-        if (!this.isSuperAdmin) target = null
-      } else if (target && MENU_PERM_MAP[target] && !this.hasPermission(MENU_PERM_MAP[target])) {
-        target = null
-      }
+      // 落点校验与 visibleMenus 共用 canUseMenu，避免「菜单看不到但能跳进去」
+      let target = canUseMenu(this.currentUser, findMenu(preferred)) ? preferred : null
       if (!target) {
         target = firstAllowedMenu(this.currentUser)
       }
@@ -291,15 +248,13 @@ export default {
     },
     async fetchCurrentUser() {
       try {
-        const res = await axios.get('/api/web/auth/current')
-        if (res.data && res.data.code === 0 && res.data.data) {
-          this.currentUser = res.data.data
+        const { ok, data } = await apiFetchCurrentUser()
+        if (ok && data) {
+          this.currentUser = data
           this.$nextTick(() => this.navigateToAllowed(this.activeMenu || 'home'))
         } else {
           this.currentUser = null
         }
-      } catch (e) {
-        this.currentUser = null
       } finally {
         this.authChecked = true
       }
@@ -344,18 +299,16 @@ export default {
       }
       this.markingAllRead = true
       try {
-        const res = await axios.post('/api/web/basedata/markAllPyTaskNotified')
-        if (!res.data || res.data.code !== 0) {
-          this.$message.error((res.data && res.data.message) || '设为已读失败')
+        // silent: 由本方法自己弹一次错误，避免 http 层再弹一次（双 toast）
+        const { ok, data, message } = await markAllTasksNotified({ silent: true })
+        if (!ok) {
+          this.$message.error(message || '设为已读失败')
           return
         }
-        const count = Number(res.data.data) || 0
+        const count = Number(data) || 0
         this.unreadCount = 0
         this.$message.success(count > 0 ? `已将 ${count} 条记录标记为已读` : '没有需要标记的记录')
         window.dispatchEvent(new CustomEvent('citylearn-tasks-read'))
-      } catch (e) {
-        console.error('设为已读失败:', e)
-        this.$message.error('设为已读失败')
       } finally {
         this.markingAllRead = false
       }
@@ -371,17 +324,18 @@ export default {
         return
       }
       try {
-        const res = await axios.get('/api/web/basedata/getPyTaskNoticeSummary')
-        if (!res.data || res.data.code !== 0) {
+        // silent: 轮询失败要保持安静（后端重启期间会连续失败，恢复后自动续上）
+        const { ok, data } = await fetchTaskNoticeSummary({ silent: true })
+        if (!ok) {
           return
         }
-        const summary = res.data.data || {}
+        const summary = data || {}
         const running = summary.runningTasks || []
         this.notifyFinishedTasks(running)
         this.runningTasks = running
         this.unreadCount = Number(summary.unreadCount) || 0
-      } catch (e) {
-        // 静默：后端重启期间会连续失败，恢复后自动续上
+      } finally {
+        // 静默：无需处理，下一轮继续
       }
     },
 
@@ -408,12 +362,10 @@ export default {
       const name = item.scriptName || '脚本任务'
       let statusDesc = ''
       try {
-        const res = await axios.get('/api/web/basedata/getPyTaskResult', {
-          params: { taskId: item.taskId }
-        })
-        const task = res.data && res.data.data
-        if (task && task.statusDesc) {
-          statusDesc = task.statusDesc
+        // silent：这是「补一条更准确的提示」，拿不到状态就只提示"已结束"，不该再弹一个错误
+        const { ok, data } = await fetchTaskResult(item.taskId, { silent: true })
+        if (ok && data && data.statusDesc) {
+          statusDesc = data.statusDesc
         }
       } catch (e) {
         // 拿不到状态就只提示"已结束"
@@ -440,11 +392,8 @@ export default {
       }
     },
     async handleLogout() {
-      try {
-        await axios.post('/api/web/auth/logout')
-      } catch (e) {
-        /* ignore */
-      }
+      // 退出接口失败也要放行本地状态（否则后端不可用时会卡在登录态）
+      await apiLogout()
       this.currentUser = null
       this.activeMenu = 'home'
       this.currentComponent = 'HomePage'
@@ -478,37 +427,34 @@ export default {
       })
     },
     handleMenuSelect(index) {
-      if (index === 'userManagement') {
-        if (!this.isSuperAdmin) {
+      const menu = findMenu(index)
+      if (menu) {
+        // 隐藏页：菜单里已经看不到它，这里再拦一道，避免别处误调跳到已隐藏的页面
+        if (!menu.enabled) {
+          this.$message.warning('「' + menu.title + '」页已隐藏')
+          return
+        }
+        if (menu.superAdminOnly && !this.isSuperAdmin) {
           this.$message.warning('无权限访问用户管理')
           return
         }
-      } else if (index === 'resMarlConfig' && !SHOW_RES_MARL_CONFIG_MENU) {
-        // 菜单里已经看不到它；这里再拦一道，避免别处误调 navigate 到已隐藏的页面
-        this.$message.warning('「CHESCA-ResMARL 配置」页已隐藏')
-        return
-      } else if (MENU_PERM_MAP[index] && !this.hasPermission(MENU_PERM_MAP[index])) {
-        this.$message.warning('无权限访问该菜单')
-        return
+        if (!canUseMenu(this.currentUser, menu)) {
+          this.$message.warning('无权限访问该菜单')
+          return
+        }
       }
-      const map = {
-        home: 'HomePage',
-        recDashboard: 'RecDashboard',
-        forecastMape: 'ForecastMape',
-        residualDeltaEle: 'ResidualDeltaEle',
-        alphaSweep: 'AlphaSweep',
-        kpisAnalysis: 'KpisAnalysis',
-        schemaPage: 'SchemaPage',
-        dataList: 'DataList',
-        kpiList: 'KpiList',
-        codeEditor: 'MonacoEditor',
-        taskList: 'TaskList',
-        resMarlConfig: 'ResMarlConfig',
-        algorithmParam: 'AlgorithmParamConfig',
-        userManagement: 'UserManagement'
+      if (index !== this.activeMenu) {
+        this.previousMenu = this.activeMenu
       }
       this.activeMenu = index
-      this.currentComponent = map[index] || 'HomePage'
+      this.currentComponent = menu ? menu.component : 'HomePage'
+    },
+    handleNavigateBack() {
+      const previous = findMenu(this.previousMenu)
+      const target = previous && previous.key !== this.activeMenu && canUseMenu(this.currentUser, previous)
+        ? previous.key
+        : firstAllowedMenu(this.currentUser)
+      if (target) this.handleMenuSelect(target)
     },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed
@@ -562,7 +508,7 @@ export default {
   margin-top: 4px;
   font-size: 12px;
   color: var(--secondary-text-color);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .app-menu {
@@ -662,7 +608,7 @@ export default {
   padding: 12px 12px 8px !important;
   font-size: 12px !important;
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: none;
 }
 
@@ -718,8 +664,8 @@ export default {
 
 /* 待查看：红底白字，与文件列表 / 任务列表上的未读标记同一视觉语言 */
 .header-notice-unread {
-  background: #f5222d;
-  color: #ffffff;
+  background: var(--error-color);
+  color: var(--text-primary-color);
 }
 
 /* 「待查看」悬浮气泡：内容由 popper-class 渲染到 body 下，必须是全局样式（不能 scoped） */

@@ -236,7 +236,6 @@
             :rows="3"
             maxlength="512"
             show-word-limit
-            placeholder="参数说明，鼠标悬浮名称旁的小叹号时显示"
           />
         </el-form-item>
       </el-form>
@@ -246,7 +245,7 @@
         <div class="option-card-head">
           <div>
             <span class="option-card-title">{{ isMapType ? '键值对' : '候选项' }}</span>
-            <span class="ha-muted option-card-hint">{{ optionCardHint }}</span>
+            <span v-if="optionCardHint" class="ha-muted option-card-hint">{{ optionCardHint }}</span>
           </div>
           <el-button
             type="primary"
@@ -347,13 +346,10 @@
             :rows="3"
             maxlength="512"
             show-word-limit
-            placeholder="这组参数是做什么的（选填）"
+            placeholder="配置组简介"
           />
         </el-form-item>
       </el-form>
-      <p class="ha-muted dialog-tip">
-        成员在组详情页里维护：可以新建参数，也可以从「单独配置」里挑已有的加进来。
-      </p>
       <div slot="footer">
         <el-button @click="setDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="setSaving" @click="submitSetDialog">确定</el-button>
@@ -370,8 +366,7 @@
       @closed="resetPicker"
     >
       <p class="ha-muted dialog-tip">
-        下面列出的是「单独配置」页签里、未加入任何配置组的参数。勾选后确定即加入本组。<br>
-        系统内置参数（由平台预置、全局共享）不能加入配置组，已从列表中排除。
+        可选择任何未加入配置组的非系统内置参数
       </p>
       <el-table
         ref="pickerTable"
@@ -411,9 +406,21 @@
 </template>
 
 <script>
-import axios from 'axios'
+import { themeColor } from '@/utils/theme'
+
 import * as echarts from 'echarts'
 import { PERMS } from '../utils/permissions'
+import {
+  listParamConfigs,
+  listParamConfigSets,
+  getParamConfigSetDetail,
+  addParamConfig,
+  updateParamConfig,
+  deleteParamConfig,
+  addParamConfigSet,
+  updateParamConfigSet,
+  deleteParamConfigSet
+} from '../api/algorithmParam'
 
 /**
  * 值类型下拉的固定选项。
@@ -557,10 +564,10 @@ export default {
     isMapType() {
       return this.dialogForm.valueType === MAP_TYPE
     },
-    /** 卡片副标题：键值对讲 key/value 的语义，单选/多选讲候选值 */
+    /** 卡片副标题：键值对不再给说明文字，单选/多选讲候选值语义 */
     optionCardHint() {
       return this.isMapType
-        ? '左侧为键、右侧为值；键值对会一起存进脚本配置'
+        ? ''
         : 'key = 实际存进脚本配置的取值，value = 界面显示文字'
     },
     /** 新增按钮文案 */
@@ -666,16 +673,10 @@ export default {
     async fetchList() {
       this.loading = true
       try {
-        const res = await axios.get('/api/web/basedata/getAlgorithmParamConfigList', {
-          params: { isMember: 0 }
-        })
-        if (res.data && res.data.code === 0) {
-          this.list = res.data.data || []
-        } else {
-          this.$message.error((res.data && res.data.message) || '加载参数列表失败')
+        const res = await listParamConfigs(0, { failMessage: '加载参数列表失败' })
+        if (res.ok) {
+          this.list = res.data || []
         }
-      } catch (e) {
-        this.$message.error('加载参数列表失败')
       } finally {
         this.loading = false
       }
@@ -684,14 +685,10 @@ export default {
     async fetchSets() {
       this.loading = true
       try {
-        const res = await axios.get('/api/web/basedata/getAlgorithmParamConfigSetList')
-        if (res.data && res.data.code === 0) {
-          this.sets = res.data.data || []
-        } else {
-          this.$message.error((res.data && res.data.message) || '加载配置组失败')
+        const res = await listParamConfigSets({ failMessage: '加载配置组失败' })
+        if (res.ok) {
+          this.sets = res.data || []
         }
-      } catch (e) {
-        this.$message.error('加载配置组失败')
       } finally {
         this.loading = false
       }
@@ -702,22 +699,16 @@ export default {
       if (!row || !row.id) return
       this.loading = true
       try {
-        const res = await axios.get('/api/web/basedata/getAlgorithmParamConfigSetDetail', {
-          params: { id: row.id }
-        })
-        if (res.data && res.data.code === 0) {
-          const detail = res.data.data || {}
+        const res = await getParamConfigSetDetail(row.id, { failMessage: '加载配置组详情失败' })
+        if (res.ok) {
+          const detail = res.data || {}
           this.activeSet = {
             id: detail.id,
             name: detail.name,
             desc: detail.desc,
             members: detail.members || []
           }
-        } else {
-          this.$message.error((res.data && res.data.message) || '加载配置组详情失败')
         }
-      } catch (e) {
-        this.$message.error('加载配置组详情失败')
       } finally {
         this.loading = false
       }
@@ -897,7 +888,7 @@ export default {
           barMaxWidth: 28,
           data: rows.map((row, index) => ({
             value: this.toFiniteNumber(row.value),
-            itemStyle: { color: index === selected ? '#409eff' : '#a0cfff' }
+            itemStyle: { color: index === selected ? themeColor('primary-color') : themeColor('light-primary-color') }
           }))
         }]
       }, true)
@@ -1003,19 +994,14 @@ export default {
           if (this.dialogMode === 'add' && this.inSetDetail) {
             payload.setId = this.activeSet.id
           }
-          const url = this.dialogMode === 'add'
-            ? '/api/web/basedata/addAlgorithmParamConfig'
-            : '/api/web/basedata/updateAlgorithmParamConfig'
-          const res = await axios.post(url, payload)
-          if (res.data && res.data.code === 0) {
+          const res = this.dialogMode === 'add'
+            ? await addParamConfig(payload, { failMessage: '操作失败' })
+            : await updateParamConfig(payload, { failMessage: '操作失败' })
+          if (res.ok) {
             this.$message.success(this.dialogMode === 'add' ? '添加成功' : '保存成功')
             this.dialogVisible = false
             this.refreshCurrentView()
-          } else {
-            this.$message.error((res.data && res.data.message) || '操作失败')
           }
-        } catch (e) {
-          this.$message.error('操作失败')
         } finally {
           this.saving = false
         }
@@ -1033,12 +1019,10 @@ export default {
         { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
       )
         .then(async () => {
-          const res = await axios.post('/api/web/basedata/deleteAlgorithmParamConfig', { id: row.id })
-          if (res.data && res.data.code === 0) {
+          const res = await deleteParamConfig(row.id, { failMessage: '删除失败' })
+          if (res.ok) {
             this.$message.success('已删除')
             this.refreshCurrentView()
-          } else {
-            this.$message.error((res.data && res.data.message) || '删除失败')
           }
         })
         .catch(() => {})
@@ -1075,29 +1059,23 @@ export default {
         this.setSaving = true
         try {
           const isAdd = this.setDialogMode === 'add'
-          const res = await axios.post(
-            isAdd
-              ? '/api/web/basedata/addAlgorithmParamConfigSet'
-              : '/api/web/basedata/updateAlgorithmParamConfigSet',
-            {
-              id: this.setForm.id,
-              name: (this.setForm.name || '').trim(),
-              desc: (this.setForm.desc || '').trim()
-            }
-          )
-          if (res.data && res.data.code === 0) {
+          const payload = {
+            id: this.setForm.id,
+            name: (this.setForm.name || '').trim(),
+            desc: (this.setForm.desc || '').trim()
+          }
+          const res = isAdd
+            ? await addParamConfigSet(payload, { failMessage: '操作失败' })
+            : await updateParamConfigSet(payload, { failMessage: '操作失败' })
+          if (res.ok) {
             this.$message.success(isAdd ? '创建成功' : '保存成功')
             this.setDialogVisible = false
             this.fetchSets()
-            if (isAdd && res.data.data && res.data.data.id) {
+            if (isAdd && res.data && res.data.id) {
               // 新建后直接进详情，省得再找一次
-              this.openSetDetail({ id: res.data.data.id })
+              this.openSetDetail({ id: res.data.id })
             }
-          } else {
-            this.$message.error((res.data && res.data.message) || '操作失败')
           }
-        } catch (e) {
-          this.$message.error('操作失败')
         } finally {
           this.setSaving = false
         }
@@ -1115,15 +1093,13 @@ export default {
         { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
       )
         .then(async () => {
-          const res = await axios.post('/api/web/basedata/deleteAlgorithmParamConfigSet', { id: row.id })
-          if (res.data && res.data.code === 0) {
+          const res = await deleteParamConfigSet(row.id, { failMessage: '删除失败' })
+          if (res.ok) {
             this.$message.success('已删除')
             this.fetchSets()
             if (this.inSetDetail && this.activeSet.id === row.id) {
               this.activeSet = null
             }
-          } else {
-            this.$message.error((res.data && res.data.message) || '删除失败')
           }
         })
         .catch(() => {})
@@ -1135,21 +1111,17 @@ export default {
     async saveMemberIds(memberIds, successText) {
       this.saving = true
       try {
-        const res = await axios.post('/api/web/basedata/updateAlgorithmParamConfigSet', {
+        const res = await updateParamConfigSet({
           id: this.activeSet.id,
           name: this.activeSet.name,
           desc: this.activeSet.desc,
           memberIds
-        })
-        if (res.data && res.data.code === 0) {
+        }, { failMessage: '操作失败' })
+        if (res.ok) {
           this.$message.success(successText)
           await this.openSetDetail({ id: this.activeSet.id })
           return true
         }
-        this.$message.error((res.data && res.data.message) || '操作失败')
-        return false
-      } catch (e) {
-        this.$message.error('操作失败')
         return false
       } finally {
         this.saving = false
@@ -1161,13 +1133,9 @@ export default {
       this.pickerVisible = true
       this.pickerLoading = true
       try {
-        const res = await axios.get('/api/web/basedata/getAlgorithmParamConfigList', {
-          params: { isMember: 0 }
-        })
+        const res = await listParamConfigs(0, { failMessage: '加载可选参数失败' })
         // 系统内置参数不允许入组，直接不列出来（后端也会拒绝）
-        this.pickerCandidates = ((res.data && res.data.data) || []).filter((item) => !item.ifSystem)
-      } catch (e) {
-        this.$message.error('加载可选参数失败')
+        this.pickerCandidates = ((res.ok && res.data) || []).filter((item) => !item.ifSystem)
       } finally {
         this.pickerLoading = false
       }
@@ -1252,7 +1220,7 @@ export default {
 }
 
 .param-key {
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--ha-font-family-mono);
   font-size: 13px;
   color: var(--primary-text-color);
 }
@@ -1378,8 +1346,8 @@ export default {
 
 /* 当前选中的键值对行（与柱状图选中态联动） */
 .option-row-active .option-input >>> .el-input__inner {
-  border-color: #409eff;
-  background: rgba(64, 158, 255, 0.06);
+  border-color: var(--el-color-primary-legacy);
+  background: rgba(var(--rgb-primary-color), 0.06);
 }
 
 /* 键值对下方的柱状图 */

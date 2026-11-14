@@ -1,0 +1,110 @@
+"""Generate explicitly synthetic indoor-temperature scenario datasets."""
+
+from __future__ import annotations
+
+import csv
+import json
+import math
+import shutil
+from pathlib import Path
+
+
+HERE = Path(__file__).resolve().parent
+BASE = HERE / "citylearn_challenge_2022_phase_all_2023_compatible"
+WEATHER = BASE / "weather.csv"
+SCENARIOS = {
+    "fast_response": {"time_constant_hours": 8.0, "hvac_response_per_hour": 1.00, "solar_gain": 0.00010, "internal_gain": 0.012},
+    "medium_response": {"time_constant_hours": 24.0, "hvac_response_per_hour": 0.65, "solar_gain": 0.00016, "internal_gain": 0.020},
+    "slow_response": {"time_constant_hours": 48.0, "hvac_response_per_hour": 0.40, "solar_gain": 0.00022, "internal_gain": 0.028},
+}
+
+
+def rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    with path.open(newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        return list(reader.fieldnames or []), list(reader)
+
+
+def write(path: Path, headers: list[str], data: list[dict[str, object]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(data)
+
+
+def generate_temperatures(building: list[dict[str, str]], weather: list[dict[str, str]], params: dict[str, float]) -> tuple[list[float], list[int]]:
+    if len(building) != len(weather):
+        raise ValueError("Building and weather series must have equal lengths")
+    alpha = 1.0 - math.exp(-1.0 / params["time_constant_hours"])
+    indoor = 22.0
+    temperatures: list[float] = []
+    modes: list[int] = []
+    for b, w in zip(building, weather):
+        outdoor = float(w["outdoor_dry_bulb_temperature"])
+        solar = float(w["diffuse_solar_irradiance"]) + float(w["direct_solar_irradiance"])
+        load = float(b["non_shiftable_load"] or 0.0)
+        occupants = float(b["Occupant Count (people)"] or 0.0)
+        cooling_sp = float(b["Cooling Set Point (C)"])
+        heating_sp = float(b["Heating Set Point (C)"])
+
+        indoor += alpha * (outdoor - indoor)
+        indoor += params["solar_gain"] * max(0.0, solar)
+        indoor += params["internal_gain"] * max(0.0, load - 0.4)
+        indoor += min(0.10, max(0.0, occupants) * 0.008)
+
+        mode = 0
+        if indoor > cooling_sp + 0.3:
+            indoor -= min(2.0, params["hvac_response_per_hour"] * (indoor - cooling_sp))
+            mode = 1
+        elif indoor < heating_sp - 0.3:
+            indoor += min(2.0, params["hvac_response_per_hour"] * (heating_sp - indoor))
+            mode = 2
+        temperatures.append(indoor)
+        modes.append(mode)
+    return temperatures, modes
+
+
+def main() -> None:
+    if not BASE.is_dir():
+        raise SystemExit(f"Missing base dataset: {BASE}")
+    _, weather = rows(WEATHER)
+
+    for name, params in SCENARIOS.items():
+        output = HERE / f"citylearn_challenge_2022_thermal_proxy_{name}"
+        if output.exists():
+            marker = output / "DATASET_README.json"
+            if not marker.is_file() or "synthetic_temperature_model" not in json.loads(marker.read_text(encoding="utf-8")):
+                raise SystemExit(f"Refusing to overwrite a dataset not created by this script: {output}")
+        shutil.copytree(BASE, output, dirs_exist_ok=True)
+        for i in range(1, 18):
+            path = output / f"Building_{i}.csv"
+            headers, building = rows(path)
+            temps, modes = generate_temperatures(building, weather, params)
+            for row, temperature, mode in zip(building, temps, modes):
+                row["indoor_dry_bulb_temperature"] = f"{temperature:.6f}"
+                row["HVAC Mode (Off/Cooling/Heating)"] = str(mode)
+            write(path, headers, building)
+
+        schema_path = output / "schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        schema["observations"]["indoor_dry_bulb_temperature"]["active"] = True
+        schema_path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
+        readme_path = output / "DATASET_README.json"
+        provenance = json.loads(readme_path.read_text(encoding="utf-8"))
+        provenance["name"] = output.name
+        provenance["synthetic_temperature_model"] = {
+            "method": "single-zone 1R1C-style hourly surrogate with outdoor-temperature coupling, simple solar/internal gains, and idealized setpoint-following thermostat response",
+            "parameters": params,
+            "initial_indoor_temperature_c": 22.0,
+            "deadband_c": 0.3,
+            "hvac_response_cap_c_per_hour": 2.0,
+            "synthetic_hvac_mode_written_to_csv": True,
+            "validation": "No 2022 indoor-temperature measurements or matching building thermal models were available; these scenarios are uncalibrated and are not historical observations.",
+        }
+        provenance["limitations"].append("Indoor temperature and HVAC mode are generated by an uncalibrated thermal surrogate; use only for sensitivity experiments, not historical reconstruction or validated policy evaluation.")
+        readme_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+        print(f"Created {output}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,3 +1,5 @@
+
+import { themeColor } from './theme'
 /** 首页 / more-info 可点传感器定义 */
 export const HOME_SENSORS = {
   temperature: {
@@ -8,9 +10,9 @@ export const HOME_SENSORS = {
     unit: '°C',
     digits: 1,
     icon: 'thermometer',
-    color: '#FF9800',
+    color: themeColor('energy-solar-color'),
     bg: 'rgba(255,152,0,0.12)',
-    chartColor: '#FF9800'
+    chartColor: themeColor('energy-solar-color')
   },
   humidity: {
     key: 'humidity',
@@ -20,9 +22,9 @@ export const HOME_SENSORS = {
     unit: '%',
     digits: 0,
     icon: 'waterPercent',
-    color: '#00BCD4',
+    color: themeColor('energy-water-color'),
     bg: 'rgba(0,188,212,0.12)',
-    chartColor: '#00BCD4'
+    chartColor: themeColor('energy-water-color')
   },
   pricing: {
     key: 'pricing',
@@ -32,26 +34,26 @@ export const HOME_SENSORS = {
     unit: '$/kWh',
     digits: 2,
     icon: 'currencyUsd',
-    color: '#43A047',
+    color: themeColor('success-color'),
     bg: 'rgba(67,160,71,0.12)',
-    chartColor: '#43A047',
+    chartColor: themeColor('success-color'),
     group: 'pricing',
     /** 详情图额外曲线 */
     extraSeries: [
       {
         field: 'electricity_pricing_predicted_1',
         name: '6小时预测',
-        color: '#81C784'
+        color: themeColor('energy-battery-in-color')
       },
       {
         field: 'electricity_pricing_predicted_2',
         name: '12小时预测',
-        color: '#FFB74D'
+        color: themeColor('accent-color')
       },
       {
         field: 'electricity_pricing_predicted_3',
         name: '24小时预测',
-        color: '#64B5F6'
+        color: themeColor('light-primary-color')
       }
     ]
   },
@@ -63,9 +65,9 @@ export const HOME_SENSORS = {
     unit: 'kgCO₂/kWh',
     digits: 4,
     icon: 'moleculeCo2',
-    color: '#8E021B',
+    color: themeColor('energy-gas-color'),
     bg: 'rgba(142,2,27,0.10)',
-    chartColor: '#8E021B'
+    chartColor: themeColor('energy-gas-color')
   },
   diffuse: {
     key: 'diffuse',
@@ -75,9 +77,9 @@ export const HOME_SENSORS = {
     unit: 'W/m²',
     digits: 0,
     icon: 'weatherHazy',
-    color: '#78909C',
+    color: themeColor('secondary-text-color'),
     bg: 'rgba(120,144,156,0.14)',
-    chartColor: '#78909C'
+    chartColor: themeColor('secondary-text-color')
   },
   direct: {
     key: 'direct',
@@ -87,9 +89,9 @@ export const HOME_SENSORS = {
     unit: 'W/m²',
     digits: 0,
     icon: 'whiteBalanceSunny',
-    color: '#FF9800',
+    color: themeColor('energy-solar-color'),
     bg: 'rgba(255,152,0,0.12)',
-    chartColor: '#FFB74D'
+    chartColor: themeColor('accent-color')
   },
   indoorTemp: {
     key: 'indoorTemp',
@@ -99,9 +101,9 @@ export const HOME_SENSORS = {
     unit: '°C',
     digits: 1,
     icon: 'homeThermometer',
-    color: '#03A9F4',
+    color: themeColor('primary-color'),
     bg: 'rgba(3,169,244,0.12)',
-    chartColor: '#03A9F4',
+    chartColor: themeColor('primary-color'),
     group: 'building'
   },
   indoorHumidity: {
@@ -112,9 +114,9 @@ export const HOME_SENSORS = {
     unit: '%',
     digits: 0,
     icon: 'waterPercent',
-    color: '#26C6DA',
+    color: themeColor('energy-water-color'),
     bg: 'rgba(38,198,218,0.12)',
-    chartColor: '#26C6DA',
+    chartColor: themeColor('energy-water-color'),
     group: 'building'
   },
   coolSetpoint: {
@@ -125,9 +127,9 @@ export const HOME_SENSORS = {
     unit: '°C',
     digits: 1,
     icon: 'snowflake',
-    color: '#42A5F5',
+    color: themeColor('primary-color'),
     bg: 'rgba(66,165,245,0.12)',
-    chartColor: '#42A5F5',
+    chartColor: themeColor('primary-color'),
     group: 'building'
   },
   heatSetpoint: {
@@ -138,9 +140,9 @@ export const HOME_SENSORS = {
     unit: '°C',
     digits: 1,
     icon: 'fire',
-    color: '#EF5350',
+    color: themeColor('error-color'),
     bg: 'rgba(239,83,80,0.12)',
-    chartColor: '#EF5350',
+    chartColor: themeColor('error-color'),
     group: 'building'
   },
   occupants: {
@@ -151,9 +153,9 @@ export const HOME_SENSORS = {
     unit: '人',
     digits: 0,
     icon: 'accountGroup',
-    color: '#7E57C2',
+    color: themeColor('energy-grid-return-color'),
     bg: 'rgba(126,87,194,0.12)',
-    chartColor: '#7E57C2',
+    chartColor: themeColor('energy-grid-return-color'),
     group: 'building'
   },
   solarGeneration: {
@@ -164,9 +166,9 @@ export const HOME_SENSORS = {
     unit: 'W/kW',
     digits: 1,
     icon: 'solarPower',
-    color: '#FF9800',
+    color: themeColor('energy-solar-color'),
     bg: 'rgba(255,152,0,0.12)',
-    chartColor: '#FF9800',
+    chartColor: themeColor('energy-solar-color'),
     group: 'building'
   },
   hvacMode: {
@@ -177,9 +179,9 @@ export const HOME_SENSORS = {
     unit: '',
     digits: 0,
     icon: 'airConditioner',
-    color: '#5C6BC0',
+    color: themeColor('secondary-text-color'),
     bg: 'rgba(92,107,192,0.12)',
-    chartColor: '#5C6BC0',
+    chartColor: themeColor('secondary-text-color'),
     group: 'hvac',
     format: 'hvacMode'
   },
@@ -191,9 +193,9 @@ export const HOME_SENSORS = {
     unit: 'kWh',
     digits: 2,
     icon: 'snowflake',
-    color: '#42A5F5',
+    color: themeColor('primary-color'),
     bg: 'rgba(66,165,245,0.12)',
-    chartColor: '#42A5F5',
+    chartColor: themeColor('primary-color'),
     group: 'hvac'
   },
   heatingDemand: {
@@ -204,9 +206,9 @@ export const HOME_SENSORS = {
     unit: 'kWh',
     digits: 2,
     icon: 'fire',
-    color: '#EF5350',
+    color: themeColor('error-color'),
     bg: 'rgba(239,83,80,0.12)',
-    chartColor: '#EF5350',
+    chartColor: themeColor('error-color'),
     group: 'hvac'
   },
   actionDhw: {
@@ -217,9 +219,9 @@ export const HOME_SENSORS = {
     unit: '',
     digits: 3,
     icon: 'waterBoiler',
-    color: '#5470C6',
-    bg: 'rgba(84,112,198,0.12)',
-    chartColor: '#5470C6',
+    color: themeColor('energy-water-color'),
+    bg: 'rgba(0,188,212,0.12)',
+    chartColor: themeColor('energy-water-color'),
     group: 'action'
   },
   actionEle: {
@@ -230,9 +232,9 @@ export const HOME_SENSORS = {
     unit: '',
     digits: 3,
     icon: 'battery',
-    color: '#4DB6AC',
+    color: themeColor('energy-battery-out-color'),
     bg: 'rgba(77,182,172,0.12)',
-    chartColor: '#4DB6AC',
+    chartColor: themeColor('energy-battery-out-color'),
     group: 'action'
   },
   actionTmp: {
@@ -243,9 +245,9 @@ export const HOME_SENSORS = {
     unit: '',
     digits: 3,
     icon: 'airConditioner',
-    color: '#42A5F5',
+    color: themeColor('primary-color'),
     bg: 'rgba(66,165,245,0.12)',
-    chartColor: '#42A5F5',
+    chartColor: themeColor('primary-color'),
     group: 'action'
   }
 }

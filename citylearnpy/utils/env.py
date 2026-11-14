@@ -18,13 +18,15 @@ def unwrap_action(action: Any) -> Any:
     return action
 
 
-# 从 RLlibMultiAgentEnv 逐层 .env 找到带 buildings/reward_function 的 CityLearnEnv ✓
+# 沿包装链查找真正执行物理转移的 CityLearnEnv。
 def unwrap_citylearn_env(rllib_env: Any) -> Optional[Any]:
-    env = getattr(rllib_env, 'env', None)
-    for _ in range(6):
-        if env is None:
+    from citylearn.citylearn import CityLearnEnv
+    env, seen = rllib_env, set()
+    while env is not None:
+        if id(env) in seen:
             return None
-        if hasattr(env, 'reward_function') and hasattr(env, 'buildings'):
+        seen.add(id(env))
+        if isinstance(env, CityLearnEnv):
             return env
         env = getattr(env, 'env', None)
     return None
@@ -606,7 +608,8 @@ if not getattr(RLlibMultiAgentEnv.reset, '_power_outage_seed_hooked', False):
     _ORIG_RESET = RLlibMultiAgentEnv.reset
 
     def _reset_with_fixed_power_outage(self, *args, **kwargs):
-        set_power_outage_seed(self)
+        if not getattr(self, '_preserve_dataset_outages', False):
+            set_power_outage_seed(self)
         return _ORIG_RESET(self, *args, **kwargs)
 
     _reset_with_fixed_power_outage._power_outage_seed_hooked = True

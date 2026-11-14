@@ -185,14 +185,16 @@ def _task_id_candidates(task_id: str, output_dir: Path) -> List[Path]:
     与 CHESCA_ResMARL.py 的 resolve_checkpoint 同一套约定：
       · <输出根>/<id>-train/<DISTRICT_CKPT_REL_DIR>（本任务先训练后评估）
       · <输出根>/<id>/<DISTRICT_CKPT_REL_DIR>（复用历史训练任务；id 可能已带 -train 后缀）
-      · 同名 best 快照目录，以及任务目录本身（平台也可能直接给目录）
+      · 同名 best 快照目录，以及任务目录本身
     """
-    task = str(task_id or '').strip().strip('/\\')
+    task = str(task_id or '').strip()
     if not task:
         return []
+    if task in ('.', '..') or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in task):
+        raise ValueError('训练任务 ID 只能包含字母、数字、下划线和连字符；模型路径请使用 --checkpoint')
     out_root = Path(output_dir).resolve().parent
     names = [task] if task.endswith('-train') else [task + '-train', task]
-    cands: List[Path] = [Path(task)]
+    cands: List[Path] = []
     for name in names:
         for rel in (dc.DISTRICT_CKPT_REL_DIR, dc.DISTRICT_CKPT_BEST_REL_DIR):
             cands.append(out_root / name / rel)
@@ -214,10 +216,8 @@ def resolve_checkpoint(cli_checkpoint, train_task_id, output_dir) -> "tuple[Opti
     优先级（与平台任务编排对齐）：
       1) `--train-task-id`：编排任务固定注入 ⇒ 按任务 id 定位训练子任务落盘的模型
          （这就是"按理讲 traintaskid 就能找到 checkpoint"的正解）。
-         任务目录里找不到时，再按**旧版全局兜底目录**取一次（策略与 Java 侧
-         BaseDataService#resolveSubTaskEvalCheckpoint 的"全局兜底目录"一致）——
-         2026-10-10 之前的脚本把模型写在 district_config.DISTRICT_CHECKPOINT_DIR，
-         不兜底的话那些历史训练任务一律无法复用。仍找不到才算失败。
+         任务目录找不到时失败，不能用全局模型冒充该训练任务的产物。
+         旧模型应通过显式 --checkpoint 加载并单独登记来源。
       2) `--checkpoint`：显式指定目录（独立运行 / 手动覆盖）。
       3) 旧版全局兜底目录 district_config.DISTRICT_CHECKPOINT_DIR。
     """
@@ -226,13 +226,6 @@ def resolve_checkpoint(cli_checkpoint, train_task_id, output_dir) -> "tuple[Opti
         found = _resolve_from_task_id(task, output_dir)
         if found:
             return found, task, f'--train-task-id={task}'
-        # 任务目录无断点：多为「改之前」的训练任务（模型写进了全局目录）⇒ 兜底取它
-        legacy = Path(dc.DISTRICT_CHECKPOINT_DIR)
-        if _is_checkpoint_dir(legacy):
-            log_console(f'[district-marl] 任务 {task} 目录下没有断点'
-                        f'（该任务可能由旧版脚本训练，模型写在全局目录）；'
-                        f'回退到 {legacy}')
-            return str(legacy), task, f'--train-task-id={task}（任务目录无断点，回退全局兜底目录）'
         return None, task, f'--train-task-id={task}（未找到模型目录）'
 
     given = str(cli_checkpoint or '').strip()
@@ -242,8 +235,63 @@ def resolve_checkpoint(cli_checkpoint, train_task_id, output_dir) -> "tuple[Opti
     return str(dc.DISTRICT_CHECKPOINT_DIR), None, 'district_config.DISTRICT_CHECKPOINT_DIR（全局兜底）'
 
 
+def load_checkpoint_training_config(checkpoint: Path) -> tuple[dict, Optional[str]]:
+    """Load the task-owned training parameter snapshot beside a checkpoint."""
+    checkpoint = Path(checkpoint).resolve()
+    for parent in (checkpoint.parent, *checkpoint.parents):
+        path = parent / 'district_runtime_config.json'
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding='utf-8'))
+            requested = payload.get('requested_parameters') or {}
+            if isinstance(requested, dict):
+                return requested, str(path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+    return {}, None
+
+
+def inherit_training_parameters(args, training_config: dict) -> list[str]:
+    """Use checkpoint values where evaluation still has parser defaults."""
+    # An omitted old snapshot field means legacy semantics. Unlike reward
+    # overrides, changing this mode reinterprets both policy inputs and actions.
+    inherited = []
+    trained_mode = training_config.get('cooling_reference_mode', 'dataset_ideal')
+    if trained_mode not in ('dataset_ideal', 'disabled'):
+        raise ValueError(f'invalid training cooling_reference_mode: {trained_mode}')
+    requested_mode = getattr(args, 'cooling_reference_mode', None)
+    if requested_mode is None:
+        args.cooling_reference_mode = trained_mode
+        inherited.append('cooling_reference_mode')
+    elif requested_mode != trained_mode:
+        raise ValueError(
+            f'cooling-reference-mode={requested_mode} differs from checkpoint training '
+            f'cooling_reference_mode={trained_mode}; use a matching trained model')
+    if not training_config:
+        return inherited
+    defaults = parse_args([])
+    explicit = getattr(args, 'explicit_parameters', None)
+    keys = (
+        'no_shared_policy', 'no_district_obs', 'peak_weight', 'team_share',
+        'stagger_weight', 'attribution', 'peak_anchored', 'soc_reserve_weight',
+        'soc_reserve_hours', 'soc_reserve_target', 'soc_reserve_ns_gate',
+        'soc_reserve_spike_weight', 'peak_action_dim', 'peak_resp_cool_frac',
+        'peak_resp_batt_discharge', 'peak_action_gated',
+    )
+    for key in keys:
+        if (key in training_config and hasattr(args, key)
+                and hasattr(defaults, key)
+                and (key not in explicit if explicit is not None
+                     else getattr(args, key) == getattr(defaults, key))):
+            setattr(args, key, training_config[key])
+            inherited.append(key)
+    return inherited
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description='区域级 MARL 评估（District-aware MARL eval）')
+    p = argparse.ArgumentParser(description='区域级 MARL 评估（District-aware MARL eval）',
+                                allow_abbrev=False)
     p.add_argument('--checkpoint', type=str, default=None,
                    help='RLlib checkpoint 目录；与 --train-task-id 同时给出时后者优先')
     # 平台任务编排给评估子任务固定注入的「训练模型」参数（下划线/中划线两种写法都认）
@@ -259,6 +307,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument('--steps', '--eval-steps', dest='steps', type=int, default=0,
                    help='评估段长；0/不填 = 用数据集自带长度（整段），填值 = 只跑这么多步')
     p.add_argument('--seed', type=int, default=dc.DISTRICT_SEED)
+    p.add_argument('--power-outage-seed', type=int, default=None,
+                   help='不填保留评估数据集停电种子；90000用于显式复现旧包装器行为')
+    p.add_argument('--cooling-reference-mode', choices=('dataset_ideal', 'disabled'),
+                   default=None,
+                   help='不填继承训练模式；旧模型默认dataset_ideal，显式值须与训练一致')
+    p.add_argument('--ray-num-cpus', type=int, default=None,
+                   help='Ray 可见 CPU 数；不填保留自动检测')
     # 确定性协议：值取 random/none/off 表示不干预；在解释器重启时生效（预扫描 argv）
     p.add_argument('--hashseed', type=str,
                    default=os.environ.get('DISTRICT_HASHSEED', '0'),
@@ -307,16 +362,23 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         '传 0 = 按条数上限自动抽稀覆盖整段')
     p.add_argument('--decision-log-max-steps', type=int, default=0,
                    help='决策推演条数上限（默认 0 = 不限制，整段全记）')
-    # parse_known_args：白名单取消后，界面配置里可能有本脚本不认的参数（例如给训练脚本
-    # 配的 peak-weight 抄到了评估脚本上）⇒ 忽略并提示，不用 exit 2 打断整个任务。
-    args, unknown = p.parse_known_args(argv)
-    if unknown:
-        log_console(f'[district-marl] 忽略未识别的命令行参数: {unknown}')
-    args.unknown_args = list(unknown)
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    args = p.parse_args(tokens)
+    args.explicit_parameters = sorted({
+        p._option_string_actions[token.split('=', 1)[0]].dest
+        for token in tokens if token.split('=', 1)[0] in p._option_string_actions
+    })
+    args.unknown_args = []
+    from district_marl.district_train import validate_district_parameters
+    validate_district_parameters(p, args)
+    if args.steps < 0 or (args.ray_num_cpus is not None and args.ray_num_cpus < 1):
+        p.error('评估窗口不得为负，Ray CPU 数必须为正')
     return args
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    # 独立评估路线：找指定模型 -> 继承训练配置 -> 加载权重 -> 固定rollout -> 写产物。
+    # 与训练入口不同，这里不调用algo.train()，不能把评估步数当作新增训练量。
     args = parse_args(argv)
     from utils.train import (
         ensure_ray_initialized,
@@ -347,11 +409,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         log_console('  请先跑一次训练（District_MARL_train.py），或用 --checkpoint 指定目录。')
         return 2
 
+    training_config, training_config_path = load_checkpoint_training_config(checkpoint)
+    # 奖励、区域观测和动作结构必须可追溯；默认值继承训练快照，显式CLI仍优先。
+    # 若改动这些设置，结果是新的实验条件，不能静默当成原模型同协议复现。
+    try:
+        inherited_parameters = inherit_training_parameters(args, training_config)
+    except ValueError as exc:
+        log_console(f'[district-marl] 模型配置不匹配: {exc}')
+        return 2
+
     log_console('=' * 72)
     log_console('[district-marl] 区域级 MARL 评估')
     log_console('=' * 72)
     log_console(f'  checkpoint : {checkpoint}')
     log_console(f'  来源       : {ckpt_source}')
+    if training_config_path:
+        log_console(f'  训练快照   : {training_config_path}')
+    if inherited_parameters:
+        log_console(f'  继承参数   : {", ".join(inherited_parameters)}')
     log_console(f'  schema     : {args.schema}    区域观测: {not args.no_district_obs}')
     try:
         from district_marl import _hashseed as _hs
@@ -367,7 +442,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     f'{train_task} 当时训练的那一份。要精确复用，请用当前版本重训一次'
                     '（模型会按任务目录落盘）。')
 
-    ensure_ray_initialized(log_console=log_console)
+    ensure_ray_initialized(log_console=log_console, num_cpus=args.ray_num_cpus)
     # 先装动作注入钩子：否则 action_hook_status() 未定义（原名 `_STATUS`），
     # 且奖励的"动作相关项"（制冷电费 / 电池择时）会静默为 0。
     log_console(f'  奖励动作注入 : {install_action_hook()}')
@@ -393,7 +468,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     env_config = build_district_env_config(
         args.schema, eval_steps, enable_render=False, output_dir=output_dir,
-        record_details=True, district_obs=not args.no_district_obs)
+        record_details=True, district_obs=not args.no_district_obs,
+        random_seed=args.seed, power_outage_seed=args.power_outage_seed,
+        cooling_reference_mode=args.cooling_reference_mode)
     log_console(f'  回合步数   : {"auto(数据集自带)" if eval_steps is None else eval_steps}')
 
     # 探针只用于拿 agent 列表
@@ -455,13 +532,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _no_diag = bool(getattr(args, 'no_diag', False))
     _diag_out: Dict[str, object] = {}
     _trace_out: Dict[str, object] = {}
+    _evidence_out: Dict[str, object] = {}
     _t_eval = time.perf_counter()
     metrics = rollout_district(algo, DistrictContextRLlibEnv, env_config,
                                policy_id_fn, deterministic=True,
                                max_steps=int(args.steps or 0), export_dir=output_dir,
                                trace_out=(None if _no_diag else _trace_out),
                                diag_out=(None if _no_diag else _diag_out),
-                               decision_log=_decision_log)
+                               decision_log=_decision_log,
+                               evidence_out=_evidence_out)
     _eval_s = round(time.perf_counter() - _t_eval, 1)
 
     (output_dir / 'district_eval_metrics.json').write_text(
@@ -474,7 +553,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if _decision_log is not None:
         try:
             _decision_log.mark_peak_steps(float(metrics.get('district_peak_raw') or 0.0))
-            _dp = output_dir / 'decision_trace.json'
+            # The shared trace keeps complete before/after transitions. Retain
+            # this original explanation payload separately rather than overwrite it.
+            _dp = output_dir / 'district_decision_explanations.json'
             _decision_log.save(_dp, extra_meta={
                 'checkpoint': str(checkpoint),
                 'schema': str(args.schema),
@@ -565,6 +646,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             log_console(_fp.fingerprint_line(_fpayload['fingerprint']))
         except Exception as exc:
             log_console(f'[district-marl] 指纹落盘失败（忽略）: {exc}')
+
+    from evaluation_contract import (
+        file_sha256, protocol_id, finalize_recorded_evaluation)
+    checkpoint_files = {
+        path.relative_to(checkpoint).as_posix(): file_sha256(path)
+        for path in sorted(checkpoint.rglob('*')) if path.is_file()
+    }
+    if not checkpoint_files:
+        raise ValueError('District checkpoint has no verifiable files')
+    _evidence_out['result']['policy_id'] = protocol_id(checkpoint_files)
+    finalize_recorded_evaluation(
+        _evidence_out['result'], _evidence_out['context'], output_dir,
+        _evidence_out['terminated'], resolved_parameters={
+            **vars(args),
+            'checkpoint_training_config': training_config_path,
+            'inherited_training_parameters': inherited_parameters,
+        },
+        registry_root=os.environ.get('CITYLEARN_ANCHOR_REGISTRY'))
 
     log_console('')
     log_console('[district-marl] 区域 KPI（District，越小越好）')

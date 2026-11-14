@@ -4,7 +4,7 @@ CHESCA（Community-based Hierarchical Energy Systems Coordination Algorithm）
 2023 CityLearn 挑战赛冠军算法的核心 Agent 实现。
 
 ============================================================================
-【5 个阶段】
+【6 个阶段（第5阶段为可选残差）】
 ============================================================================
 
   观测 observations 进入
@@ -35,7 +35,7 @@ CHESCA（Community-based Hierarchical Energy Systems Coordination Algorithm）
        │
        ▼
   ┌─ 阶段5: ResMARL 修正（默认关闭）──────────────────────────────────┐
-  │  Multi-Agent：a_final = clip((1−α)·a_base + α·a_rl)  （blend）     │
+  │  Multi-Agent：按residual_mode做残差叠加或blend，再施加安全投影   │
   │  阶段0：无策略网络，enabled=False 或 α=0 时严格恒等（基线冻结）    │
   └───────────────────────────────────────────────────────────────────┘
        │
@@ -51,8 +51,13 @@ CHESCA（Community-based Hierarchical Energy Systems Coordination Algorithm）
 每建筑 3 维动作（按 building 顺序拼接）：
   [DHW_storage, electrical_storage, cooling_device] × n_buildings
   DHW_storage        — 生活热水储热罐：正=加热，负=放热
-  electrical_storage — 电池：正=充电，负=放电（动作是 SOC 变化比例，如 0.05）
+  electrical_storage — 电池：正=充电，负=放电（无量纲归一化命令）
   cooling_device     — 冷机：控制制冷出力（PID 输出）
+
+注意：树搜索内部把电池候选当作SOC增量近似；当前cl2环境的实际执行按
+命令×额定功率×步长换算能量，再受功率、效率、可用电量等限制。
+因此命令0.05不保证SOC增加5个百分点。应以实际结算和SOC日志解释执行结果。
+各楼三维命令按顺序拼接；新增设备/改变动作顺序须先核对schema兼容性。
 ============================================================================
 """
 
@@ -157,6 +162,11 @@ class Checa(Agent):
             'peak_cut_graded_m_hi': 6.0,
             'max_soc_reduction_in_outage': 0.70,
             'increase_scale_outage': 1.166,
+            'pid_kp': -0.288074675781558,
+            'pid_ki': -2.489908316536426,
+            'pid_kd': 0.009479951268930725,
+            'pid_out_temp_scaler': 0.09629375171771082,
+            'pid_kp_outage': -0.27351617926369537,
             # ResMARL 残差层（阶段0：默认关闭，保证与纯 CHESCA 基线一致）
             'resmarl_enabled': False,
             'residual_alpha': 0.0,
@@ -241,7 +251,8 @@ class Checa(Agent):
 
         # 每建筑一个冷机 PID + XGBoost 辅助控制器
         self.cooling_device_controller = [
-            CoolingDeviceController(self.env.buildings_metadata[b], b, self.observation_names_b)
+            CoolingDeviceController(self.env.buildings_metadata[b], b, self.observation_names_b,
+                                    params=self.params)
             for b in range(self.n_buildings)
         ]
         for ctrl in self.cooling_device_controller:
@@ -321,8 +332,8 @@ class Checa(Agent):
         阶段3  未来设备用电估计
         阶段4  电池树搜索 refine → 得到 a_base（纯 CHESCA 基准动作）
         阶段5  apply_residual_correction：
-                 SAC 各 agent 输出 Δa
-                 a_final = clip((1−α)·a_base + α·a_rl)  ← 环境实际执行的是 a_final
+                 SAC各agent提出修正，按residual_mode做叠加或blend并安全投影
+                 环境实际执行的是修正后的a_final；具体公式见apply_residual_correction
         随后   更新净负荷历史、seen_steps += 1
 
         【纯 CHESCA（resmarl_enabled=False 或 α=0）】
@@ -369,7 +380,7 @@ class Checa(Agent):
 
         # --- 阶段 5：CHESCA-ResMARL 残差（CHESCA 启用 multi_agent 时）---
         # 输入 action_proposals = a_base（阶段4 refine 之后）
-        # 输出 action_proposals = a_final = clip((1−α)·a_base + α·a_rl)
+        # 输出a_final；residual_mode决定叠加/blend，后续安全投影也可能改变命令。
         # residual_corrector 在 setup 时被替换为 MultiAgentResidualCorrector（SAC）
         # α=0 或未启用时原样返回 a_base
         action_proposals = self.apply_residual_correction(action_proposals, observations)

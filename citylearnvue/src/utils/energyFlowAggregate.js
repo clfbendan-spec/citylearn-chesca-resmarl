@@ -1,3 +1,5 @@
+
+import { themeColor } from './theme'
 /**
  * CityLearn → Home Assistant 风格「能源分配」日聚合。
  *
@@ -511,12 +513,12 @@ export function buildEnergyFlowSeriesPoints(folderData, periodDays, mode = 'day'
  */
 export function toSankeyOption(flow) {
   const nodes = [
-    { name: '光伏发电', itemStyle: { color: '#ff9800' } },
-    { name: '电网购入', itemStyle: { color: '#488fc2' } },
-    { name: '电池放电', itemStyle: { color: '#4db6ac' } },
-    { name: '家庭', itemStyle: { color: '#8a8a8a' } },
-    { name: '电池充电', itemStyle: { color: '#9ccc65' } },
-    { name: '电网外送', itemStyle: { color: '#8353d1' } }
+    { name: '光伏发电', itemStyle: { color: themeColor('energy-solar-color') } },
+    { name: '电网购入', itemStyle: { color: themeColor('energy-grid-consumption-color') } },
+    { name: '电池放电', itemStyle: { color: themeColor('energy-battery-out-color') } },
+    { name: '家庭', itemStyle: { color: themeColor('secondary-text-color') } },
+    { name: '电池充电', itemStyle: { color: themeColor('energy-battery-in-color') } },
+    { name: '电网外送', itemStyle: { color: themeColor('energy-grid-return-color') } }
   ]
 
   const links = []

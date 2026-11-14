@@ -90,5 +90,17 @@ export function formatKpiCellValue(val) {
   if (val === null || val === undefined || val === '') {
     return '—'
   }
-  return val
+  if (typeof val !== 'number' && typeof val !== 'string') return val
+  const text = String(val).trim()
+  const numeric = Number(text)
+  const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text)
+  if (!text || !Number.isFinite(numeric) || !match || !(match[2] || match[3])) return val
+  // Slice decimal digits so display truncation never rounds or changes source data.
+  const digits = match[2] + (match[3] || '')
+  const point = match[2].length + Number(match[4] || 0)
+  const integer = (point <= 0 ? '0' : digits.slice(0, point).padEnd(point, '0')).replace(/^0+(?=\d)/, '')
+  const fraction = (point < 0 ? '0'.repeat(Math.min(-point, 3)) + digits : digits.slice(point))
+    .slice(0, 3).replace(/0+$/, '')
+  const sign = match[1] === '-' && (integer !== '0' || fraction) ? '-' : ''
+  return `${sign}${integer}${fraction ? '.' + fraction : ''}`
 }

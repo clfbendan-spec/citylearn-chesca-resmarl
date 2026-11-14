@@ -26,7 +26,7 @@ from scipy import stats
 
 
 class CoolingDeviceController:
-    def __init__(self, building_metadata, b, obs_names_b):
+    def __init__(self, building_metadata, b, obs_names_b, params=None):
         self.building_metadata = building_metadata
         self.observation_names_b = obs_names_b
         self.b = b
@@ -45,20 +45,21 @@ class CoolingDeviceController:
 
         # Controller for all three buildings
         self.pid_controller = PIDController()
-        self.pid_controller.Kp = -0.288074675781558  # -0.0183231
-        self.pid_controller.Ki = -2.489908316536426  # -4.298114009977
-        self.pid_controller.Kd = 0.009479951268930725  # 0.0 to be a PI controller
+        params = params or {}
+        self.pid_controller.Kp = float(params.get('pid_kp', -0.288074675781558))
+        self.pid_controller.Ki = float(params.get('pid_ki', -2.489908316536426))
+        self.pid_controller.Kd = float(params.get('pid_kd', 0.009479951268930725))
         self.pid_controller.dt = 0.1  # 0.1
-        self.pid_controller.OutTempScaler = 0.09629375171771082
-        self.pid_controller.Kp_outage = -0.27351617926369537
+        self.pid_controller.OutTempScaler = float(params.get('pid_out_temp_scaler', 0.09629375171771082))
+        self.pid_controller.Kp_outage = float(params.get('pid_kp_outage', -0.27351617926369537))
 
         self.aux_pid_controller = PIDController()
-        self.aux_pid_controller.Kp = -0.288074675781558
-        self.aux_pid_controller.Ki = -2.489908316536426
-        self.aux_pid_controller.Kd = 0.009479951268930725
+        self.aux_pid_controller.Kp = self.pid_controller.Kp
+        self.aux_pid_controller.Ki = self.pid_controller.Ki
+        self.aux_pid_controller.Kd = self.pid_controller.Kd
         self.aux_pid_controller.dt = 0.1
-        self.aux_pid_controller.OutTempScaler = 0.09629375171771082
-        self.aux_pid_controller.Kp_outage = -0.27351617926369537
+        self.aux_pid_controller.OutTempScaler = self.pid_controller.OutTempScaler
+        self.aux_pid_controller.Kp_outage = self.pid_controller.Kp_outage
 
         """
         {"target": Dont know, "params": {"Kp_o": -0.2859441319844675, "OutTempScaler": 0.1024468677938111}, Average score: Average score: 0.500, Resilience: 0.354, Unserved: 0.442

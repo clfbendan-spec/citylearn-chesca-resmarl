@@ -6,7 +6,7 @@ module.exports = defineConfig({
   devServer: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8088', // 后端服务器的地址
+        target: process.env.CITYLEARN_API_PROXY || 'http://localhost:8088', // 后端服务器的地址
         changeOrigin: true,
         pathRewrite: { '^/api': '' } // 重写路径，去掉 /api
       }

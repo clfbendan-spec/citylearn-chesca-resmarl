@@ -2,7 +2,7 @@
   <div class="data-list-page ha-page">
     <header class="page-header">
       <div>
-        <h1 class="page-title">原始数据</h1>
+        <h1 class="page-title">数据集查看</h1>
         <p class="page-desc">
           
         </p>
@@ -145,7 +145,7 @@
 </template>
 
 <script>
-import axios from 'axios'
+import { getDatasetList, getList } from '../api/dataset'
 
 const HVAC_MODE_LABELS = {
   0: '关闭',
@@ -373,11 +373,11 @@ export default {
     async loadDatasetOptions() {
       this.datasetLoading = true
       try {
-        const response = await axios.get('/api/web/basedata/getDatasetList')
-        if (!response.data || response.data.code !== 0) {
-          throw new Error((response.data && response.data.message) || '加载数据集列表失败')
+        const { ok, data, message } = await getDatasetList({ silent: true })
+        if (!ok) {
+          throw new Error(message || '加载数据集列表失败')
         }
-        const list = Array.isArray(response.data.data) ? response.data.data : []
+        const list = Array.isArray(data) ? data : []
         this.datasetOptions = list
         if (!list.some((d) => d.schemaKey === this.datasetSchema) && list.length) {
           this.datasetSchema = list[0].schemaKey
@@ -429,21 +429,18 @@ export default {
     },
     fetchData() {
       this.loading = true
-      axios
-        .get('/api/web/basedata/getList', {
-          params: {
-            buildingId: this.buildingId,
-            datasetSchema: this.datasetSchema,
-            date: this.dateValue || undefined,
-            dayType: this.dayTypeValue || undefined,
-            hour: this.hourValue || undefined
+      getList({
+        buildingId: this.buildingId,
+        datasetSchema: this.datasetSchema,
+        date: this.dateValue || undefined,
+        dayType: this.dayTypeValue || undefined,
+        hour: this.hourValue || undefined
+      }, { silent: true })
+        .then(({ ok, data, message }) => {
+          if (!ok) {
+            throw new Error(message || '加载失败')
           }
-        })
-        .then((response) => {
-          if (!response.data || response.data.code !== 0) {
-            throw new Error((response.data && response.data.message) || '加载失败')
-          }
-          const rows = Array.isArray(response.data.data) ? response.data.data : []
+          const rows = Array.isArray(data) ? data : []
           this.allRows = rows
           this.total = rows.length
           const maxPage = Math.max(1, Math.ceil(this.total / this.pageSize) || 1)
@@ -544,10 +541,9 @@ export default {
 
 .filter-toolbar {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px 12px;
-  overflow-x: auto;
 }
 
 .filter-field {
@@ -563,7 +559,7 @@ export default {
   flex: 0 0 auto;
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--secondary-text-color);
   white-space: nowrap;
 }
@@ -680,5 +676,16 @@ export default {
   .filter-select-wide {
     width: 160px;
   }
+}
+@media (max-width: 680px) {
+  .data-list-page { padding: var(--space-4) var(--space-4) var(--space-6); }
+  .filter-toolbar { align-items: stretch; }
+  .filter-field { flex: 1 1 120px; flex-direction: column; align-items: stretch; }
+  .filter-field-dataset { flex-basis: 100%; }
+  .filter-select, .filter-select-wide, .filter-select-sm, .filter-date { width: 100%; }
+  .filter-date >>> .el-input { width: 100%; }
+  .filter-actions { flex-basis: 100%; margin-left: 0; }
+  .table-card >>> .el-card__body { padding: var(--space-4); }
+  .table-pagination { overflow-x: auto; justify-content: flex-start; }
 }
 </style>

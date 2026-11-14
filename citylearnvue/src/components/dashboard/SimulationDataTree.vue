@@ -180,7 +180,7 @@ export default {
 
 <style scoped>
 .sim-tree {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   max-height: 875px;
   overflow-y: auto;
@@ -188,7 +188,7 @@ export default {
 }
 .sub-title {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   padding: 8px 16px 4px;
 }
 .tree-menu { border-right: none; }

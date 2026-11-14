@@ -27,6 +27,9 @@ r"""平台入口：区域级（District-aware）MARL 训练。
 """
 
 import os
+# 新手提示：真正的学习发生在district_train.main的algo.train()内。
+# 观测由district_env整理，动作由RLlib策略产生，CityLearn负责物理状态转移。
+# train_progress和learner诊断用于核实是否实际更新，最终KPI还需独立rollout计算。
 import sys
 from pathlib import Path
 
@@ -38,7 +41,7 @@ _MARKER = Path('district_marl') / 'district_config.py'
 def _find_root() -> Path:
     """找到含 district_marl 包的 citylearnpy 根目录。"""
     candidates = []
-    env = (os.environ.get('CITYLEARNPY_DIR') or '').strip()
+    env = (os.environ.get('CITYLEARNPY_DIR') or os.environ.get('CITYLEARN_PYTHON_PATH') or '').strip()
     if env:
         candidates.append(Path(env))
     here = Path(__file__).resolve()
@@ -62,6 +65,16 @@ ROOT = _find_root()
 for _p in (str(Path(__file__).resolve().parent), str(ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# ---- 噪声抑制（★必须在 import ray / torch 之前）---------------------------
+#   实测一次 320 轮训练：protobuf 版本警告 40+ 条、requests 1 条、ray deprecation 若干，
+#   全部在 `from district_marl.district_train import main` 那一行里产生
+#   ⇒ 放在这里（该 import 在下方 `__main__` 块内）才来得及。
+#   同时压 warnings 与 logging 两条通道，原因见 district_marl/_quiet.py 顶部。
+#   要看全部：加 --verbose-warnings（会被摘掉，不传给下游 argparse）。
+from district_marl._quiet import quiet_warnings  # noqa: E402  （必须晚于 sys.path 设置）
+
+quiet_warnings()
 
 # ---- 确定性引导（★平台路径的唯一生效点）----------------------------------
 #   `PYTHONHASHSEED` 只在**解释器启动时**读一次，进程内赋值无效 ⇒ 必须"发现不一致就

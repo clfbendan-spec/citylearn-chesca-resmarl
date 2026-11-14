@@ -148,7 +148,16 @@
 </template>
 
 <script>
-import axios from 'axios'
+import {
+  fetchPermissionTree,
+  fetchUserPermissions,
+  saveUserPermissions,
+  listUsers,
+  resetUserPassword,
+  addUser,
+  editUser,
+  deleteUser
+} from '../api/user'
 
 export default {
   name: 'UserManagement',
@@ -288,13 +297,10 @@ export default {
       }
     },
     async loadPermTree() {
-      try {
-        const res = await axios.get('/api/web/user/permissionTree')
-        if (res.data && res.data.code === 0) {
-          this.permTreeData = this.mapPermTree(res.data.data || [])
-        }
-      } catch (e) {
-        /* ignore */
+      // 权限树拉不到不阻断页面：树为空时对话框只是没有可勾选项
+      const res = await fetchPermissionTree({ silent: true })
+      if (res.ok) {
+        this.permTreeData = this.mapPermTree(res.data || [])
       }
     },
     async openPermDialog(row) {
@@ -305,20 +311,14 @@ export default {
         if (!this.permTreeData.length) {
           await this.loadPermTree()
         }
-        const res = await axios.get('/api/web/user/getPermissions', {
-          params: { id: row.id }
-        })
-        const keys = (res.data && res.data.code === 0 && Array.isArray(res.data.data))
-          ? res.data.data
-          : []
+        const res = await fetchUserPermissions(row.id, { failMessage: '加载用户权限失败' })
+        const keys = (res.ok && Array.isArray(res.data)) ? res.data : []
         await this.$nextTick()
         const tree = this.$refs.permTree
         if (tree) {
           tree.setCheckedKeys([])
           tree.setCheckedKeys(keys)
         }
-      } catch (e) {
-        this.$message.error('加载用户权限失败')
       } finally {
         this.permLoading = false
       }
@@ -336,19 +336,14 @@ export default {
       const permissions = [...new Set(checked)]
       this.permSaving = true
       try {
-        const body = new URLSearchParams()
-        body.append('id', this.permUser.id)
-        body.append('permissions', JSON.stringify(permissions))
-        const res = await axios.post('/api/web/user/savePermissions', body)
-        if (res.data && res.data.code === 0) {
+        const res = await saveUserPermissions(this.permUser.id, permissions, {
+          failMessage: '保存权限失败'
+        })
+        if (res.ok) {
           this.$message.success('权限已保存')
           this.permDialogVisible = false
           this.fetchList()
-        } else {
-          this.$message.error((res.data && res.data.message) || '保存权限失败')
         }
-      } catch (e) {
-        this.$message.error('保存权限失败')
       } finally {
         this.permSaving = false
       }
@@ -360,22 +355,16 @@ export default {
     async fetchList() {
       this.loading = true
       try {
-        const res = await axios.get('/api/web/user/listPage', {
-          params: {
-            username: this.searchUsername || undefined,
-            currentPage: this.currentPage,
-            pageSize: this.pageSize
-          }
-        })
-        if (res.data && res.data.code === 0) {
-          const page = res.data.data || {}
+        const res = await listUsers({
+          username: this.searchUsername || undefined,
+          currentPage: this.currentPage,
+          pageSize: this.pageSize
+        }, { failMessage: '加载用户失败' })
+        if (res.ok) {
+          const page = res.data || {}
           this.userList = page.rows || []
           this.total = page.total || 0
-        } else {
-          this.$message.error((res.data && res.data.message) || '加载用户失败')
         }
-      } catch (e) {
-        this.$message.error('加载用户失败')
       } finally {
         this.loading = false
       }
@@ -427,18 +416,13 @@ export default {
         if (!valid) return
         this.resetting = true
         try {
-          const body = new URLSearchParams()
-          body.append('id', this.resetPwd.id)
-          body.append('password', this.resetPwd.password)
-          const res = await axios.post('/api/web/user/resetPassword', body)
-          if (res.data && res.data.code === 0) {
+          const res = await resetUserPassword(this.resetPwd.id, this.resetPwd.password, {
+            failMessage: '重置失败'
+          })
+          if (res.ok) {
             this.$message.success('密码已重置')
             this.resetDialogVisible = false
-          } else {
-            this.$message.error((res.data && res.data.message) || '重置失败')
           }
-        } catch (e) {
-          this.$message.error('重置失败')
         } finally {
           this.resetting = false
         }
@@ -449,35 +433,16 @@ export default {
         if (!valid) return
         this.saving = true
         try {
-          const body = new URLSearchParams()
-          if (this.dialogMode === 'add') {
-            body.append('username', this.dialogForm.username.trim())
-            body.append('password', this.dialogForm.password)
-            if (this.dialogForm.nickname) body.append('nickname', this.dialogForm.nickname.trim())
-            const res = await axios.post('/api/web/user/add', body)
-            if (res.data && res.data.code === 0) {
-              this.$message.success('新增成功')
-              this.dialogVisible = false
-              this.fetchList()
-            } else {
-              this.$message.error((res.data && res.data.message) || '新增失败')
-            }
-          } else {
+          const isAdd = this.dialogMode === 'add'
+          const res = isAdd
+            ? await addUser(this.dialogForm, { failMessage: '新增失败' })
             // 编辑只改用户名/显示名称；密码不在此处提交（改密码走「重置密码」）
-            body.append('id', this.dialogForm.id)
-            body.append('username', this.dialogForm.username.trim())
-            body.append('nickname', this.dialogForm.nickname || '')
-            const res = await axios.post('/api/web/user/edit', body)
-            if (res.data && res.data.code === 0) {
-              this.$message.success('保存成功')
-              this.dialogVisible = false
-              this.fetchList()
-            } else {
-              this.$message.error((res.data && res.data.message) || '保存失败')
-            }
+            : await editUser(this.dialogForm, { failMessage: '保存失败' })
+          if (res.ok) {
+            this.$message.success(isAdd ? '新增成功' : '保存成功')
+            this.dialogVisible = false
+            this.fetchList()
           }
-        } catch (e) {
-          this.$message.error('操作失败')
         } finally {
           this.saving = false
         }
@@ -490,14 +455,10 @@ export default {
         cancelButtonText: '取消'
       })
         .then(async () => {
-          const body = new URLSearchParams()
-          body.append('id', row.id)
-          const res = await axios.post('/api/web/user/delete', body)
-          if (res.data && res.data.code === 0) {
+          const res = await deleteUser(row.id, { failMessage: '删除失败' })
+          if (res.ok) {
             this.$message.success('已删除')
             this.fetchList()
-          } else {
-            this.$message.error((res.data && res.data.message) || '删除失败')
           }
         })
         .catch(() => {})

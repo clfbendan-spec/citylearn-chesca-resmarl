@@ -23,6 +23,7 @@
           <div class="mi-header-text">
             <div class="mi-entity-name">{{ sensor.name }}</div>
             <div class="mi-entity-id">{{ entityIdDisplay }}</div>
+            <div v-if="sourceName" class="mi-entity-id">{{ sourceName }}</div>
           </div>
         </div>
         <button type="button" class="mi-close" aria-label="关闭" @click="visibleProxy = false">
@@ -57,11 +58,12 @@
             <span>历史</span>
           </div>
           <el-radio-group v-model="range" size="mini" @change="renderChart">
-            <el-radio-button label="day">今日</el-radio-button>
+            <el-radio-button label="day">{{ localSamples !== null ? '当日' : '今日' }}</el-radio-button>
             <el-radio-button label="24h">24 小时</el-radio-button>
           </el-radio-group>
         </div>
         <p class="mi-history-hint"></p>
+        <el-empty v-if="localSamples !== null && !hasValues" description="该记录未保存此动作，或设备由环境自动控制" :image-size="48" />
         <div ref="chart" class="mi-chart" />
       </section>
     </div>
@@ -69,6 +71,8 @@
 </template>
 
 <script>
+import { themeColor } from '@/utils/theme'
+
 import * as echarts from 'echarts'
 import dayjs from 'dayjs'
 import HaMdiIcon from '@/components/home/HaMdiIcon.vue'
@@ -94,7 +98,9 @@ export default {
     },
     buildingIndex: { type: Number, default: 0 },
     /** 首页选中日；早于今天时弹窗取该日 23:00 */
-    selectedDay: { type: String, default: '' }
+    selectedDay: { type: String, default: '' },
+    localSamples: { type: Array, default: null },
+    sourceName: { type: String, default: '' }
   },
   data() {
     return {
@@ -136,8 +142,12 @@ export default {
       if (!this.current) return '—'
       return formatSensorValue(this.sensor, this.current[this.sensor.field])
     },
+    hasValues() {
+      return this.history.some(row => row[this.sensor.field] != null)
+    },
     currentTimeLabel() {
       if (this.current == null) return '—'
+      if (this.localSamples !== null) return dayjs(this.current.time).format('YYYY-MM-DD HH:mm')
       const idx = this.currentIndex != null ? this.currentIndex : this.current.index
       if (idx == null) return '—'
       return formatHourLabel(idx, 'YYYY-MM-DD HH:mm')
@@ -158,6 +168,9 @@ export default {
       if (this.visible) this.loadAndRender()
     },
     selectedDay() {
+      if (this.visible) this.loadAndRender()
+    },
+    localSamples() {
       if (this.visible) this.loadAndRender()
     }
   },
@@ -190,6 +203,16 @@ export default {
       }
     },
     async fetchSnapshot() {
+      if (this.localSamples !== null) {
+        const dayRows = this.localSamples.filter(row => !this.selectedDay || String(row.time).startsWith(this.selectedDay))
+        const end = dayRows[dayRows.length - 1]
+        this.history = this.range === '24h' && end
+          ? this.localSamples.filter(row => dayjs(row.time).valueOf() <= dayjs(end.time).valueOf() &&
+            dayjs(row.time).valueOf() > dayjs(end.time).subtract(24, 'hour').valueOf())
+          : dayRows
+        this.current = this.history[this.history.length - 1] || null
+        return
+      }
       const now = metricsViewNow(this.selectedDay, new Date())
       if (this.sensor.group === 'action') {
         const snap = await getActionSnapshot(
@@ -261,10 +284,10 @@ export default {
           color: colors,
           tooltip: {
             trigger: 'axis',
-            backgroundColor: '#fff',
+            backgroundColor: themeColor('card-background-color'),
             borderColor: 'rgba(0,0,0,0.12)',
             borderWidth: 1,
-            textStyle: { color: '#212121', fontSize: 12 },
+            textStyle: { color: themeColor('primary-text-color'), fontSize: 12 },
             formatter: (params) => {
               if (!params || !params.length) return ''
               const head = params[0].axisValue
@@ -283,7 +306,7 @@ export default {
             ? {
                 data: seriesDefs.map((s) => s.name),
                 bottom: 0,
-                textStyle: { color: '#727272', fontSize: 11 }
+                textStyle: { color: themeColor('secondary-text-color'), fontSize: 11 }
               }
             : undefined,
           grid: {
@@ -297,17 +320,17 @@ export default {
             data: times,
             boundaryGap: false,
             axisLine: { lineStyle: { color: 'rgba(0,0,0,0.12)' } },
-            axisLabel: { color: '#727272', fontSize: 11, hideOverlap: true },
+            axisLabel: { color: themeColor('secondary-text-color'), fontSize: 11, hideOverlap: true },
             axisTick: { show: false }
           },
           yAxis: {
             type: 'value',
             name: yName,
-            nameTextStyle: { color: '#727272', fontSize: 11 },
+            nameTextStyle: { color: themeColor('secondary-text-color'), fontSize: 11 },
             scale: true,
             min: sensor.key === 'humidity' ? 0 : null,
             max: sensor.key === 'humidity' ? 100 : null,
-            axisLabel: { color: '#727272', fontSize: 11 },
+            axisLabel: { color: themeColor('secondary-text-color'), fontSize: 11 },
             splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
             axisLine: { show: false }
           },

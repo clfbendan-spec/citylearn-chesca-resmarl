@@ -1,12 +1,15 @@
-import axios from 'axios'
 import Papa from 'papaparse'
 import { hourIndexIn2026, timestampAtHourIndex } from '@/utils/dataset2026Clock'
+import { getDashboardSimulationDetail } from '@/api/dashboard'
+import { loadCommunityHomeTrace } from '@/utils/homeCommunityChesca'
 
 /** 首页控制动作固定使用的仿真 taskId */
 export const HOME_ACTION_TASK_ID = '2c81b4f639aa45d9b253f06383f91d55'
 
 let cachedPayload = null
 let loadingPromise = null
+let cachedAt = 0
+const CACHE_TTL_MS = 5 * 60 * 1000
 
 function toNumber(v) {
   if (v == null || v === '') return null
@@ -35,26 +38,40 @@ function parseTraceRows(csvText) {
  * 加载固定 taskId 对应仿真的 chesca_trace（首页动作卡片专用）。
  */
 export async function loadLatestActionTrace(force = false) {
-  if (!force && cachedPayload) return cachedPayload
+  if (!force && cachedPayload && Date.now() - cachedAt < CACHE_TTL_MS) return cachedPayload
   if (!force && loadingPromise) return loadingPromise
 
   loadingPromise = (async () => {
-    const detailRes = await axios.get('/api/web/basedata/getDashboardSimulationDetail', {
-      params: { taskId: HOME_ACTION_TASK_ID }
+    // 失败不弹 toast：首页卡片自己显示 message，静默失败比弹窗更合适
+    const community = await loadCommunityHomeTrace()
+    if (community.rows.length) {
+      cachedPayload = {
+        rows: community.rows,
+        taskId: community.taskId,
+        groupName: community.groupName,
+        isCommunityTrace: true,
+        message: null
+      }
+      cachedAt = Date.now()
+      return cachedPayload
+    }
+
+    const detailRes = await getDashboardSimulationDetail(HOME_ACTION_TASK_ID, {
+      silent: true,
+      failMessage: `无法加载固定任务 ${HOME_ACTION_TASK_ID}`
     })
-    if (!detailRes.data || detailRes.data.code !== 0) {
+    if (!detailRes.ok) {
       cachedPayload = {
         rows: [],
         taskId: HOME_ACTION_TASK_ID,
         groupName: null,
-        message:
-          (detailRes.data && detailRes.data.message) ||
-          `无法加载固定任务 ${HOME_ACTION_TASK_ID}`
+        message: detailRes.message || `无法加载固定任务 ${HOME_ACTION_TASK_ID}`
       }
+      cachedAt = Date.now()
       return cachedPayload
     }
 
-    const detail = detailRes.data.data || {}
+    const detail = detailRes.data || {}
     const rows = parseTraceRows(detail.chescaTraceCsv)
     if (!rows.length) {
       cachedPayload = {
@@ -63,6 +80,7 @@ export async function loadLatestActionTrace(force = false) {
         groupName: detail.groupName || null,
         message: `任务 ${HOME_ACTION_TASK_ID} 无 chesca_trace.csv`
       }
+      cachedAt = Date.now()
       return cachedPayload
     }
 
@@ -72,6 +90,7 @@ export async function loadLatestActionTrace(force = false) {
       groupName: detail.groupName || null,
       message: null
     }
+    cachedAt = Date.now()
     return cachedPayload
   })().finally(() => {
     loadingPromise = null
@@ -100,9 +119,10 @@ function resolveTargetStep(buildingRows, now) {
 export async function getActionSnapshot(
   now = new Date(),
   range = 'day',
-  buildingIndex = 0
+  buildingIndex = 0,
+  force = false
 ) {
-  const payload = await loadLatestActionTrace()
+  const payload = await loadLatestActionTrace(force)
   const bIdx = Math.max(0, Math.min(2, Number(buildingIndex) || 0))
   const buildingRows = (payload.rows || [])
     .filter((r) => r.building === bIdx)
@@ -121,7 +141,13 @@ export async function getActionSnapshot(
     }
   }
 
-  const { step: targetStep, mode } = resolveTargetStep(buildingRows, now)
+  const { step: targetStep, mode } = payload.isCommunityTrace
+    ? (() => {
+      const target = hourIndexIn2026(now)
+      const max = Math.max(...buildingRows.map(row => row.step))
+      return { step: target <= max ? target : max, mode: 'calendar' }
+    })()
+    : resolveTargetStep(buildingRows, now)
   const byStep = new Map(buildingRows.map((r) => [r.step, r]))
   const currentRow = byStep.get(targetStep) || null
 

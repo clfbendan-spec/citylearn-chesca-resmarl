@@ -26,6 +26,9 @@ public class DashboardSimulationDetailVO implements Serializable {
 
     private String taskId;
 
+    /** Dataset publication currency code; null when provenance is unavailable. */
+    private String currency;
+
     /** exported_kpis.csv 文本 */
     private String kpisCsv;
 
@@ -40,6 +43,11 @@ public class DashboardSimulationDetailVO implements Serializable {
 
     /** decision_trace.json 文本（按步聚合的决策推演日志） */
     private String decisionTraceJson;
+    /** Nonempty when decision artifacts are a server-selected page. */
+    private Map<String, Object> tracePage = new LinkedHashMap<>();
+    private List<String> artifactWarnings = new ArrayList<>();
+    /** Verified, task-owned manifest / unrounded metrics / scoring evidence. */
+    private Map<String, Object> evaluationAnalysis = new LinkedHashMap<>();
 
     /** chesca_agent_config.json 文本（任务目录快照，含 ResMARL 参数） */
     private String agentConfigJson;

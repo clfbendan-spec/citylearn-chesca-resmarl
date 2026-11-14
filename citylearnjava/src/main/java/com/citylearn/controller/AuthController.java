@@ -26,12 +26,8 @@ public class AuthController {
     public Result<UserVO> login(@RequestParam("username") String username,
                                 @RequestParam("password") String password,
                                 HttpSession session) {
-        try {
-            UserVO user = userService.login(username, password, session);
-            return Result.success(user);
-        } catch (IllegalArgumentException e) {
-            return Result.fail(e.getMessage());
-        }
+        UserVO user = userService.login(username, password, session);
+        return Result.success(user);
     }
 
     @ApiOperation("退出登录")

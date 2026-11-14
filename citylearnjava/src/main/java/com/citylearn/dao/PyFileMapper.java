@@ -26,10 +26,8 @@ public interface PyFileMapper extends BaseMapper<PyFile> {
     /**
      * 代码编辑器「文件列表」：返回该用户可见的脚本，可选按脚本类型筛选。
      *
-     * <p><b>不再按 if_show 过滤</b>：脚本级「展示/未展示」按钮已移除（展示语义只认
-     * 执行记录的 {@code py_task.if_show}）。历史数据里仍有 if_show=0 的脚本（如
-     * local_evaluation.py），若继续过滤会导致它们永久不可见且无入口恢复；
-     * 新建脚本过去也默认写 if_show=0，会直接从列表消失。
+     * <p>if_show=0 的脚本从代码与任务选择列表隐藏；NULL 保留历史默认可见语义。
+     * 此字段不影响执行记录，模型优选展示仍由 py_task.if_show 独立管理。
      *
      * @param createUser 创建人（当前固定 admin）
      * @param scriptType 脚本类型 train / eval / both；传 null（或空串，由 Service 归一化）
@@ -38,6 +36,7 @@ public interface PyFileMapper extends BaseMapper<PyFile> {
      */
     @Select("SELECT * FROM py_file "
             + "WHERE (create_user = #{createUser} OR if_system = 1) "
+            + "  AND (if_show IS NULL OR if_show = 1) "
             + "  AND (#{scriptType,jdbcType=VARCHAR} IS NULL "
             + "       OR script_type = #{scriptType,jdbcType=VARCHAR})")
     List<PyFile> getPyFileList(@Param("createUser") String createUser,

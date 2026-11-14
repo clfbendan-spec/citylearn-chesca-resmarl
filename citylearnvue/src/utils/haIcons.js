@@ -1,3 +1,5 @@
+
+import { themeColor } from './theme'
 /** Material Design Icons (MDI) path 片段 — 与 HA 前端同源风格 */
 export const MDI = {
   weatherSunny:
@@ -76,7 +78,7 @@ export function resolveWeatherCondition(row) {
       label: '多云',
       labelEn: 'Cloudy',
       icon: 'weatherCloudy',
-      color: '#90A4AE'
+      color: themeColor('secondary-text-color')
     }
   }
   const hour = row.time ? new Date(row.time).getHours() : 12
@@ -91,7 +93,7 @@ export function resolveWeatherCondition(row) {
       label: '晴夜',
       labelEn: 'Clear night',
       icon: 'weatherNight',
-      color: '#5C6BC0'
+      color: themeColor('secondary-text-color')
     }
   }
   if (solar >= 600 && direct >= 350) {
@@ -100,7 +102,7 @@ export function resolveWeatherCondition(row) {
       label: '晴',
       labelEn: 'Sunny',
       icon: 'weatherSunny',
-      color: '#FF9800'
+      color: themeColor('energy-solar-color')
     }
   }
   if (solar >= 200) {
@@ -109,7 +111,7 @@ export function resolveWeatherCondition(row) {
       label: '局部多云',
       labelEn: 'Partly cloudy',
       icon: 'weatherPartlyCloudy',
-      color: '#42A5F5'
+      color: themeColor('primary-color')
     }
   }
   return {
@@ -117,6 +119,6 @@ export function resolveWeatherCondition(row) {
     label: '多云',
     labelEn: 'Cloudy',
     icon: 'weatherCloudy',
-    color: '#78909C'
+    color: themeColor('secondary-text-color')
   }
 }

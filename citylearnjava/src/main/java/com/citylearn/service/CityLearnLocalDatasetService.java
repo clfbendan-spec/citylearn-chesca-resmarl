@@ -1,6 +1,7 @@
 package com.citylearn.service;
 
 import com.citylearn.vo.BuildingDataVO;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +16,9 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -39,7 +43,16 @@ public class CityLearnLocalDatasetService {
     private CitylearnDatasetService citylearnDatasetService;
 
     /** schema|buildingKey -> rows */
-    private final ConcurrentHashMap<String, List<BuildingDataVO>> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, LoadedBuilding> cache = new ConcurrentHashMap<>();
+
+    private static class LoadedBuilding {
+        private final List<BuildingDataVO> rows;
+        private final List<Instant> timestamps;
+        private final ZoneId zone;
+        private LoadedBuilding(List<BuildingDataVO> rows, List<Instant> timestamps, ZoneId zone) {
+            this.rows=rows; this.timestamps=timestamps; this.zone=zone;
+        }
+    }
 
     public List<BuildingDataVO> getBuildingRows(String buildingId, String schemaName,
                                                 Integer month, Integer hour, Integer dayType,
@@ -50,7 +63,7 @@ public class CityLearnLocalDatasetService {
         String buildingKey = normalizeBuildingKey(buildingId);
         String cacheKey = schema + "|" + buildingKey;
 
-        List<BuildingDataVO> all = cache.computeIfAbsent(cacheKey, k -> {
+        LoadedBuilding all = cache.computeIfAbsent(cacheKey, k -> {
             try {
                 return loadBuildingJoined(schema, buildingKey);
             } catch (IOException e) {
@@ -59,7 +72,7 @@ public class CityLearnLocalDatasetService {
             }
         });
 
-        // 先按墙钟当前整点截断并写入 date，再套用筛选条件
+        // 导出数据使用真实时间戳；仅旧数据集推算日期，再套用筛选条件。
         String dateKey = (date == null || date.trim().isEmpty()) ? null : date.trim();
         List<BuildingDataVO> untilNow = filterNotAfterNow(all);
 
@@ -78,12 +91,25 @@ public class CityLearnLocalDatasetService {
     }
 
     /**
-     * 按 CSV 时序推算每行时刻，只保留 ≤ 当前墙钟整点 的行，并写入 date（YYYY-MM-DD）。
-     * CityLearn Hour∈[1,24] 映射为当日 0–23 点；Day Type∈[1,7] 对齐周一–周日。
+     * 优先使用导出的 UTC 时间戳与建筑时区，只保留截至当前整点的数据。
+     * 旧数据集没有 timestamps.csv 时，按 CSV 时序推算日期。
      */
-    private List<BuildingDataVO> filterNotAfterNow(List<BuildingDataVO> all) {
+    private List<BuildingDataVO> filterNotAfterNow(LoadedBuilding loaded) {
+        List<BuildingDataVO> all=loaded.rows;
         if (all == null || all.isEmpty()) {
             return all;
+        }
+        if (loaded.timestamps != null) {
+            Instant until=Instant.now().truncatedTo(ChronoUnit.HOURS);
+            List<BuildingDataVO> out=new ArrayList<>();
+            for(int i=0;i<all.size();i++) {
+                Instant timestamp=loaded.timestamps.get(i);
+                if(timestamp.isAfter(until)) continue;
+                BuildingDataVO row=all.get(i);
+                row.setDate(timestamp.atZone(loaded.zone).toLocalDate().toString());
+                out.add(row);
+            }
+            return out;
         }
         LocalDateTime until = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0);
         LocalDateTime cursor = null;
@@ -145,12 +171,12 @@ public class CityLearnLocalDatasetService {
         cache.clear();
     }
 
-    private List<BuildingDataVO> loadBuildingJoined(String schema, String buildingKey) throws IOException {
+    private LoadedBuilding loadBuildingJoined(String schema, String buildingKey) throws IOException {
         Path schemaDir = citylearnDatasetService.resolveDatasetDir(schema);
         Path buildingFile = schemaDir.resolve(buildingFileName(buildingKey));
-        Path weatherFile = schemaDir.resolve("weather.csv");
-        Path pricingFile = schemaDir.resolve("pricing.csv");
-        Path carbonFile = schemaDir.resolve("carbon_intensity.csv");
+        Path weatherFile = buildingSignalFile(schemaDir, buildingKey, "weather");
+        Path pricingFile = buildingSignalFile(schemaDir, buildingKey, "pricing");
+        Path carbonFile = buildingSignalFile(schemaDir, buildingKey, "carbon_intensity");
 
         if (!Files.isRegularFile(buildingFile)) {
             throw new IOException("找不到建筑文件: " + buildingFile);
@@ -174,7 +200,23 @@ public class CityLearnLocalDatasetService {
         }
         log.info("已加载本地数据集 schema={} building={} rows={} dir={}",
                 schema, buildingKey, out.size(), schemaDir);
-        return out;
+        Path nested=schemaDir.resolve("building_"+buildingKey.replaceAll("\\D+", ""));
+        Path timestampFile=Files.isRegularFile(nested.resolve("timestamps.csv"))
+                ? nested.resolve("timestamps.csv") : buildingSignalFile(schemaDir,buildingKey,"timestamps");
+        if(!Files.isRegularFile(timestampFile)) return new LoadedBuilding(out,null,null);
+        try {
+            List<Map<String,String>> timestampRows=readCsvMaps(timestampFile);
+            if(timestampRows.size()!=out.size()) throw new IOException("时间戳行数与建筑数据不一致");
+            Path manifest=timestampFile.getParent().resolve("manifest.json");
+            Map<?,?> metadata=new ObjectMapper().readValue(manifest.toFile(),Map.class);
+            Map<?,?> building=(Map<?,?>)metadata.get("building");
+            ZoneId zone=ZoneId.of(building.get("timezone").toString());
+            List<Instant> timestamps=new ArrayList<>();
+            for(Map<String,String> row:timestampRows) timestamps.add(Instant.parse(row.get("timestamp")));
+            return new LoadedBuilding(out,timestamps,zone);
+        } catch(RuntimeException e) {
+            throw new IOException("导出时间戳或建筑时区无效",e);
+        }
     }
 
     private BuildingDataVO toVo(String buildingKey, int id,
@@ -307,6 +349,11 @@ public class CityLearnLocalDatasetService {
         // building1 -> Building_1.csv
         String n = buildingKey.replaceAll("\\D+", "");
         return "Building_" + n + ".csv";
+    }
+
+    private static Path buildingSignalFile(Path directory, String buildingKey, String signal) {
+        Path individual = directory.resolve(signal + "_" + buildingKey.replaceAll("\\D+", "") + ".csv");
+        return Files.isRegularFile(individual) ? individual : directory.resolve(signal + ".csv");
     }
 
     private static List<Map<String, String>> readCsvMaps(Path file) throws IOException {

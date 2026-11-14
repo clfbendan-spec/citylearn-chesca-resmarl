@@ -27,7 +27,7 @@
 </template>
 
 <script>
-import axios from 'axios'
+import { login } from '../api/auth'
 
 export default {
   name: 'LoginPage',
@@ -50,18 +50,13 @@ export default {
         if (!valid) return
         this.loading = true
         try {
-          const body = new URLSearchParams()
-          body.append('username', this.form.username.trim())
-          body.append('password', this.form.password)
-          const res = await axios.post('/api/web/auth/login', body)
-          if (res.data && res.data.code === 0) {
+          const { ok, data, message } = await login(this.form.username.trim(), this.form.password)
+          if (ok) {
             this.$message.success('登录成功')
-            this.$emit('login-success', res.data.data)
+            this.$emit('login-success', data)
           } else {
-            this.$message.error((res.data && res.data.message) || '登录失败')
+            this.$message.error(message || '登录失败')
           }
-        } catch (e) {
-          this.$message.error('登录请求失败')
         } finally {
           this.loading = false
         }
@@ -78,10 +73,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background:
-    radial-gradient(ellipse at 20% 10%, rgba(3, 169, 244, 0.16), transparent 50%),
-    radial-gradient(ellipse at 80% 90%, rgba(2, 136, 209, 0.12), transparent 45%),
-    linear-gradient(160deg, #e8f4fc 0%, #fafafa 48%, #eef2f5 100%);
+  background: var(--primary-background-color);
 }
 
 .login-panel {
@@ -90,15 +82,15 @@ export default {
   padding: 36px 32px 40px;
   background: var(--card-background-color, #fff);
   border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(2, 136, 209, 0.08);
+  border-radius: var(--ha-card-border-radius);
+  box-shadow: var(--ha-card-box-shadow);
 }
 
 .login-brand {
   font-size: 22px;
   font-weight: 600;
   color: var(--primary-text-color, #212121);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .login-sub {

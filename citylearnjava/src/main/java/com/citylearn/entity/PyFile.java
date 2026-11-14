@@ -66,7 +66,7 @@ public class PyFile implements Serializable {
     private String createUser;
 
     /**
-     * 是否展示此文件对应结果
+     * 是否在代码与任务选择列表展示脚本；结果记录由 py_task.if_show 独立控制
      */
     @TableField("if_show")
     private Boolean ifShow;

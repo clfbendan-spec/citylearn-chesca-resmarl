@@ -6,9 +6,12 @@ import com.citylearn.dao.AlgorithmConfigMapper;
 import com.citylearn.entity.AlgorithmConfig;
 import com.citylearn.vo.ChescaBatteryConfigVO;
 import com.citylearn.vo.ResMarlConfigVO;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Field;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,161 +21,12 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static com.citylearn.common.ChescaConfigDefaults.*;
+import static com.citylearn.common.ChescaConfigKeys.*;
+
 @Service
 public class BatteryMinSocConfigService {
 
-    public static final String KEY_MIN_SOC_PER_HOUR = "min_soc_per_hour";
-    public static final String KEY_MAX_SOC_NORMAL = "max_soc_normal";
-    public static final String KEY_MAX_SOC_OUTAGE = "max_soc_outage";
-    public static final String KEY_MAX_SOC_REDUCTION_IN_OUTAGE = "max_soc_reduction_in_outage";
-    public static final String KEY_B_LOW = "b_low";
-    public static final String KEY_B_HIGH = "b_high";
-    public static final String KEY_TMP_MAX_REDUCTION_PERCENT = "tmp_max_reduction_percent";
-    public static final String KEY_MIN_COOL_PER_C_OVERHEAT = "min_cool_per_c_overheat";
-    public static final String KEY_MIN_COOL_PER_C_OUTDOOR_GAP = "min_cool_per_c_outdoor_gap";
-    public static final String KEY_OUTDOOR_GAP_DEADBAND_C = "outdoor_gap_deadband_c";
-    public static final String KEY_OUTDOOR_FLOOR_MAX_OVERHEAT_C = "outdoor_floor_max_overheat_c";
-    public static final String KEY_COOLING_DEMAND_FEEDFORWARD_FRAC = "cooling_demand_feedforward_frac";
-    public static final String KEY_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT = "demand_feedforward_only_when_overheat";
-    public static final String KEY_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT = "outdoor_floor_allow_when_under_setpoint";
-    public static final String KEY_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT = "clear_open_loop_floor_when_under_setpoint";
-    public static final String KEY_USE_LAGGED_DYNAMICS_INDOOR = "use_lagged_dynamics_indoor";
-    public static final String KEY_LAGGED_INDOOR_ONLY_WHEN_HOTTER = "lagged_indoor_only_when_hotter";
-    public static final String KEY_LAGGED_INDOOR_HOTTER_MARGIN_C = "lagged_indoor_hotter_margin_c";
-    public static final String KEY_POST_OUTAGE_SOFT_CHARGE_ENABLED = "post_outage_soft_charge_enabled";
-    public static final String KEY_POST_OUTAGE_RELAX_STEPS = "post_outage_relax_steps";
-    public static final String KEY_POST_OUTAGE_WAIVE_MIN_SOC = "post_outage_waive_min_soc";
-    public static final String KEY_POST_OUTAGE_MAX_ELE_CHARGE = "post_outage_max_ele_charge";
-    public static final String KEY_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT = "post_outage_forbid_charge_when_overheat";
-    public static final String KEY_POST_OUTAGE_OVERHEAT_C = "post_outage_overheat_c";
-    public static final String KEY_POST_OUTAGE_TMP_CAP_ENABLED = "post_outage_tmp_cap_enabled";
-    public static final String KEY_POST_OUTAGE_TMP_CAP_STEPS = "post_outage_tmp_cap_steps";
-    public static final String KEY_POST_OUTAGE_TMP_MAX_START = "post_outage_tmp_max_start";
-    public static final String KEY_POST_OUTAGE_TMP_RAMP = "post_outage_tmp_ramp";
-    public static final String KEY_POST_OUTAGE_TMP_STAGGER = "post_outage_tmp_stagger";
-    public static final String KEY_PRICE_AWARE_BATTERY_ENABLED = "price_aware_battery_enabled";
-    public static final String KEY_PRICE_HIGH_QUANTILE = "price_high_quantile";
-    public static final String KEY_PRICE_LOW_QUANTILE = "price_low_quantile";
-    public static final String KEY_PRICE_HISTORY_MIN_STEPS = "price_history_min_steps";
-    public static final String KEY_PRICE_HIGH_SOC_THRESHOLD = "price_high_soc_threshold";
-    public static final String KEY_PRICE_HIGH_FORBID_CHARGE = "price_high_forbid_charge";
-    public static final String KEY_PRICE_HIGH_FORCE_DISCHARGE = "price_high_force_discharge";
-    public static final String KEY_PRICE_HIGH_DISCHARGE_ELE = "price_high_discharge_ele";
-    public static final String KEY_PRICE_MIN_RESERVE_SOC = "price_min_reserve_soc";
-    public static final String KEY_PRICE_GLOBAL_RESERVE_ENABLED = "price_global_reserve_enabled";
-    public static final String KEY_PRICE_LOW_TARGET_SOC = "price_low_target_soc";
-    public static final String KEY_PRICE_LOW_CHARGE_ELE = "price_low_charge_ele";
-    public static final String KEY_PRICE_LOW_SEARCH_BOOST = "price_low_search_boost";
-    // P0-2：价格分位退化门控（默认 false ⇒ 逐位等于旧行为）
-    public static final String KEY_PRICE_BAND_TIE_STRICT = "price_band_tie_strict";
-    public static final String KEY_TAU = "tau";
-    public static final String KEY_BALANCE_TYPE = "balance_type";
-    public static final String KEY_RESMARL_ENABLED = "resmarl_enabled";
-    public static final String KEY_MARL_MODE = "marl_mode";
-    public static final String KEY_MULTI_AGENT_TRAIN_EPOCHS = "multi_agent_train_epochs";
-    public static final String KEY_MULTI_AGENT_EXPLORE = "multi_agent_explore";
-    public static final String KEY_MULTI_AGENT_CHECKPOINT = "multi_agent_checkpoint";
-    public static final String KEY_RESIDUAL_ALPHA = "residual_alpha";
-    public static final String KEY_RESIDUAL_ACTION_MASK = "residual_action_mask";
-    public static final String KEY_RESMARL_AFTER_SAFETY = "resmarl_after_safety";
-    public static final String KEY_SCHEMA_SPLIT_ENABLED = "schema_split_enabled";
-    public static final String KEY_TRAIN_SCHEMA = "train_schema";
-    public static final String KEY_MULTI_AGENT_EVAL_SCHEMA = "multi_agent_eval_schema";
-    public static final String KEY_EVAL_SCHEMA = "eval_schema";
-    /** CHESCA_ResMARL.py 专用评估 schema（与 CHESCA.py 的 eval_schema 独立） */
-    public static final String KEY_RESMARL_EVAL_SCHEMA = "resmarl_eval_schema";
-    // ---- 片区尖峰削峰「结构层」（2026-10-11 P2 接入；与 checa/agent.py default_params 同源）----
-    /** 削峰触发信号口径：net / ns_spike / district_spike */
-    public static final String KEY_PEAK_TRIGGER_MODE = "peak_trigger_mode";
-    /** 尖峰判据倍数（实测不可调负荷 > 该倍数 × 历史均值即触发） */
-    public static final String KEY_NS_SPIKE_MULT = "ns_spike_mult";
-    /** 削峰后回弹抑制窗口步数（0 = 关闭） */
-    public static final String KEY_REBOUND_WINDOW = "rebound_window";
-    /** 回弹窗口内制冷动作限幅系数（1.0 = 不限） */
-    public static final String KEY_REBOUND_CAP = "rebound_cap";
-    /** 触发步是否把各楼电池拉到最大放电 */
-    public static final String KEY_PEAK_BATTERY_DISCHARGE_ENABLED = "peak_battery_discharge_enabled";
-    /** 触发步电池 ELE 动作幅度（-1 = 单步最大放电） */
-    public static final String KEY_PEAK_BATTERY_DISCHARGE_ELE = "peak_battery_discharge_ele";
-    /** 是否用分级削峰替代 0/1 硬削 */
-    public static final String KEY_PEAK_CUT_GRADED_ENABLED = "peak_cut_graded_enabled";
-    /** 分级带宽下沿（r ≤ m_lo 不削） */
-    public static final String KEY_PEAK_CUT_GRADED_M_LO = "peak_cut_graded_m_lo";
-    /** 分级带宽上沿（r ≥ m_hi 满削，电池同此门槛满放） */
-    public static final String KEY_PEAK_CUT_GRADED_M_HI = "peak_cut_graded_m_hi";
-    // ---- 环境层「DHW 储能修复」开关（2026-10-15）----
-    /** 是否修复上游 DHW 储能 bug（默认 false ⇒ 逐位等于上游 CityLearn） */
-    public static final String KEY_DHW_STORAGE_FIX = "dhw_storage_fix";
-
-    private static final double DEFAULT_MAX_SOC_NORMAL = 0.99;
-    private static final double DEFAULT_MAX_SOC_OUTAGE = 0.87;
-    private static final double DEFAULT_MAX_SOC_REDUCTION_IN_OUTAGE = 0.70;
-    private static final double DEFAULT_B_LOW = 1.18;
-    private static final double DEFAULT_B_HIGH = 1.0;
-    private static final double DEFAULT_TMP_MAX_REDUCTION_PERCENT = 0.0;
-    private static final double DEFAULT_MIN_COOL_PER_C_OVERHEAT = 0.12;
-    private static final double DEFAULT_MIN_COOL_PER_C_OUTDOOR_GAP = 0.03;
-    private static final double DEFAULT_OUTDOOR_GAP_DEADBAND_C = 5.0;
-    private static final double DEFAULT_OUTDOOR_FLOOR_MAX_OVERHEAT_C = 0.5;
-    private static final double DEFAULT_COOLING_DEMAND_FEEDFORWARD_FRAC = 0.10;
-    private static final boolean DEFAULT_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT = false;
-    private static final boolean DEFAULT_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT = true;
-    private static final boolean DEFAULT_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT = false;
-    private static final boolean DEFAULT_USE_LAGGED_DYNAMICS_INDOOR = true;
-    private static final boolean DEFAULT_LAGGED_INDOOR_ONLY_WHEN_HOTTER = false;
-    private static final double DEFAULT_LAGGED_INDOOR_HOTTER_MARGIN_C = 0.3;
-    private static final boolean DEFAULT_POST_OUTAGE_SOFT_CHARGE_ENABLED = true;
-    private static final int DEFAULT_POST_OUTAGE_RELAX_STEPS = 4;
-    private static final boolean DEFAULT_POST_OUTAGE_WAIVE_MIN_SOC = true;
-    private static final double DEFAULT_POST_OUTAGE_MAX_ELE_CHARGE = 0.15;
-    private static final boolean DEFAULT_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT = true;
-    private static final double DEFAULT_POST_OUTAGE_OVERHEAT_C = 0.5;
-    private static final boolean DEFAULT_POST_OUTAGE_TMP_CAP_ENABLED = true;
-    private static final int DEFAULT_POST_OUTAGE_TMP_CAP_STEPS = 4;
-    private static final double DEFAULT_POST_OUTAGE_TMP_MAX_START = 0.40;
-    private static final boolean DEFAULT_POST_OUTAGE_TMP_RAMP = true;
-    private static final boolean DEFAULT_POST_OUTAGE_TMP_STAGGER = true;
-    private static final boolean DEFAULT_PRICE_AWARE_BATTERY_ENABLED = true;
-    private static final double DEFAULT_PRICE_HIGH_QUANTILE = 0.75;
-    private static final double DEFAULT_PRICE_LOW_QUANTILE = 0.25;
-    private static final int DEFAULT_PRICE_HISTORY_MIN_STEPS = 48;
-    private static final double DEFAULT_PRICE_HIGH_SOC_THRESHOLD = 0.70;
-    private static final boolean DEFAULT_PRICE_HIGH_FORBID_CHARGE = true;
-    private static final boolean DEFAULT_PRICE_HIGH_FORCE_DISCHARGE = true;
-    private static final double DEFAULT_PRICE_HIGH_DISCHARGE_ELE = 0.15;
-    private static final double DEFAULT_PRICE_MIN_RESERVE_SOC = 0.55;
-    private static final boolean DEFAULT_PRICE_GLOBAL_RESERVE_ENABLED = true;
-    private static final double DEFAULT_PRICE_LOW_TARGET_SOC = 0.80;
-    private static final double DEFAULT_PRICE_LOW_CHARGE_ELE = 0.25;
-    private static final boolean DEFAULT_PRICE_LOW_SEARCH_BOOST = true;
-    // P0-2：价格分位退化门控，默认关（零侵入）
-    private static final boolean DEFAULT_PRICE_BAND_TIE_STRICT = false;
-    private static final int DEFAULT_TAU = 1;
-    private static final String DEFAULT_BALANCE_TYPE = "C";
-    private static final boolean DEFAULT_RESMARL_ENABLED = true;
-    private static final String DEFAULT_MARL_MODE = "none";
-    private static final int DEFAULT_MULTI_AGENT_TRAIN_EPOCHS = 20;
-    private static final boolean DEFAULT_MULTI_AGENT_EXPLORE = false;
-    private static final String DEFAULT_MULTI_AGENT_CHECKPOINT = "";
-    private static final double DEFAULT_RESIDUAL_ALPHA = 0.0;
-    private static final String DEFAULT_RESIDUAL_ACTION_MASK = "{\"dhw\":false,\"ele\":true,\"tmp\":false}";
-    /** 2026-10-09：默认值与 Python 侧（utils/ches_config.py 的 DEFAULTS / argparse）对齐为 false */
-    private static final boolean DEFAULT_RESMARL_AFTER_SAFETY = false;
-    private static final boolean DEFAULT_SCHEMA_SPLIT_ENABLED = true;
-    private static final String DEFAULT_TRAIN_SCHEMA = "citylearn_challenge_2023_phase_2_local_evaluation";
-    private static final String DEFAULT_EVAL_SCHEMA = "citylearn_challenge_2023_phase_2_online_evaluation_1";
-    // ---- 片区尖峰削峰「结构层」默认值（逐字对齐 checa/agent.py default_params）----
-    private static final String DEFAULT_PEAK_TRIGGER_MODE = "net";
-    private static final double DEFAULT_NS_SPIKE_MULT = 3.0;
-    private static final int DEFAULT_REBOUND_WINDOW = 0;
-    private static final double DEFAULT_REBOUND_CAP = 1.0;
-    private static final boolean DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED = false;
-    private static final double DEFAULT_PEAK_BATTERY_DISCHARGE_ELE = -1.0;
-    private static final boolean DEFAULT_PEAK_CUT_GRADED_ENABLED = false;
-    private static final double DEFAULT_PEAK_CUT_GRADED_M_LO = 5.0;
-    private static final double DEFAULT_PEAK_CUT_GRADED_M_HI = 6.0;
-    // 环境层「DHW 储能修复」默认关 ⇒ 逐位等于上游 CityLearn
-    private static final boolean DEFAULT_DHW_STORAGE_FIX = false;
 
     private static final double[] DEFAULT_MIN_SOC = {
             0.60, 0.65, 0.72, 0.78, 0.80, 0.85,
@@ -254,149 +108,45 @@ public class BatteryMinSocConfigService {
         return getDefaultMinSocPerHour();
     }
 
+    /**
+     * 缺省值回填：VO 的任何字段未传（null）、空串、空 Map，一律回落到<b>当前生效值</b>。
+     *
+     * <p>用反射遍历字段而不是逐个 if，是因为存量代码里那 45 个显式 if 漏掉了削峰那批
+     * 9 个字段（peak_trigger_mode / ns_spike_mult / rebound_window / rebound_cap /
+     * peak_battery_discharge_* / peak_cut_graded_*），而它们的 writer 对 null 直接抛
+     * 「缺少配置项」——前端漏传即 500。逐字段手写必然再次漏，所以改成结构性保证。</p>
+     *
+     * <p>回填源用 {@link #getConfig()}（库里现值）而不是出厂默认值，
+     * 这样「未传」= 保持不变；若用出厂值，一次漏传就会把用户改过的其它配置悄悄重置。</p>
+     */
+    private void fillMissingWithDefaults(ChescaBatteryConfigVO config) {
+        ChescaBatteryConfigVO defaults = getConfig();
+        for (Field field : ChescaBatteryConfigVO.class.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            try {
+                field.setAccessible(true);
+                Object current = field.get(config);
+                boolean absent = current == null
+                        || (current instanceof String && ((String) current).trim().isEmpty())
+                        || (current instanceof Map && ((Map<?, ?>) current).isEmpty());
+                if (absent) {
+                    field.set(config, field.get(defaults));
+                }
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("配置缺省值回填失败: " + field.getName(), e);
+            }
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public void saveConfig(ChescaBatteryConfigVO config) {
         if (config == null) {
             throw new RuntimeException("配置不能为空");
         }
-        ChescaBatteryConfigVO defaults = getDefaultConfig();
-        if (config.getMinSocPerHour() == null || config.getMinSocPerHour().isEmpty()) {
-            config.setMinSocPerHour(defaults.getMinSocPerHour());
-        }
-        if (config.getMaxSocNormal() == null) {
-            config.setMaxSocNormal(defaults.getMaxSocNormal());
-        }
-        if (config.getMaxSocOutage() == null) {
-            config.setMaxSocOutage(defaults.getMaxSocOutage());
-        }
-        if (config.getMaxSocReductionInOutage() == null) {
-            config.setMaxSocReductionInOutage(defaults.getMaxSocReductionInOutage());
-        }
-        if (config.getBLow() == null) {
-            config.setBLow(defaults.getBLow());
-        }
-        if (config.getBHigh() == null) {
-            config.setBHigh(defaults.getBHigh());
-        }
-        if (config.getTmpMaxReductionPercent() == null) {
-            config.setTmpMaxReductionPercent(defaults.getTmpMaxReductionPercent());
-        }
-        if (config.getMinCoolPerCOverheat() == null) {
-            config.setMinCoolPerCOverheat(defaults.getMinCoolPerCOverheat());
-        }
-        if (config.getMinCoolPerCOutdoorGap() == null) {
-            config.setMinCoolPerCOutdoorGap(defaults.getMinCoolPerCOutdoorGap());
-        }
-        if (config.getOutdoorGapDeadbandC() == null) {
-            config.setOutdoorGapDeadbandC(defaults.getOutdoorGapDeadbandC());
-        }
-        if (config.getOutdoorFloorMaxOverheatC() == null) {
-            config.setOutdoorFloorMaxOverheatC(defaults.getOutdoorFloorMaxOverheatC());
-        }
-        if (config.getCoolingDemandFeedforwardFrac() == null) {
-            config.setCoolingDemandFeedforwardFrac(defaults.getCoolingDemandFeedforwardFrac());
-        }
-        if (config.getDemandFeedforwardOnlyWhenOverheat() == null) {
-            config.setDemandFeedforwardOnlyWhenOverheat(defaults.getDemandFeedforwardOnlyWhenOverheat());
-        }
-        if (config.getOutdoorFloorAllowWhenUnderSetpoint() == null) {
-            config.setOutdoorFloorAllowWhenUnderSetpoint(defaults.getOutdoorFloorAllowWhenUnderSetpoint());
-        }
-        if (config.getClearOpenLoopFloorWhenUnderSetpoint() == null) {
-            config.setClearOpenLoopFloorWhenUnderSetpoint(defaults.getClearOpenLoopFloorWhenUnderSetpoint());
-        }
-        if (config.getUseLaggedDynamicsIndoor() == null) {
-            config.setUseLaggedDynamicsIndoor(defaults.getUseLaggedDynamicsIndoor());
-        }
-        if (config.getLaggedIndoorOnlyWhenHotter() == null) {
-            config.setLaggedIndoorOnlyWhenHotter(defaults.getLaggedIndoorOnlyWhenHotter());
-        }
-        if (config.getLaggedIndoorHotterMarginC() == null) {
-            config.setLaggedIndoorHotterMarginC(defaults.getLaggedIndoorHotterMarginC());
-        }
-        if (config.getPostOutageSoftChargeEnabled() == null) {
-            config.setPostOutageSoftChargeEnabled(defaults.getPostOutageSoftChargeEnabled());
-        }
-        if (config.getPostOutageRelaxSteps() == null) {
-            config.setPostOutageRelaxSteps(defaults.getPostOutageRelaxSteps());
-        }
-        if (config.getPostOutageWaiveMinSoc() == null) {
-            config.setPostOutageWaiveMinSoc(defaults.getPostOutageWaiveMinSoc());
-        }
-        if (config.getPostOutageMaxEleCharge() == null) {
-            config.setPostOutageMaxEleCharge(defaults.getPostOutageMaxEleCharge());
-        }
-        if (config.getPostOutageForbidChargeWhenOverheat() == null) {
-            config.setPostOutageForbidChargeWhenOverheat(defaults.getPostOutageForbidChargeWhenOverheat());
-        }
-        if (config.getPostOutageOverheatC() == null) {
-            config.setPostOutageOverheatC(defaults.getPostOutageOverheatC());
-        }
-        if (config.getPostOutageTmpCapEnabled() == null) {
-            config.setPostOutageTmpCapEnabled(defaults.getPostOutageTmpCapEnabled());
-        }
-        if (config.getPostOutageTmpCapSteps() == null) {
-            config.setPostOutageTmpCapSteps(defaults.getPostOutageTmpCapSteps());
-        }
-        if (config.getPostOutageTmpMaxStart() == null) {
-            config.setPostOutageTmpMaxStart(defaults.getPostOutageTmpMaxStart());
-        }
-        if (config.getPostOutageTmpRamp() == null) {
-            config.setPostOutageTmpRamp(defaults.getPostOutageTmpRamp());
-        }
-        if (config.getPostOutageTmpStagger() == null) {
-            config.setPostOutageTmpStagger(defaults.getPostOutageTmpStagger());
-        }
-        if (config.getPriceAwareBatteryEnabled() == null) {
-            config.setPriceAwareBatteryEnabled(defaults.getPriceAwareBatteryEnabled());
-        }
-        if (config.getPriceHighQuantile() == null) {
-            config.setPriceHighQuantile(defaults.getPriceHighQuantile());
-        }
-        if (config.getPriceLowQuantile() == null) {
-            config.setPriceLowQuantile(defaults.getPriceLowQuantile());
-        }
-        if (config.getPriceHistoryMinSteps() == null) {
-            config.setPriceHistoryMinSteps(defaults.getPriceHistoryMinSteps());
-        }
-        if (config.getPriceHighSocThreshold() == null) {
-            config.setPriceHighSocThreshold(defaults.getPriceHighSocThreshold());
-        }
-        if (config.getPriceHighForbidCharge() == null) {
-            config.setPriceHighForbidCharge(defaults.getPriceHighForbidCharge());
-        }
-        if (config.getPriceHighForceDischarge() == null) {
-            config.setPriceHighForceDischarge(defaults.getPriceHighForceDischarge());
-        }
-        if (config.getPriceHighDischargeEle() == null) {
-            config.setPriceHighDischargeEle(defaults.getPriceHighDischargeEle());
-        }
-        if (config.getPriceMinReserveSoc() == null) {
-            config.setPriceMinReserveSoc(defaults.getPriceMinReserveSoc());
-        }
-        if (config.getPriceGlobalReserveEnabled() == null) {
-            config.setPriceGlobalReserveEnabled(defaults.getPriceGlobalReserveEnabled());
-        }
-        if (config.getPriceLowTargetSoc() == null) {
-            config.setPriceLowTargetSoc(defaults.getPriceLowTargetSoc());
-        }
-        if (config.getPriceLowChargeEle() == null) {
-            config.setPriceLowChargeEle(defaults.getPriceLowChargeEle());
-        }
-        if (config.getPriceLowSearchBoost() == null) {
-            config.setPriceLowSearchBoost(defaults.getPriceLowSearchBoost());
-        }
-        if (config.getPriceBandTieStrict() == null) {
-            config.setPriceBandTieStrict(defaults.getPriceBandTieStrict());
-        }
-        if (config.getTau() == null) {
-            config.setTau(defaults.getTau());
-        }
-        if (config.getBalanceType() == null || config.getBalanceType().isEmpty()) {
-            config.setBalanceType(defaults.getBalanceType());
-        }
-        if (config.getEvalSchema() == null || config.getEvalSchema().trim().isEmpty()) {
-            config.setEvalSchema(defaults.getEvalSchema());
-        }
+        // 未传（null / 空串 / 空 Map）的字段一律回落到默认值：全字段可选。
+        fillMissingWithDefaults(config);
         saveMinSocPerHour(config.getMinSocPerHour());
         saveSocRatioConfig(KEY_MAX_SOC_NORMAL, config.getMaxSocNormal(), "正常时段电池SOC上限");
         saveSocRatioConfig(KEY_MAX_SOC_OUTAGE, config.getMaxSocOutage(), "停电时段电池SOC上限");
@@ -570,67 +320,6 @@ public class BatteryMinSocConfigService {
             }
         }
         upsertJsonConfig(KEY_MIN_SOC_PER_HOUR, normalized, "24小时电池SOC下限");
-    }
-
-    public ChescaBatteryConfigVO getDefaultConfig() {
-        ChescaBatteryConfigVO vo = new ChescaBatteryConfigVO();
-        vo.setMinSocPerHour(getDefaultMinSocPerHour());
-        vo.setMaxSocNormal(DEFAULT_MAX_SOC_NORMAL);
-        vo.setMaxSocOutage(DEFAULT_MAX_SOC_OUTAGE);
-        vo.setMaxSocReductionInOutage(DEFAULT_MAX_SOC_REDUCTION_IN_OUTAGE);
-        vo.setBLow(DEFAULT_B_LOW);
-        vo.setBHigh(DEFAULT_B_HIGH);
-        vo.setTmpMaxReductionPercent(DEFAULT_TMP_MAX_REDUCTION_PERCENT);
-        vo.setMinCoolPerCOverheat(DEFAULT_MIN_COOL_PER_C_OVERHEAT);
-        vo.setMinCoolPerCOutdoorGap(DEFAULT_MIN_COOL_PER_C_OUTDOOR_GAP);
-        vo.setOutdoorGapDeadbandC(DEFAULT_OUTDOOR_GAP_DEADBAND_C);
-        vo.setOutdoorFloorMaxOverheatC(DEFAULT_OUTDOOR_FLOOR_MAX_OVERHEAT_C);
-        vo.setCoolingDemandFeedforwardFrac(DEFAULT_COOLING_DEMAND_FEEDFORWARD_FRAC);
-        vo.setDemandFeedforwardOnlyWhenOverheat(DEFAULT_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT);
-        vo.setOutdoorFloorAllowWhenUnderSetpoint(DEFAULT_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT);
-        vo.setClearOpenLoopFloorWhenUnderSetpoint(DEFAULT_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT);
-        vo.setUseLaggedDynamicsIndoor(DEFAULT_USE_LAGGED_DYNAMICS_INDOOR);
-        vo.setLaggedIndoorOnlyWhenHotter(DEFAULT_LAGGED_INDOOR_ONLY_WHEN_HOTTER);
-        vo.setLaggedIndoorHotterMarginC(DEFAULT_LAGGED_INDOOR_HOTTER_MARGIN_C);
-        vo.setPostOutageSoftChargeEnabled(DEFAULT_POST_OUTAGE_SOFT_CHARGE_ENABLED);
-        vo.setPostOutageRelaxSteps(DEFAULT_POST_OUTAGE_RELAX_STEPS);
-        vo.setPostOutageWaiveMinSoc(DEFAULT_POST_OUTAGE_WAIVE_MIN_SOC);
-        vo.setPostOutageMaxEleCharge(DEFAULT_POST_OUTAGE_MAX_ELE_CHARGE);
-        vo.setPostOutageForbidChargeWhenOverheat(DEFAULT_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT);
-        vo.setPostOutageOverheatC(DEFAULT_POST_OUTAGE_OVERHEAT_C);
-        vo.setPostOutageTmpCapEnabled(DEFAULT_POST_OUTAGE_TMP_CAP_ENABLED);
-        vo.setPostOutageTmpCapSteps(DEFAULT_POST_OUTAGE_TMP_CAP_STEPS);
-        vo.setPostOutageTmpMaxStart(DEFAULT_POST_OUTAGE_TMP_MAX_START);
-        vo.setPostOutageTmpRamp(DEFAULT_POST_OUTAGE_TMP_RAMP);
-        vo.setPostOutageTmpStagger(DEFAULT_POST_OUTAGE_TMP_STAGGER);
-        vo.setPriceAwareBatteryEnabled(DEFAULT_PRICE_AWARE_BATTERY_ENABLED);
-        vo.setPriceHighQuantile(DEFAULT_PRICE_HIGH_QUANTILE);
-        vo.setPriceLowQuantile(DEFAULT_PRICE_LOW_QUANTILE);
-        vo.setPriceHistoryMinSteps(DEFAULT_PRICE_HISTORY_MIN_STEPS);
-        vo.setPriceHighSocThreshold(DEFAULT_PRICE_HIGH_SOC_THRESHOLD);
-        vo.setPriceHighForbidCharge(DEFAULT_PRICE_HIGH_FORBID_CHARGE);
-        vo.setPriceHighForceDischarge(DEFAULT_PRICE_HIGH_FORCE_DISCHARGE);
-        vo.setPriceHighDischargeEle(DEFAULT_PRICE_HIGH_DISCHARGE_ELE);
-        vo.setPriceMinReserveSoc(DEFAULT_PRICE_MIN_RESERVE_SOC);
-        vo.setPriceGlobalReserveEnabled(DEFAULT_PRICE_GLOBAL_RESERVE_ENABLED);
-        vo.setPriceLowTargetSoc(DEFAULT_PRICE_LOW_TARGET_SOC);
-        vo.setPriceLowChargeEle(DEFAULT_PRICE_LOW_CHARGE_ELE);
-        vo.setPriceLowSearchBoost(DEFAULT_PRICE_LOW_SEARCH_BOOST);
-        vo.setPriceBandTieStrict(DEFAULT_PRICE_BAND_TIE_STRICT);
-        vo.setTau(DEFAULT_TAU);
-        vo.setBalanceType(DEFAULT_BALANCE_TYPE);
-        vo.setEvalSchema(DEFAULT_EVAL_SCHEMA);
-        // 片区尖峰削峰「结构层」（2026-10-11 P2）
-        vo.setPeakTriggerMode(DEFAULT_PEAK_TRIGGER_MODE);
-        vo.setNsSpikeMult(DEFAULT_NS_SPIKE_MULT);
-        vo.setReboundWindow(DEFAULT_REBOUND_WINDOW);
-        vo.setReboundCap(DEFAULT_REBOUND_CAP);
-        vo.setPeakBatteryDischargeEnabled(DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED);
-        vo.setPeakBatteryDischargeEle(DEFAULT_PEAK_BATTERY_DISCHARGE_ELE);
-        vo.setPeakCutGradedEnabled(DEFAULT_PEAK_CUT_GRADED_ENABLED);
-        vo.setPeakCutGradedMLo(DEFAULT_PEAK_CUT_GRADED_M_LO);
-        vo.setPeakCutGradedMHi(DEFAULT_PEAK_CUT_GRADED_M_HI);
-        return vo;
     }
 
     /** 获取 CHESCA-ResMARL 配置 */
@@ -969,290 +658,141 @@ public class BatteryMinSocConfigService {
         ensureScalarDefaults();
     }
 
+    /**
+     * 「首次建行」用的配置项清单：{@code key} / 落库类型 / 默认值 / 中文说明。
+     *
+     * <p>本方法原先是 285 行的手写 if——同一个配置项的 key、默认值、中文名在
+     * {@code ensureScalarDefaults} / {@code getConfig} / {@code saveConfig} 三处各写一遍
+     * （原先还有 {@code getDefaultConfig}，2026-10-20 随隐藏页一并删除），
+     * 加一个参数要改 6~7 个地方，漏一处就是
+     * 「写时对不上读」的静默错。收敛成一张表后，建行只遍历这张表。</p>
+     */
     private void ensureScalarDefaults() {
-        if (algorithmConfigMapper.selectById(KEY_MAX_SOC_NORMAL) == null) {
-            upsertNumberConfig(KEY_MAX_SOC_NORMAL, DEFAULT_MAX_SOC_NORMAL, "正常时段电池SOC上限");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MAX_SOC_OUTAGE) == null) {
-            upsertNumberConfig(KEY_MAX_SOC_OUTAGE, DEFAULT_MAX_SOC_OUTAGE, "停电时段电池SOC上限");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MAX_SOC_REDUCTION_IN_OUTAGE) == null) {
-            upsertNumberConfig(KEY_MAX_SOC_REDUCTION_IN_OUTAGE, DEFAULT_MAX_SOC_REDUCTION_IN_OUTAGE, "停电时最大SOC降幅");
-        }
-        if (algorithmConfigMapper.selectById(KEY_B_LOW) == null) {
-            upsertNumberConfig(KEY_B_LOW, DEFAULT_B_LOW, "负荷平衡增负荷阈值系数B_low");
-        }
-        if (algorithmConfigMapper.selectById(KEY_B_HIGH) == null) {
-            upsertNumberConfig(KEY_B_HIGH, DEFAULT_B_HIGH, "负荷平衡减负荷阈值系数B_high");
-        }
-        if (algorithmConfigMapper.selectById(KEY_TMP_MAX_REDUCTION_PERCENT) == null) {
-            upsertNumberConfig(KEY_TMP_MAX_REDUCTION_PERCENT, DEFAULT_TMP_MAX_REDUCTION_PERCENT, "冷机最大削减比例TMP_max_reduction_percent");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MIN_COOL_PER_C_OVERHEAT) == null) {
-            upsertNumberConfig(KEY_MIN_COOL_PER_C_OVERHEAT, DEFAULT_MIN_COOL_PER_C_OVERHEAT, "过热最小制冷系数min_cool_per_c_overheat");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MIN_COOL_PER_C_OUTDOOR_GAP) == null) {
-            upsertNumberConfig(KEY_MIN_COOL_PER_C_OUTDOOR_GAP, DEFAULT_MIN_COOL_PER_C_OUTDOOR_GAP, "室外开环保底系数min_cool_per_c_outdoor_gap");
-        }
-        if (algorithmConfigMapper.selectById(KEY_OUTDOOR_GAP_DEADBAND_C) == null) {
-            upsertNumberConfig(KEY_OUTDOOR_GAP_DEADBAND_C, DEFAULT_OUTDOOR_GAP_DEADBAND_C, "室外保底死区outdoor_gap_deadband_c");
-        }
-        if (algorithmConfigMapper.selectById(KEY_OUTDOOR_FLOOR_MAX_OVERHEAT_C) == null) {
-            upsertNumberConfig(KEY_OUTDOOR_FLOOR_MAX_OVERHEAT_C, DEFAULT_OUTDOOR_FLOOR_MAX_OVERHEAT_C, "室外保底最大过热阈值outdoor_floor_max_overheat_c");
-        }
-        if (algorithmConfigMapper.selectById(KEY_COOLING_DEMAND_FEEDFORWARD_FRAC) == null) {
-            upsertNumberConfig(KEY_COOLING_DEMAND_FEEDFORWARD_FRAC, DEFAULT_COOLING_DEMAND_FEEDFORWARD_FRAC, "冷负荷前馈比例cooling_demand_feedforward_frac");
-        }
-        if (algorithmConfigMapper.selectById(KEY_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT) == null) {
-            upsertStringConfig(
-                    KEY_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT,
-                    String.valueOf(DEFAULT_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT),
-                    "冷负荷前馈仅过热时启用"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT) == null) {
-            upsertStringConfig(
-                    KEY_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT,
-                    String.valueOf(DEFAULT_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT),
-                    "室外保底允许低于设定时启用"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT) == null) {
-            upsertStringConfig(
-                    KEY_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT,
-                    String.valueOf(DEFAULT_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT),
-                    "低于设定时清掉开环保底"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_USE_LAGGED_DYNAMICS_INDOOR) == null) {
-            upsertStringConfig(
-                    KEY_USE_LAGGED_DYNAMICS_INDOOR,
-                    String.valueOf(DEFAULT_USE_LAGGED_DYNAMICS_INDOOR),
-                    "PID使用滞后动力学室温indoor[-2]"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_LAGGED_INDOOR_ONLY_WHEN_HOTTER) == null) {
-            upsertStringConfig(
-                    KEY_LAGGED_INDOOR_ONLY_WHEN_HOTTER,
-                    String.valueOf(DEFAULT_LAGGED_INDOOR_ONLY_WHEN_HOTTER),
-                    "仅当滞后室温更热时启用"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_LAGGED_INDOOR_HOTTER_MARGIN_C) == null) {
-            upsertNumberConfig(KEY_LAGGED_INDOOR_HOTTER_MARGIN_C, DEFAULT_LAGGED_INDOOR_HOTTER_MARGIN_C, "滞后室温更热裕度lagged_indoor_hotter_margin_c");
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_SOFT_CHARGE_ENABLED) == null) {
-            upsertStringConfig(
-                    KEY_POST_OUTAGE_SOFT_CHARGE_ENABLED,
-                    String.valueOf(DEFAULT_POST_OUTAGE_SOFT_CHARGE_ENABLED),
-                    "是否启用复电缓充"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_RELAX_STEPS) == null) {
-            upsertIntConfig(KEY_POST_OUTAGE_RELAX_STEPS, DEFAULT_POST_OUTAGE_RELAX_STEPS, "复电缓充窗口步数");
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_WAIVE_MIN_SOC) == null) {
-            upsertStringConfig(
-                    KEY_POST_OUTAGE_WAIVE_MIN_SOC,
-                    String.valueOf(DEFAULT_POST_OUTAGE_WAIVE_MIN_SOC),
-                    "复电窗口豁免小时min_soc硬充"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_MAX_ELE_CHARGE) == null) {
-            upsertNumberConfig(KEY_POST_OUTAGE_MAX_ELE_CHARGE, DEFAULT_POST_OUTAGE_MAX_ELE_CHARGE, "复电窗口ELE充电上限");
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT) == null) {
-            upsertStringConfig(
-                    KEY_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT,
-                    String.valueOf(DEFAULT_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT),
-                    "复电窗口过热时禁止充电"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_OVERHEAT_C) == null) {
-            upsertNumberConfig(KEY_POST_OUTAGE_OVERHEAT_C, DEFAULT_POST_OUTAGE_OVERHEAT_C, "复电缓充过热阈值");
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_TMP_CAP_ENABLED) == null) {
-            upsertStringConfig(
-                    KEY_POST_OUTAGE_TMP_CAP_ENABLED,
-                    String.valueOf(DEFAULT_POST_OUTAGE_TMP_CAP_ENABLED),
-                    "是否启用复电TMP帽/斜坡"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_TMP_CAP_STEPS) == null) {
-            upsertIntConfig(KEY_POST_OUTAGE_TMP_CAP_STEPS, DEFAULT_POST_OUTAGE_TMP_CAP_STEPS, "复电TMP帽窗口步数");
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_TMP_MAX_START) == null) {
-            upsertNumberConfig(KEY_POST_OUTAGE_TMP_MAX_START, DEFAULT_POST_OUTAGE_TMP_MAX_START, "复电首步TMP上限");
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_TMP_RAMP) == null) {
-            upsertStringConfig(
-                    KEY_POST_OUTAGE_TMP_RAMP,
-                    String.valueOf(DEFAULT_POST_OUTAGE_TMP_RAMP),
-                    "复电TMP是否线性爬升"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_POST_OUTAGE_TMP_STAGGER) == null) {
-            upsertStringConfig(
-                    KEY_POST_OUTAGE_TMP_STAGGER,
-                    String.valueOf(DEFAULT_POST_OUTAGE_TMP_STAGGER),
-                    "复电TMP分栋错峰"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_AWARE_BATTERY_ENABLED) == null) {
-            upsertStringConfig(
-                    KEY_PRICE_AWARE_BATTERY_ENABLED,
-                    String.valueOf(DEFAULT_PRICE_AWARE_BATTERY_ENABLED),
-                    "是否启用电价感知电池"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_HIGH_QUANTILE) == null) {
-            upsertNumberConfig(KEY_PRICE_HIGH_QUANTILE, DEFAULT_PRICE_HIGH_QUANTILE, "高价分位数");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_LOW_QUANTILE) == null) {
-            upsertNumberConfig(KEY_PRICE_LOW_QUANTILE, DEFAULT_PRICE_LOW_QUANTILE, "低价分位数");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_HISTORY_MIN_STEPS) == null) {
-            upsertIntConfig(KEY_PRICE_HISTORY_MIN_STEPS, DEFAULT_PRICE_HISTORY_MIN_STEPS, "电价历史最少样本步数");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_HIGH_SOC_THRESHOLD) == null) {
-            upsertNumberConfig(KEY_PRICE_HIGH_SOC_THRESHOLD, DEFAULT_PRICE_HIGH_SOC_THRESHOLD, "高价强制放电SOC阈值");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_HIGH_FORBID_CHARGE) == null) {
-            upsertStringConfig(
-                    KEY_PRICE_HIGH_FORBID_CHARGE,
-                    String.valueOf(DEFAULT_PRICE_HIGH_FORBID_CHARGE),
-                    "高价禁止充电"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_HIGH_FORCE_DISCHARGE) == null) {
-            upsertStringConfig(
-                    KEY_PRICE_HIGH_FORCE_DISCHARGE,
-                    String.valueOf(DEFAULT_PRICE_HIGH_FORCE_DISCHARGE),
-                    "高价高SOC强制放电"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_HIGH_DISCHARGE_ELE) == null) {
-            upsertNumberConfig(KEY_PRICE_HIGH_DISCHARGE_ELE, DEFAULT_PRICE_HIGH_DISCHARGE_ELE, "高价强制放电ELE幅度");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_MIN_RESERVE_SOC) == null) {
-            upsertNumberConfig(KEY_PRICE_MIN_RESERVE_SOC, DEFAULT_PRICE_MIN_RESERVE_SOC, "高价放电韧性地板SOC");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_GLOBAL_RESERVE_ENABLED) == null) {
-            upsertStringConfig(
-                    KEY_PRICE_GLOBAL_RESERVE_ENABLED,
-                    String.valueOf(DEFAULT_PRICE_GLOBAL_RESERVE_ENABLED),
-                    "全局韧性地板（非停电放电不可击穿）"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_LOW_TARGET_SOC) == null) {
-            upsertNumberConfig(KEY_PRICE_LOW_TARGET_SOC, DEFAULT_PRICE_LOW_TARGET_SOC, "低价补电目标SOC");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_LOW_CHARGE_ELE) == null) {
-            upsertNumberConfig(KEY_PRICE_LOW_CHARGE_ELE, DEFAULT_PRICE_LOW_CHARGE_ELE, "低价补电ELE幅度");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_LOW_SEARCH_BOOST) == null) {
-            upsertStringConfig(
-                    KEY_PRICE_LOW_SEARCH_BOOST,
-                    String.valueOf(DEFAULT_PRICE_LOW_SEARCH_BOOST),
-                    "低价树搜索抬高SOC下限促补电"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_PRICE_BAND_TIE_STRICT) == null) {
-            upsertStringConfig(
-                    KEY_PRICE_BAND_TIE_STRICT,
-                    String.valueOf(DEFAULT_PRICE_BAND_TIE_STRICT),
-                    "价格分位并列时按退化处理（关闭 = 旧行为）"
-            );
-        }
-        if (algorithmConfigMapper.selectById(KEY_TAU) == null) {
-            upsertIntConfig(KEY_TAU, DEFAULT_TAU, "预测优化步长tau");
-        }
-        if (algorithmConfigMapper.selectById(KEY_BALANCE_TYPE) == null) {
-            upsertStringConfig(KEY_BALANCE_TYPE, DEFAULT_BALANCE_TYPE, "电池树搜索适应度类型balance_type");
-        }
-        // 片区尖峰削峰「结构层」（2026-10-11 P2）：缺行才播种，默认值与 agent.py 逐字一致
-        if (algorithmConfigMapper.selectById(KEY_PEAK_TRIGGER_MODE) == null) {
-            upsertStringConfig(KEY_PEAK_TRIGGER_MODE, DEFAULT_PEAK_TRIGGER_MODE, "削峰触发信号口径peak_trigger_mode");
-        }
-        if (algorithmConfigMapper.selectById(KEY_NS_SPIKE_MULT) == null) {
-            upsertNumberConfig(KEY_NS_SPIKE_MULT, DEFAULT_NS_SPIKE_MULT, "尖峰判据倍数ns_spike_mult");
-        }
-        if (algorithmConfigMapper.selectById(KEY_REBOUND_WINDOW) == null) {
-            upsertIntConfig(KEY_REBOUND_WINDOW, DEFAULT_REBOUND_WINDOW, "回弹抑制窗口rebound_window");
-        }
-        if (algorithmConfigMapper.selectById(KEY_REBOUND_CAP) == null) {
-            upsertNumberConfig(KEY_REBOUND_CAP, DEFAULT_REBOUND_CAP, "回弹限幅系数rebound_cap");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PEAK_BATTERY_DISCHARGE_ENABLED) == null) {
-            upsertStringConfig(KEY_PEAK_BATTERY_DISCHARGE_ENABLED,
-                    String.valueOf(DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED),
-                    "触发步电池满放peak_battery_discharge_enabled");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PEAK_BATTERY_DISCHARGE_ELE) == null) {
-            upsertNumberConfig(KEY_PEAK_BATTERY_DISCHARGE_ELE, DEFAULT_PEAK_BATTERY_DISCHARGE_ELE,
-                    "满放ELE幅度peak_battery_discharge_ele");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PEAK_CUT_GRADED_ENABLED) == null) {
-            upsertStringConfig(KEY_PEAK_CUT_GRADED_ENABLED,
-                    String.valueOf(DEFAULT_PEAK_CUT_GRADED_ENABLED),
-                    "分级削峰开关peak_cut_graded_enabled");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PEAK_CUT_GRADED_M_LO) == null) {
-            upsertNumberConfig(KEY_PEAK_CUT_GRADED_M_LO, DEFAULT_PEAK_CUT_GRADED_M_LO,
-                    "分级带宽下沿peak_cut_graded_m_lo");
-        }
-        if (algorithmConfigMapper.selectById(KEY_PEAK_CUT_GRADED_M_HI) == null) {
-            upsertNumberConfig(KEY_PEAK_CUT_GRADED_M_HI, DEFAULT_PEAK_CUT_GRADED_M_HI,
-                    "分级带宽上沿peak_cut_graded_m_hi");
-        }
-        // 环境层「DHW 储能修复」（2026-10-15）：默认关 ⇒ 逐位等于上游 CityLearn
-        if (algorithmConfigMapper.selectById(KEY_DHW_STORAGE_FIX) == null) {
-            upsertStringConfig(KEY_DHW_STORAGE_FIX, String.valueOf(DEFAULT_DHW_STORAGE_FIX),
-                    "DHW 储能修复开关dhw_storage_fix");
-        }
-        if (algorithmConfigMapper.selectById(KEY_RESMARL_ENABLED) == null) {
-            upsertStringConfig(KEY_RESMARL_ENABLED, String.valueOf(DEFAULT_RESMARL_ENABLED), "兼容字段：是否残差由入口脚本决定");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MARL_MODE) == null) {
-            upsertStringConfig(KEY_MARL_MODE, DEFAULT_MARL_MODE, "MARL 模式：none / multi_agent");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MULTI_AGENT_TRAIN_EPOCHS) == null) {
-            upsertIntConfig(KEY_MULTI_AGENT_TRAIN_EPOCHS, 0, "Multi-Agent SAC 训练轮数（仅 Multi-agent.py；评估侧已废弃）");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MULTI_AGENT_EXPLORE) == null) {
-            upsertStringConfig(KEY_MULTI_AGENT_EXPLORE, String.valueOf(DEFAULT_MULTI_AGENT_EXPLORE), "Multi-Agent 评估时是否开启 explore");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MULTI_AGENT_CHECKPOINT) == null) {
-            upsertStringConfig(KEY_MULTI_AGENT_CHECKPOINT, DEFAULT_MULTI_AGENT_CHECKPOINT, "预存 Multi-Agent SAC checkpoint（启用 ResMARL 时必填）");
-        }
-        if (algorithmConfigMapper.selectById(KEY_RESIDUAL_ALPHA) == null) {
-            upsertNumberConfig(KEY_RESIDUAL_ALPHA, DEFAULT_RESIDUAL_ALPHA, "CHESCA-ResMARL 残差强度α∈[0,1]");
-        }
-        if (algorithmConfigMapper.selectById(KEY_RESIDUAL_ACTION_MASK) == null) {
-            upsertConfig(KEY_RESIDUAL_ACTION_MASK, DEFAULT_RESIDUAL_ACTION_MASK, "json", "CHESCA-ResMARL 可修正动作维 mask");
-        }
-        if (algorithmConfigMapper.selectById(KEY_RESMARL_AFTER_SAFETY) == null) {
-            upsertStringConfig(KEY_RESMARL_AFTER_SAFETY, String.valueOf(DEFAULT_RESMARL_AFTER_SAFETY), "残差是否在安全审查之后施加");
-        }
-        if (algorithmConfigMapper.selectById(KEY_SCHEMA_SPLIT_ENABLED) == null) {
-            upsertStringConfig(KEY_SCHEMA_SPLIT_ENABLED, "true", "Multi-agent 训测 schema 是否分离（界面配置）");
-        }
-        if (algorithmConfigMapper.selectById(KEY_TRAIN_SCHEMA) == null) {
-            upsertStringConfig(KEY_TRAIN_SCHEMA, DEFAULT_TRAIN_SCHEMA, "Multi-agent.py 训练 schema");
-        }
-        if (algorithmConfigMapper.selectById(KEY_MULTI_AGENT_EVAL_SCHEMA) == null) {
-            upsertStringConfig(KEY_MULTI_AGENT_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA, "Multi-agent.py 评估 schema");
-        }
-        if (algorithmConfigMapper.selectById(KEY_EVAL_SCHEMA) == null) {
-            upsertStringConfig(KEY_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA, "CHESCA 仿真/KPI 评估 schema");
-        }
-        if (algorithmConfigMapper.selectById(KEY_RESMARL_EVAL_SCHEMA) == null) {
-            upsertStringConfig(
-                    KEY_RESMARL_EVAL_SCHEMA,
-                    getStringConfig(KEY_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA),
-                    "CHESCA_ResMARL.py 仿真/KPI 评估 schema");
+        for (Spec spec : SCALAR_SPECS) {
+            if (algorithmConfigMapper.selectById(spec.key) == null) {
+                upsertConfig(spec.key, spec.value.apply(this), spec.type, spec.cn);
+            }
         }
     }
+
+    /** 一条配置项的建行元数据。{@code value} 用函数而非常量，是为兼容依赖其它配置项的项。 */
+    private static final class Spec {
+        final String key;
+        final String type;
+        final String cn;
+        final java.util.function.Function<BatteryMinSocConfigService, String> value;
+
+        private Spec(String key, String type, String cn,
+                     java.util.function.Function<BatteryMinSocConfigService, String> value) {
+            this.key = key;
+            this.type = type;
+            this.cn = cn;
+            this.value = value;
+        }
+
+        static Spec num(String key, double v, String cn) {
+            return new Spec(key, "number", cn, svc -> String.valueOf(v));
+        }
+
+        static Spec integer(String key, int v, String cn) {
+            // ⚠️ 落库类型是 "number" 而不是 "int"：原 upsertIntConfig 一直写 number，
+            // 库里 70 行也确实全是 number。改成 int 会让 Python 侧按 number 解析时对不上。
+            return new Spec(key, "number", cn, svc -> String.valueOf(v));
+        }
+
+        static Spec bool(String key, boolean v, String cn) {
+            return new Spec(key, "string", cn, svc -> String.valueOf(v));
+        }
+
+        static Spec str(String key, String v, String cn) {
+            return new Spec(key, "string", cn, svc -> v);
+        }
+
+        static Spec raw(String key, String type, String v, String cn) {
+            return new Spec(key, type, cn, svc -> v);
+        }
+
+        static Spec of(String key, String type,
+                       java.util.function.Function<BatteryMinSocConfigService, String> f, String cn) {
+            return new Spec(key, type, cn, f);
+        }
+    }
+
+    private static final java.util.List<Spec> SCALAR_SPECS = buildScalarSpecs();
+
+    private static java.util.List<Spec> buildScalarSpecs() {
+        java.util.List<Spec> s = new java.util.ArrayList<>();
+        s.add(Spec.num(KEY_MAX_SOC_NORMAL, DEFAULT_MAX_SOC_NORMAL, "正常时段电池SOC上限"));
+        s.add(Spec.num(KEY_MAX_SOC_OUTAGE, DEFAULT_MAX_SOC_OUTAGE, "停电时段电池SOC上限"));
+        s.add(Spec.num(KEY_MAX_SOC_REDUCTION_IN_OUTAGE, DEFAULT_MAX_SOC_REDUCTION_IN_OUTAGE, "停电时最大SOC降幅"));
+        s.add(Spec.num(KEY_B_LOW, DEFAULT_B_LOW, "负荷平衡增负荷阈值系数B_low"));
+        s.add(Spec.num(KEY_B_HIGH, DEFAULT_B_HIGH, "负荷平衡减负荷阈值系数B_high"));
+        s.add(Spec.num(KEY_TMP_MAX_REDUCTION_PERCENT, DEFAULT_TMP_MAX_REDUCTION_PERCENT, "冷机最大削减比例TMP_max_reduction_percent"));
+        s.add(Spec.num(KEY_MIN_COOL_PER_C_OVERHEAT, DEFAULT_MIN_COOL_PER_C_OVERHEAT, "过热最小制冷系数min_cool_per_c_overheat"));
+        s.add(Spec.num(KEY_MIN_COOL_PER_C_OUTDOOR_GAP, DEFAULT_MIN_COOL_PER_C_OUTDOOR_GAP, "室外开环保底系数min_cool_per_c_outdoor_gap"));
+        s.add(Spec.num(KEY_OUTDOOR_GAP_DEADBAND_C, DEFAULT_OUTDOOR_GAP_DEADBAND_C, "室外保底死区outdoor_gap_deadband_c"));
+        s.add(Spec.num(KEY_OUTDOOR_FLOOR_MAX_OVERHEAT_C, DEFAULT_OUTDOOR_FLOOR_MAX_OVERHEAT_C, "室外保底最大过热阈值outdoor_floor_max_overheat_c"));
+        s.add(Spec.num(KEY_COOLING_DEMAND_FEEDFORWARD_FRAC, DEFAULT_COOLING_DEMAND_FEEDFORWARD_FRAC, "冷负荷前馈比例cooling_demand_feedforward_frac"));
+        s.add(Spec.bool(KEY_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT, DEFAULT_DEMAND_FEEDFORWARD_ONLY_WHEN_OVERHEAT, "冷负荷前馈仅过热时启用"));
+        s.add(Spec.bool(KEY_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT, DEFAULT_OUTDOOR_FLOOR_ALLOW_WHEN_UNDER_SETPOINT, "室外保底允许低于设定时启用"));
+        s.add(Spec.bool(KEY_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT, DEFAULT_CLEAR_OPEN_LOOP_FLOOR_WHEN_UNDER_SETPOINT, "低于设定时清掉开环保底"));
+        s.add(Spec.bool(KEY_USE_LAGGED_DYNAMICS_INDOOR, DEFAULT_USE_LAGGED_DYNAMICS_INDOOR, "PID使用滞后动力学室温indoor[-2]"));
+        s.add(Spec.bool(KEY_LAGGED_INDOOR_ONLY_WHEN_HOTTER, DEFAULT_LAGGED_INDOOR_ONLY_WHEN_HOTTER, "仅当滞后室温更热时启用"));
+        s.add(Spec.num(KEY_LAGGED_INDOOR_HOTTER_MARGIN_C, DEFAULT_LAGGED_INDOOR_HOTTER_MARGIN_C, "滞后室温更热裕度lagged_indoor_hotter_margin_c"));
+        s.add(Spec.bool(KEY_POST_OUTAGE_SOFT_CHARGE_ENABLED, DEFAULT_POST_OUTAGE_SOFT_CHARGE_ENABLED, "是否启用复电缓充"));
+        s.add(Spec.integer(KEY_POST_OUTAGE_RELAX_STEPS, DEFAULT_POST_OUTAGE_RELAX_STEPS, "复电缓充窗口步数"));
+        s.add(Spec.bool(KEY_POST_OUTAGE_WAIVE_MIN_SOC, DEFAULT_POST_OUTAGE_WAIVE_MIN_SOC, "复电窗口豁免小时min_soc硬充"));
+        s.add(Spec.num(KEY_POST_OUTAGE_MAX_ELE_CHARGE, DEFAULT_POST_OUTAGE_MAX_ELE_CHARGE, "复电窗口ELE充电上限"));
+        s.add(Spec.bool(KEY_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT, DEFAULT_POST_OUTAGE_FORBID_CHARGE_WHEN_OVERHEAT, "复电窗口过热时禁止充电"));
+        s.add(Spec.num(KEY_POST_OUTAGE_OVERHEAT_C, DEFAULT_POST_OUTAGE_OVERHEAT_C, "复电缓充过热阈值"));
+        s.add(Spec.bool(KEY_POST_OUTAGE_TMP_CAP_ENABLED, DEFAULT_POST_OUTAGE_TMP_CAP_ENABLED, "是否启用复电TMP帽/斜坡"));
+        s.add(Spec.integer(KEY_POST_OUTAGE_TMP_CAP_STEPS, DEFAULT_POST_OUTAGE_TMP_CAP_STEPS, "复电TMP帽窗口步数"));
+        s.add(Spec.num(KEY_POST_OUTAGE_TMP_MAX_START, DEFAULT_POST_OUTAGE_TMP_MAX_START, "复电首步TMP上限"));
+        s.add(Spec.bool(KEY_POST_OUTAGE_TMP_RAMP, DEFAULT_POST_OUTAGE_TMP_RAMP, "复电TMP是否线性爬升"));
+        s.add(Spec.bool(KEY_POST_OUTAGE_TMP_STAGGER, DEFAULT_POST_OUTAGE_TMP_STAGGER, "复电TMP分栋错峰"));
+        s.add(Spec.bool(KEY_PRICE_AWARE_BATTERY_ENABLED, DEFAULT_PRICE_AWARE_BATTERY_ENABLED, "是否启用电价感知电池"));
+        s.add(Spec.num(KEY_PRICE_HIGH_QUANTILE, DEFAULT_PRICE_HIGH_QUANTILE, "高价分位数"));
+        s.add(Spec.num(KEY_PRICE_LOW_QUANTILE, DEFAULT_PRICE_LOW_QUANTILE, "低价分位数"));
+        s.add(Spec.integer(KEY_PRICE_HISTORY_MIN_STEPS, DEFAULT_PRICE_HISTORY_MIN_STEPS, "电价历史最少样本步数"));
+        s.add(Spec.num(KEY_PRICE_HIGH_SOC_THRESHOLD, DEFAULT_PRICE_HIGH_SOC_THRESHOLD, "高价强制放电SOC阈值"));
+        s.add(Spec.bool(KEY_PRICE_HIGH_FORBID_CHARGE, DEFAULT_PRICE_HIGH_FORBID_CHARGE, "高价禁止充电"));
+        s.add(Spec.bool(KEY_PRICE_HIGH_FORCE_DISCHARGE, DEFAULT_PRICE_HIGH_FORCE_DISCHARGE, "高价高SOC强制放电"));
+        s.add(Spec.num(KEY_PRICE_HIGH_DISCHARGE_ELE, DEFAULT_PRICE_HIGH_DISCHARGE_ELE, "高价强制放电ELE幅度"));
+        s.add(Spec.num(KEY_PRICE_MIN_RESERVE_SOC, DEFAULT_PRICE_MIN_RESERVE_SOC, "高价放电韧性地板SOC"));
+        s.add(Spec.bool(KEY_PRICE_GLOBAL_RESERVE_ENABLED, DEFAULT_PRICE_GLOBAL_RESERVE_ENABLED, "全局韧性地板（非停电放电不可击穿）"));
+        s.add(Spec.num(KEY_PRICE_LOW_TARGET_SOC, DEFAULT_PRICE_LOW_TARGET_SOC, "低价补电目标SOC"));
+        s.add(Spec.num(KEY_PRICE_LOW_CHARGE_ELE, DEFAULT_PRICE_LOW_CHARGE_ELE, "低价补电ELE幅度"));
+        s.add(Spec.bool(KEY_PRICE_LOW_SEARCH_BOOST, DEFAULT_PRICE_LOW_SEARCH_BOOST, "低价树搜索抬高SOC下限促补电"));
+        s.add(Spec.bool(KEY_PRICE_BAND_TIE_STRICT, DEFAULT_PRICE_BAND_TIE_STRICT, "价格分位并列时按退化处理（关闭 = 旧行为）"));
+        s.add(Spec.integer(KEY_TAU, DEFAULT_TAU, "预测优化步长tau"));
+        s.add(Spec.str(KEY_BALANCE_TYPE, DEFAULT_BALANCE_TYPE, "电池树搜索适应度类型balance_type"));
+        s.add(Spec.str(KEY_PEAK_TRIGGER_MODE, DEFAULT_PEAK_TRIGGER_MODE, "削峰触发信号口径peak_trigger_mode"));
+        s.add(Spec.num(KEY_NS_SPIKE_MULT, DEFAULT_NS_SPIKE_MULT, "尖峰判据倍数ns_spike_mult"));
+        s.add(Spec.integer(KEY_REBOUND_WINDOW, DEFAULT_REBOUND_WINDOW, "回弹抑制窗口rebound_window"));
+        s.add(Spec.num(KEY_REBOUND_CAP, DEFAULT_REBOUND_CAP, "回弹限幅系数rebound_cap"));
+        s.add(Spec.bool(KEY_PEAK_BATTERY_DISCHARGE_ENABLED, DEFAULT_PEAK_BATTERY_DISCHARGE_ENABLED, "触发步电池满放peak_battery_discharge_enabled"));
+        s.add(Spec.num(KEY_PEAK_BATTERY_DISCHARGE_ELE, DEFAULT_PEAK_BATTERY_DISCHARGE_ELE, "满放ELE幅度peak_battery_discharge_ele"));
+        s.add(Spec.bool(KEY_PEAK_CUT_GRADED_ENABLED, DEFAULT_PEAK_CUT_GRADED_ENABLED, "分级削峰开关peak_cut_graded_enabled"));
+        s.add(Spec.num(KEY_PEAK_CUT_GRADED_M_LO, DEFAULT_PEAK_CUT_GRADED_M_LO, "分级带宽下沿peak_cut_graded_m_lo"));
+        s.add(Spec.num(KEY_PEAK_CUT_GRADED_M_HI, DEFAULT_PEAK_CUT_GRADED_M_HI, "分级带宽上沿peak_cut_graded_m_hi"));
+        s.add(Spec.bool(KEY_DHW_STORAGE_FIX, DEFAULT_DHW_STORAGE_FIX, "DHW 储能修复开关dhw_storage_fix"));
+        s.add(Spec.bool(KEY_RESMARL_ENABLED, DEFAULT_RESMARL_ENABLED, "兼容字段：是否残差由入口脚本决定"));
+        s.add(Spec.str(KEY_MARL_MODE, DEFAULT_MARL_MODE, "MARL 模式：none / multi_agent"));
+        s.add(Spec.integer(KEY_MULTI_AGENT_TRAIN_EPOCHS, 0, "Multi-Agent SAC 训练轮数（仅 Multi-agent.py；评估侧已废弃）"));
+        s.add(Spec.bool(KEY_MULTI_AGENT_EXPLORE, DEFAULT_MULTI_AGENT_EXPLORE, "Multi-Agent 评估时是否开启 explore"));
+        s.add(Spec.str(KEY_MULTI_AGENT_CHECKPOINT, DEFAULT_MULTI_AGENT_CHECKPOINT, "预存 Multi-Agent SAC checkpoint（启用 ResMARL 时必填）"));
+        s.add(Spec.num(KEY_RESIDUAL_ALPHA, DEFAULT_RESIDUAL_ALPHA, "CHESCA-ResMARL 残差强度α∈[0,1]"));
+        s.add(Spec.bool(KEY_RESMARL_AFTER_SAFETY, DEFAULT_RESMARL_AFTER_SAFETY, "残差是否在安全审查之后施加"));
+        s.add(Spec.str(KEY_SCHEMA_SPLIT_ENABLED, "true", "Multi-agent 训测 schema 是否分离（界面配置）"));
+        s.add(Spec.str(KEY_TRAIN_SCHEMA, DEFAULT_TRAIN_SCHEMA, "Multi-agent.py 训练 schema"));
+        s.add(Spec.str(KEY_MULTI_AGENT_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA, "Multi-agent.py 评估 schema"));
+        s.add(Spec.str(KEY_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA, "CHESCA 仿真/KPI 评估 schema"));
+        s.add(Spec.of(KEY_RESMARL_EVAL_SCHEMA, "string",
+                svc -> svc.getStringConfig(KEY_EVAL_SCHEMA, DEFAULT_EVAL_SCHEMA), "CHESCA_ResMARL.py 仿真/KPI 评估 schema"));
+        s.add(Spec.raw(KEY_RESIDUAL_ACTION_MASK, "json", DEFAULT_RESIDUAL_ACTION_MASK, "CHESCA-ResMARL 可修正动作维 mask"));
+        return java.util.Collections.unmodifiableList(s);
+    }
+
 
     private Map<String, Double> readMinSocJsonConfig() {
         AlgorithmConfig row = algorithmConfigMapper.selectById(KEY_MIN_SOC_PER_HOUR);

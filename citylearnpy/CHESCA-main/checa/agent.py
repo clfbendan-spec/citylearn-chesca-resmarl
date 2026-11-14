@@ -103,6 +103,11 @@ class Checa(Agent):
             'peak_TMP_reduction': 0.0,
             'max_soc_reduction_in_outage': 0.70,
             'increase_scale_outage': 1.166,
+            'pid_kp': -0.288074675781558,
+            'pid_ki': -2.489908316536426,
+            'pid_kd': 0.009479951268930725,
+            'pid_out_temp_scaler': 0.09629375171771082,
+            'pid_kp_outage': -0.27351617926369537,
         }
         if params is not None:
             self.params = {**default_params, **params}
@@ -126,7 +131,8 @@ class Checa(Agent):
 
         # 每建筑一个冷机 PID + XGBoost 辅助控制器
         self.cooling_device_controller = [
-            CoolingDeviceController(self.env.buildings_metadata[b], b, self.observation_names_b)
+            CoolingDeviceController(self.env.buildings_metadata[b], b, self.observation_names_b,
+                                    params=self.params)
             for b in range(self.n_buildings)
         ]
 

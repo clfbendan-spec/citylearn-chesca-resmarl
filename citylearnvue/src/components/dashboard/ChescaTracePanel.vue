@@ -1,5 +1,6 @@
 <template>
-  <div class="chesca-trace-panel">
+  <div v-loading="traceLoading" class="chesca-trace-panel">
+    <div v-if="tracePage.totalSteps > 0" class="trace-page-controls">共 {{ tracePage.totalSteps }} 次决策</div>
     <div class="panel-header">
       <div>
         <h4 class="title">决策推演 (Decision Trace)</h4>
@@ -51,7 +52,7 @@
           class="ctrl ctrl-wide"
           placeholder="动作建筑"
         >
-          <el-option label="全部建筑（9 条线）" value="all" />
+          <el-option :label="`全部建筑（${buildings.length * 3} 条线）`" value="all" />
           <el-option
             v-for="b in buildings"
             :key="'act-' + b"
@@ -64,7 +65,7 @@
 
     <el-empty
       v-if="!hasData"
-      description="暂无 Decision Trace 数据。请使用 CHESCA.py 或 Multi-agent.py 运行任务后重试。"
+      description="该评估记录未保存决策推演日志，请重新评估后查看。"
       class="empty-block"
     />
 
@@ -74,11 +75,18 @@
         <el-slider
           v-model="stepRange"
           range
-          :min="0"
+          :min="stepRangeMin"
           :max="stepRangeMax"
           :format-tooltip="formatStepTooltip"
         />
       </div>
+
+      <div class="action-chart-controls">
+        <span>动作图表 · Step {{ chartSteps.length ? chartSteps[0].step : '—' }}–{{ chartSteps.length ? chartSteps[chartSteps.length - 1].step : '—' }}</span>
+        <el-pagination small layout="prev, pager, next" :page-size="chartPageSize"
+          :total="chartTimeline.length" :current-page="chartPage" @current-change="changeChartPage" />
+      </div>
+      <div ref="stepActionChart" class="chart-box chart-box-tall" />
 
       <el-tabs v-model="activeChartTab" type="card" class="chart-tabs">
         <el-tab-pane label="决策推演日志" name="decisionLog">
@@ -87,13 +95,8 @@
               <el-radio-button label="single">单线回放</el-radio-button>
               <el-radio-button label="compare">同步对比</el-radio-button>
             </el-radio-group>
-            <span class="mode-hint">
-              <template v-if="traceViewMode === 'compare'">
+            <span v-if="traceViewMode === 'compare'" class="mode-hint">
                 取两个 run 按 step 对齐并排推进；训练/评估的 step 起点或抽稀不同也能对齐
-              </template>
-              <template v-else>
-                当前只看「{{ activeSim || '—' }}」一个 run 的逐步推演
-              </template>
             </span>
           </div>
           <decision-trace-compare
@@ -101,6 +104,7 @@
             :decision-trace-by-sim="decisionTraceBySim"
             :sim-names="traceSimNames"
             :active-sim="activeSim"
+            @step-needed="$emit('trace-step-needed', $event)"
           />
           <decision-trace-log
             v-else
@@ -108,13 +112,8 @@
             :selected-episode="selectedEpisode"
             :selected-building="logBuildingFilter"
             :step-range="stepRange"
+            @step-needed="value => $emit('trace-step-needed', { sim: activeSim, ...value })"
           />
-        </el-tab-pane>
-        <el-tab-pane label="每步动作" name="stepActions">
-          <p class="chart-desc">
-            每时间步施加的最终动作：每栋建筑 3 维（DHW 储热、电池充放电、冷机）。
-          </p>
-          <div ref="stepActionChart" class="chart-box chart-box-tall" />
         </el-tab-pane>
         <el-tab-pane v-if="showAdvancedTraceTabs" label="预测对比" name="forecast">
           <div ref="forecastChart" class="chart-box" />
@@ -136,6 +135,8 @@
 </template>
 
 <script>
+import { themeColor } from '@/utils/theme'
+
 import * as echarts from 'echarts'
 import DecisionTraceLog from '@/components/dashboard/DecisionTraceLog.vue'
 import DecisionTraceCompare from '@/components/dashboard/DecisionTraceCompare.vue'
@@ -157,13 +158,13 @@ export default {
     activeSim: { type: String, default: '' },
     parsedTrace: { type: Object, default: () => ({}) },
     decisionTraceBySim: { type: Object, default: () => ({}) },
-    resmarlBySim: { type: Object, default: () => ({}) }
+    resmarlBySim: { type: Object, default: () => ({}) },
+    tracePage: { type: Object, default: () => ({}) },
+    traceLoading: { type: Boolean, default: false }
   },
   data() {
     return {
-      // 临时隐藏：顶部 Episode/建筑等筛选框，以及预测对比·动作 Refine·负荷平衡页签（步数范围滑条保留）
-      showTraceFilters: false,
-      showAdvancedTraceTabs: false,
+      showTraceFilters: true,
       metrics: TRACE_METRICS,
       selectedEpisode: null,
       selectedBuilding: 0,
@@ -174,6 +175,8 @@ export default {
       // 决策推演日志的两种看法：single = 单 run 逐步回放；compare = 两个 run 同步并排
       traceViewMode: 'single',
       stepRange: [0, 0],
+      chartPage: 1,
+      chartPageSize: 48,
       charts: {
         stepActions: null,
         forecast: null,
@@ -184,6 +187,15 @@ export default {
     }
   },
   computed: {
+    chartTimeline() {
+      return this.decisionSteps.filter(step => this.selectedEpisode == null || step.episode === this.selectedEpisode)
+    },
+    chartSteps() {
+      return this.chartTimeline.slice((this.chartPage - 1) * this.chartPageSize, this.chartPage * this.chartPageSize)
+    },
+    showAdvancedTraceTabs() {
+      return this.allRows.some(row => row.forecast_load_next != null || row.forecast_solar_next != null)
+    },
     /** 有决策日志的 sim 列表；当前 tab 的 sim 排最前（对比模式默认「左」）。 */
     traceSimNames() {
       const all = this.decisionTraceBySim || {}
@@ -262,11 +274,23 @@ export default {
       if (!rows.length && this.decisionSteps.length) {
         rows = this.decisionStepsToActionRows()
       }
+      const represented = new Set(rows.map(row => `${row.episode}:${row.step}:${row.building}`))
+      const visibleBuildings = this.actionBuildingScope === 'all' ? this.buildings : [this.actionBuildingScope]
+      this.decisionSteps.filter(step => this.selectedEpisode == null || step.episode === this.selectedEpisode).forEach(step => {
+        visibleBuildings.forEach(building => {
+          if (!represented.has(`${step.episode}:${step.step}:${building}`)) {
+            rows.push({ episode: step.episode, step: step.step, hour: step.hour, building,
+              action_dhw_final: null, action_ele_final: null, action_tmp_final: null })
+          }
+        })
+      })
+      rows.sort((a, b) => a.step - b.step)
       const [minStep, maxStep] = this.stepRange
       if (maxStep > minStep) {
         rows = rows.filter((r) => r.step >= minStep && r.step <= maxStep)
       }
-      return rows
+      const chartKeys = new Set(this.chartSteps.map(step => `${step.episode}:${step.step}`))
+      return rows.filter(row => chartKeys.has(`${row.episode}:${row.step}`))
     },
     stepActionChartData() {
       const allBuildings = this.actionBuildingScope === 'all'
@@ -277,6 +301,7 @@ export default {
       })
     },
     stepRangeMax() {
+      if (this.decisionSteps.length) return Math.max(...this.decisionSteps.map(step => step.step))
       const rows = filterTraceRows(this.allRows, {
         building: this.selectedBuilding,
         episode: this.selectedEpisode
@@ -293,10 +318,18 @@ export default {
       }
       if (!steps.length) return 0
       return Math.max(...steps.map((s) => s.step ?? 0))
+    },
+    stepRangeMin() {
+      if (this.decisionSteps.length) return Math.min(...this.decisionSteps.map(step => step.step))
+      const rows = filterTraceRows(this.allRows, { episode: this.selectedEpisode })
+      if (rows.length) return Math.min(...rows.map(row => row.step ?? 0))
+      const steps = this.decisionSteps.filter(step => this.selectedEpisode == null || step.episode === this.selectedEpisode)
+      return steps.length ? Math.min(...steps.map(step => step.step ?? 0)) : 0
     }
   },
   watch: {
     activeSim() {
+      this.chartPage = 1
       this.resetFilters()
       this.$nextTick(() => this.renderAllCharts())
     },
@@ -313,16 +346,17 @@ export default {
         if (!this.allRows.length && this.decisionSteps.length) {
           this.resetFilters()
         }
+        this.requestChartPage()
       }
     },
     filteredRows() {
       this.renderAllCharts()
     },
     rowsForStepAction() {
-      this.renderStepActionChart()
+      this.$nextTick(() => { this.initCharts(); this.renderStepActionChart() })
     },
     actionBuildingScope() {
-      this.renderStepActionChart()
+      this.$nextTick(() => { this.initCharts(); this.renderStepActionChart() })
     },
     activeChartTab(tab) {
       const advanced = ['forecast', 'actions', 'balance']
@@ -337,7 +371,7 @@ export default {
     },
     stepRangeMax(val) {
       if (val > 0 && (this.stepRange[1] === 0 || this.stepRange[1] > val)) {
-        this.stepRange = [0, val]
+        this.stepRange = [this.stepRangeMin, val]
       }
     }
   },
@@ -360,6 +394,14 @@ export default {
     Object.values(this.charts).forEach((c) => c && c.dispose())
   },
   methods: {
+    changeChartPage(page) {
+      this.chartPage = page
+      this.requestChartPage()
+    },
+    requestChartPage() {
+      const pending = this.chartSteps.find(step => step.pending)
+      if (pending) this.$emit('trace-step-needed', { sim: this.activeSim, step: pending.step, episode: pending.episode })
+    },
     buildingLabel,
     /** 把 decision_trace.steps 展平为「每步动作」图可用的伪 CSV 行 */
     decisionStepsToActionRows() {
@@ -413,7 +455,7 @@ export default {
       this.selectedEpisode = eps.length ? eps[0] : null
       const blds = this.buildings
       this.selectedBuilding = blds.length ? blds[0] : 0
-      this.stepRange = [0, this.stepRangeMax]
+      this.stepRange = [this.stepRangeMin, this.stepRangeMax]
     },
     initCharts() {
       if (this.$refs.stepActionChart && !this.charts.stepActions) {
@@ -509,7 +551,7 @@ export default {
           name: s.name,
           type: 'line',
           showSymbol: false,
-          connectNulls: true,
+          connectNulls: false,
           data: s.data,
           itemStyle: { color: s.color },
           lineStyle: s.lineStyle || { color: s.color }
@@ -634,8 +676,8 @@ export default {
               symbol: 'pin',
               symbolSize: 36,
               data: [
-                ...reduceMarks.map((m) => ({ ...m, itemStyle: { color: '#f56c6c' } })),
-                ...increaseMarks.map((m) => ({ ...m, itemStyle: { color: '#67c23a' } }))
+                ...reduceMarks.map((m) => ({ ...m, itemStyle: { color: themeColor('error-color') } })),
+                ...increaseMarks.map((m) => ({ ...m, itemStyle: { color: themeColor('success-color') } }))
               ]
             }
           },
@@ -650,6 +692,15 @@ export default {
 </script>
 
 <style scoped>
+.action-chart-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.trace-page-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 12px 0; font-size: 13px; }
 .chesca-trace-panel {
   margin: 0;
   padding: var(--space-4);

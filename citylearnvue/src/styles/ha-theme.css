@@ -21,6 +21,14 @@
 
   --rgb-primary-color: 3, 169, 244;
   --rgb-primary-text-color: 33, 33, 33;
+  --rgb-success-color: 67, 160, 71;
+  --rgb-warning-color: 255, 166, 0;
+  --rgb-error-color: 219, 68, 55;
+  --ha-hover-background: rgba(var(--rgb-primary-color), 0.06);
+  --ha-success-background: rgba(var(--rgb-success-color), 0.1);
+  --ha-warning-background: rgba(var(--rgb-warning-color), 0.1);
+  --ha-error-background: rgba(var(--rgb-error-color), 0.08);
+  --ha-error-outline: rgba(var(--rgb-error-color), 0.35);
 
   --error-color: #db4437;
   --warning-color: #ffa600;
@@ -69,28 +77,99 @@
   /* typography */
   --ha-font-family: Roboto, "Noto Sans SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --ha-font-family-mono: "Roboto Mono", "SF Mono", Consolas, monospace;
+  --ha-font-size-body: 14px;
+  --ha-font-size-page-title: 20px;
+  --ha-font-weight-page-title: 500;
 
   /* Element primary bridge */
   --el-color-primary: var(--primary-color);
+
+  /* Existing Element aliases resolve to the same design tokens. */
+  --el-text-color-primary: var(--primary-text-color);
+  --el-text-color-regular: var(--primary-text-color);
+  --el-text-color-secondary: var(--secondary-text-color);
+  --el-border-color: var(--outline-color);
+  --el-border-color-light: var(--divider-color);
+  --el-border-color-lighter: var(--divider-color);
+  --el-color-primary-legacy: var(--primary-color);
+  --el-color-success: var(--success-color);
+  --el-color-warning: var(--warning-color);
+  --el-color-danger: var(--error-color);
 }
 
 html,
 body,
 #app {
   font-family: var(--ha-font-family);
+  font-size: var(--ha-font-size-body);
   color: var(--primary-text-color);
   background-color: var(--primary-background-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+body { margin: 0; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Shared page and control typography follows User Management. Icons and code
+   surfaces keep their own fonts; compact controls retain their dimensions. */
+#app .page-title {
+  font-family: var(--ha-font-family);
+  font-size: var(--ha-font-size-page-title);
+  font-weight: var(--ha-font-weight-page-title);
+  line-height: 1.4;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+#app .el-button,
+#app .el-input,
+#app .el-input__inner,
+#app .el-textarea,
+#app .el-table,
+#app .el-form-item__label,
+#app .el-form-item__content,
+#app .el-tabs__item,
+#app .el-radio__label,
+#app .el-checkbox__label,
+#app .el-select-dropdown__item,
+body > .el-select-dropdown .el-select-dropdown__item,
+body > .el-picker-panel,
+body > .el-dialog__wrapper .el-button,
+body > .el-dialog__wrapper .el-input__inner,
+body > .el-dialog__wrapper .el-table,
+body > .el-dialog__wrapper .el-form-item__label,
+body > .el-dialog__wrapper .el-form-item__content,
+body > .el-dialog__wrapper .el-radio__label,
+body > .el-dialog__wrapper .el-checkbox__label {
+  font-family: var(--ha-font-family);
+  font-size: var(--ha-font-size-body);
+  letter-spacing: 0;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
 /* ---------- utility ---------- */
 .ha-page {
   min-height: 100%;
-  padding: var(--space-4) var(--space-4) var(--space-6);
+  padding: 20px var(--space-5) var(--space-6);
   box-sizing: border-box;
   background: var(--primary-background-color);
 }
+
+.ha-surface {
+  background: var(--card-background-color);
+  border: 1px solid var(--divider-color);
+  border-radius: var(--ha-card-border-radius);
+  box-shadow: var(--ha-card-box-shadow);
+  min-width: 0;
+}
+.ha-surface:not(.el-card) { padding: var(--space-4); }
 
 .ha-toolbar {
   display: flex;
@@ -144,8 +223,8 @@ body,
 }
 
 .el-button--primary:active {
-  background-color: #0277bd;
-  border-color: #0277bd;
+  background-color: var(--dark-primary-color);
+  border-color: var(--dark-primary-color);
 }
 
 .el-button--primary.is-plain {
@@ -168,8 +247,8 @@ body,
 
 .el-button--success:hover,
 .el-button--success:focus {
-  background-color: #388e3c;
-  border-color: #388e3c;
+  background-color: var(--success-color);
+  border-color: var(--success-color);
 }
 
 .el-button--warning {
@@ -180,8 +259,8 @@ body,
 
 .el-button--warning:hover,
 .el-button--warning:focus {
-  background-color: #fb8c00;
-  border-color: #fb8c00;
+  background-color: var(--warning-color);
+  border-color: var(--warning-color);
   color: var(--text-primary-color);
 }
 
@@ -335,6 +414,10 @@ body,
 
 .el-dialog {
   border-radius: var(--ha-card-border-radius);
+  max-width: calc(100% - 24px);
+  background: var(--card-background-color);
+  border: 1px solid var(--divider-color);
+  box-shadow: 0 2px 12px var(--shadow-color);
 }
 
 .el-dialog__header {
@@ -373,4 +456,48 @@ body,
 
 .el-empty__description p {
   color: var(--secondary-text-color);
+}
+
+/* Control states share the design palette, including body-mounted popups. */
+.el-button:not(.el-button--text):not(.is-circle) { min-height: 36px; padding: 9px 16px; line-height: 16px; }
+.el-button--small:not(.el-button--text):not(.is-circle) { min-height: 32px; padding: 7px 12px; }
+.el-button--mini:not(.el-button--text):not(.is-circle) { min-height: 28px; padding: 5px 8px; }
+.el-button--text { color: var(--primary-color); }
+.el-button--text:hover, .el-button--text:focus { color: var(--dark-primary-color); }
+.el-button--danger:hover, .el-button--danger:focus { background: var(--error-color); border-color: var(--error-color); }
+.el-button--success.is-plain { color: var(--success-color); background: var(--ha-success-background); border-color: var(--success-color); }
+.el-button--warning.is-plain { color: var(--warning-color); background: var(--ha-warning-background); border-color: var(--warning-color); }
+.el-button--danger.is-plain { color: var(--error-color); background: var(--ha-error-background); border-color: var(--ha-error-outline); }
+.el-button--success.is-plain:hover { color: var(--text-primary-color); background: var(--success-color); }
+.el-button--warning.is-plain:hover { color: var(--text-primary-color); background: var(--warning-color); }
+.el-button--danger.is-plain:hover { color: var(--text-primary-color); background: var(--error-color); }
+.el-button.is-disabled, .el-button.is-disabled:hover, .el-button.is-disabled:focus,
+.el-button.is-disabled.is-plain, .el-button.is-disabled.is-plain:hover, .el-button.is-disabled.is-plain:focus {
+  color: var(--disabled-text-color); background: var(--input-fill-color); border-color: var(--divider-color);
+}
+.el-button--text.is-disabled, .el-button--text.is-disabled:hover, .el-button--text.is-disabled:focus { background: transparent; border-color: transparent; }
+.el-input__inner { height: 36px; line-height: 36px; }
+.el-input--small .el-input__inner { height: 32px; line-height: 32px; }
+.el-input--mini .el-input__inner { height: 28px; line-height: 28px; }
+.el-input__icon { line-height: 36px; }
+.el-form-item { margin-bottom: 20px; }
+.el-range-editor.is-active, .el-range-editor.is-active:hover { border-color: var(--primary-color); }
+.el-select-dropdown__item.selected { color: var(--primary-color); font-weight: 500; }
+.el-select-dropdown__item.hover, .el-select-dropdown__item:hover { background: var(--ha-hover-background); }
+.el-checkbox__inner:hover, .el-radio__inner:hover { border-color: var(--primary-color); }
+.el-input.is-disabled .el-input__inner { background: var(--input-fill-color); color: var(--disabled-text-color); }
+.el-tag { color: var(--primary-color); border-color: rgba(var(--rgb-primary-color), 0.25); background: rgba(var(--rgb-primary-color), 0.08); border-radius: 4px; }
+.el-tag--success { color: var(--success-color); border-color: rgba(var(--rgb-success-color), 0.25); background: var(--ha-success-background); }
+.el-tag--warning { color: var(--warning-color); border-color: rgba(var(--rgb-warning-color), 0.25); background: var(--ha-warning-background); }
+.el-tag--danger { color: var(--error-color); border-color: var(--ha-error-outline); background: var(--ha-error-background); }
+.el-tag--info { color: var(--secondary-text-color); border-color: var(--divider-color); background: var(--input-fill-color); }
+.el-dialog__wrapper { overflow-x: hidden; }
+.el-dialog__footer { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--divider-color); }
+.el-message-box { max-width: calc(100% - 24px); border-radius: var(--ha-card-border-radius); }
+
+@media (max-width: 680px) {
+  .ha-page { padding: var(--space-4) var(--space-4) var(--space-6); }
+  .el-dialog__body, .el-dialog__footer { padding: var(--space-4); }
+  .el-dialog__footer .el-button { margin-top: var(--space-1); }
+  .el-form--label-top .el-form-item__label { padding-bottom: var(--space-1); }
 }

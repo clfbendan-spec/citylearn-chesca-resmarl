@@ -20,9 +20,12 @@
 </template>
 
 <script>
+import { themeColor } from '@/utils/theme'
+
 import * as echarts from 'echarts'
 import dayjs from 'dayjs'
 import DateRangeSlider from './DateRangeSlider.vue'
+import { PRICING_CHART_SERIES } from '@/utils/homePricing'
 import {
   prepareTimeSeries,
   defaultSliderRange,
@@ -339,7 +342,7 @@ export default {
           top: labelY,
           style: {
             text: dayKey,
-            fill: '#606266',
+            fill: themeColor('secondary-text-color'),
             fontSize: layout.dateFontSize,
             textAlign: 'center',
             textVerticalAlign: 'top'
@@ -552,7 +555,10 @@ export default {
             xAxis: this.xAxisFromRows(agg),
             yAxis: [this.kwhYAxis(), this.percentYAxis()],
             series: [
-              { name: '电池充放电量-kWh', type: 'bar', data: agg.map((r) => r['Battery (Dis)Charge-kWh']) },
+              { name: '电池充放电量-kWh', type: 'bar', data: agg.map((r) => ({
+                value: r['Battery (Dis)Charge-kWh'],
+                itemStyle: { color: themeColor(Number(r['Battery (Dis)Charge-kWh']) < 0 ? 'energy-battery-out-color' : 'energy-battery-in-color') }
+              })) },
               { name: '电池荷电状态-%', type: 'line', yAxisIndex: 1, data: soc.map((r) => r['Battery Soc-%']) }
             ]
           }
@@ -594,6 +600,17 @@ export default {
 
       const fn = configs[this.chartType]
       const option = fn ? fn() : { title: { text: '不支持的图表类型' } }
+      const palettes = {
+        production: ['energy-solar-color', 'energy-battery-out-color'],
+        consumption: ['secondary-text-color', 'energy-grid-consumption-color'],
+        ev: ['secondary-text-color', 'accent-color', 'primary-color'],
+        charger: ['energy-battery-in-color', 'energy-battery-out-color', 'secondary-text-color', 'accent-color', 'primary-color'],
+        battery: ['energy-battery-in-color', 'primary-color'],
+        pv: ['energy-solar-color']
+      }
+      option.color = this.chartType === 'pricing'
+        ? PRICING_CHART_SERIES.map(series => series.color)
+        : (palettes[this.chartType] || ['primary-color']).map(themeColor)
       this.lastXRows = xRows
       this.applyBottomLayout(option)
       return option

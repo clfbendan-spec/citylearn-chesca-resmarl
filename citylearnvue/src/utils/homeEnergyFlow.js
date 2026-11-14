@@ -1,5 +1,5 @@
-import axios from 'axios'
 import { HOME_ACTION_TASK_ID } from '@/utils/homeActions'
+import { getHomeEnergyFlow as apiGetHomeEnergyFlow, getHomeEnergyHourly } from '@/api/dashboard'
 import {
   DATASET_YEAR,
   hourIndexIn2026,
@@ -26,19 +26,23 @@ function emptyPayload(extra = {}) {
   }
 }
 
+/**
+ * 取一段能源流向。
+ * ⚠️ 这里**故意抛异常**：本函数的三个调用方（渐进加载、失败兜底、more-info 弹窗）
+ *    都靠 `catch` 决定要不要降级成空数据，改成返回对象会打乱它们的控制流。
+ *    所以请求层用 `silent: true`，把「弹不弹提示」交给调用方。
+ */
 async function fetchHomeEnergyFlow(mode, untilTs) {
-  const res = await axios.get('/api/web/basedata/getHomeEnergyFlow', {
-    params: {
-      taskId: HOME_ACTION_TASK_ID,
-      untilTs,
-      datasetYear: DATASET_YEAR,
-      mode
-    }
-  })
-  if (!res.data || res.data.code !== 0) {
-    throw new Error((res.data && res.data.message) || `加载能源分配失败（${mode}）`)
+  const res = await apiGetHomeEnergyFlow({
+    taskId: HOME_ACTION_TASK_ID,
+    untilTs,
+    datasetYear: DATASET_YEAR,
+    mode
+  }, { silent: true, failMessage: `加载能源分配失败（${mode}）` })
+  if (!res.ok) {
+    throw new Error(res.message || `加载能源分配失败（${mode}）`)
   }
-  return res.data.data || {}
+  return res.data || {}
 }
 
 function toPayload(data, partial) {
@@ -127,18 +131,16 @@ export async function fetchHomeEnergyHourly(opts = {}) {
   const day = opts.day
   if (!day) throw new Error('day 不能为空')
   const scope = opts.scope || 'community'
-  const res = await axios.get('/api/web/basedata/getHomeEnergyHourly', {
-    params: {
-      taskId: HOME_ACTION_TASK_ID,
-      day,
-      scope,
-      untilTs,
-      datasetYear: DATASET_YEAR
-    }
-  })
-  if (!res.data || res.data.code !== 0) {
-    throw new Error((res.data && res.data.message) || '加载当日耗电失败')
+  const res = await getHomeEnergyHourly({
+    taskId: HOME_ACTION_TASK_ID,
+    day,
+    scope,
+    untilTs,
+    datasetYear: DATASET_YEAR
+  }, { silent: true, failMessage: '加载当日耗电失败' })
+  if (!res.ok) {
+    throw new Error(res.message || '加载当日耗电失败')
   }
-  return res.data.data || { points: [], totalHome: 0, day, scope }
+  return res.data || { points: [], totalHome: 0, day, scope }
 }
 

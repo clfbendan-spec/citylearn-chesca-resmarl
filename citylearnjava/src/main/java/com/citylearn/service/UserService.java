@@ -3,11 +3,12 @@ package com.citylearn.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.citylearn.common.Ids;
 import com.citylearn.common.PageBean;
+import com.citylearn.common.ForbiddenException;
 import com.citylearn.common.PasswordHasher;
 import com.citylearn.common.SessionKeys;
 import com.citylearn.common.UserRoles;
-import com.citylearn.config.SystemConfig;
 import com.citylearn.dao.PermissionMapper;
 import com.citylearn.dao.UserMapper;
 import com.citylearn.dao.UserPermissionMapper;
@@ -35,7 +36,7 @@ import java.util.stream.Collectors;
  * 用户与登录、权限
  */
 @Service
-public class UserService implements SystemConfig {
+public class UserService {
 
     @Resource
     private UserMapper userMapper;
@@ -165,7 +166,7 @@ public class UserService implements SystemConfig {
             throw new IllegalArgumentException("用户名已存在");
         }
         User user = new User();
-        user.setId(getUUID());
+        user.setId(Ids.uuid());
         user.setUsername(name);
         // 只存 bcrypt 哈希，明文不落库、不写日志
         user.setPassword(passwordHasher.encode(password));
@@ -313,7 +314,7 @@ public class UserService implements SystemConfig {
                 continue;
             }
             UserPermission rel = new UserPermission();
-            rel.setId(getUUID());
+            rel.setId(Ids.uuid());
             rel.setUserId(id);
             rel.setPermissionId(perm.getId());
             rel.setCreateTime(now);
@@ -326,10 +327,10 @@ public class UserService implements SystemConfig {
     public void requireSuperAdmin(HttpSession session) {
         UserVO current = currentUser(session);
         if (current == null) {
-            throw new IllegalStateException("未登录");
+            throw new ForbiddenException("未登录");
         }
         if (!UserRoles.SUPER_ADMIN.equals(current.getRole())) {
-            throw new IllegalStateException("无权限：仅超级管理员可进行用户管理");
+            throw new ForbiddenException("无权限：仅超级管理员可进行用户管理");
         }
     }
 

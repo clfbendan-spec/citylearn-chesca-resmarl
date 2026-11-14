@@ -98,6 +98,9 @@ def build_district_env_config(
     render_session: str = 'district_marl',
     record_details: bool = False,
     district_obs: bool = True,
+    random_seed: Optional[int] = None,
+    power_outage_seed: Optional[int] = None,
+    cooling_reference_mode: str = 'dataset_ideal',
 ) -> Dict[str, Any]:
     """构造 RLlibMultiAgentEnv 的 env_config（区域观测 + 区域奖励）。
 
@@ -135,6 +138,8 @@ def build_district_env_config(
     #   静默按 720 跑（截断回合）；那张表已按项目约定弃用（见 utils/env.py 与 CHESCA.py）。
     if episode_time_steps is not None:
         env_kwargs['episode_time_steps'] = int(episode_time_steps)
+    if random_seed is not None:
+        env_kwargs['random_seed'] = int(random_seed)
     if schema_root is not None:
         env_kwargs['root_directory'] = str(schema_root)
     if enable_render and output_dir is not None:
@@ -147,7 +152,11 @@ def build_district_env_config(
     dm_cfg = dict(dc.district_env_config())
     dm_cfg['enabled'] = bool(district_obs)
 
+    if power_outage_seed is not None and not 0 <= power_outage_seed < 2**32:
+        raise ValueError('power_outage_seed must be in [0, 2**32)')
     return {
+        'power_outage_seed': power_outage_seed,
+        'cooling_reference_mode': cooling_reference_mode,
         'env_kwargs': env_kwargs,
         'wrappers': [NormalizedObservationWrapper, ClippedObservationWrapper],
         DISTRICT_ENV_CONFIG_KEY: dm_cfg,
@@ -250,6 +259,7 @@ def rollout_district(
     decision_stride: int = 1,
     decision_max_records: int = 0,
     decision_out: Optional[Dict[str, Any]] = None,
+    evidence_out: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """贪心跑一整段评估，返回区域 KPI 字典。
 
@@ -294,7 +304,25 @@ def rollout_district(
         except Exception:
             _hours = None
     try:
+        if evidence_out is not None:
+            env.enable_information_audit()
         obs, _info = env.reset()
+        assessment = None
+        if evidence_out is not None:
+            from assessment_trace import AssessmentTrace, clean
+            from evaluation_contract import capture_context, collect_environment_metrics
+            cle = _unwrap_citylearn_env(env)
+            # 区域聚合来自已结算量；继承包装器还读取理想负荷及下一索引数据。
+            # 二者必须分开说明，不能只根据区域特征就宣称无特权/未来信息。
+            information_audit = env.policy_information_audit()
+            context = capture_context(
+                cle, information_access=information_audit['information_access'])
+            if export_dir is not None:
+                from evaluation_contract import write_json
+                write_json(Path(export_dir) / 'information_access_audit.json', information_audit)
+            schema = dict(cle.schema,
+                          simulation_start_time_step=context['protocol']['simulation_window'][0])
+            assessment = AssessmentTrace(cle, schema, {'label': 'District-MARL'})
         keys = list(getattr(env, '_agent_ids', None) or obs.keys())
         if _auto_log:
             # 默认记录：拿到 agent 列表后现场建（楼栋数 = agent 数）
@@ -311,7 +339,13 @@ def rollout_district(
         series: List[float] = []
         steps = 0
         done = False
+        policy_information_reads = env.drain_information_reads() if assessment is not None else []
         while not done:
+            # obs按agent_id分楼；每楼向其绑定策略请求动作。共享权重不等于共享动作。
+            # deterministic=True时关闭探索，仅评估固定权重；这里没有algo.train()。
+            if assessment is not None:
+                before = assessment.before()
+                policy_observations = clean(obs)
             actions: Dict[str, Any] = {}
             for k in keys:
                 if k not in obs:
@@ -320,6 +354,27 @@ def rollout_district(
                     obs[k], policy_id=policy_id_fn(k), explore=not deterministic)
                 actions[k] = _unwrap_action(raw)
             obs, _rew, terminated, truncated, _info = env.step(actions)
+            # 包装环境可能把网络动作转换为设备动作（制冷映射/额外削峰维）。
+            # 因此日志分存policy_raw_actions与从物理环境核实的applied，不能相互替代。
+            if assessment is not None:
+                from utils.report import _applied_action_vectors
+                cle = _unwrap_citylearn_env(env)
+                applied = _applied_action_vectors(cle)
+                if applied is None or any(row is None for row in applied):
+                    raise RuntimeError('District evaluation cannot verify executed physical actions')
+                assessment.record(before, applied, (
+                    obs, _rew, bool(terminated.get('__all__', False)),
+                    bool(truncated.get('__all__', False)), _info), mode='district_marl')
+                step_information_reads = env.drain_information_reads()
+                assessment.steps[-1].update(
+                    policy_observations=policy_observations,
+                    policy_raw_actions=clean(actions),
+                    controller_information_reads=policy_information_reads + [
+                        row for row in step_information_reads
+                        if row['consumer'] == 'action_mapping'])
+                # step内部还生成下一状态的策略观测，将其读取证据归到下一次决策。
+                policy_information_reads = [
+                    row for row in step_information_reads if row['consumer'] == 'policy_observation']
             _net_now = district_net_now(env)
             series.append(_net_now)
             if _watch:
@@ -402,6 +457,27 @@ def rollout_district(
                     decision_out['payload'] = decision_log.to_payload()
             except Exception:
                 pass
+        if assessment is not None:
+            # Keep District explanations while the shared trace owns actual
+            # observations, device commands and environment feedback.
+            detailed = decision_log.to_payload().get('steps', []) if decision_log is not None else []
+            by_step = {int(item['step']): item for item in detailed}
+            for index, actual in enumerate(assessment.steps, 1):
+                detail = by_step.get(index)
+                if detail:
+                    actual['district'] = detail.get('district', {})
+                    actual['phases'] = detail.get('phases', actual['phases'])
+                    for entry, explanation in zip(actual['buildings'], detail.get('buildings', [])):
+                        entry['district_explanation'] = explanation
+            if export_dir is not None:
+                assessment.save(export_dir)
+            from evaluation_contract import collect_runtime_audit
+            context['runtime_audit'] = collect_runtime_audit(cle, context)
+            evidence_out.update(
+                context=context, terminated=bool(cle.terminated),
+                result=dict(algorithm='District-MARL', policy_id=None,
+                            protocol=context['protocol'],
+                            per_building=collect_environment_metrics(cle)))
     finally:
         try:
             env.close()
@@ -1201,15 +1277,40 @@ def discomfort_stop_check(
 # 四、命令行
 # =============================================================================
 
+def validate_district_parameters(parser, args):
+    """Reject invalid controls before Ray or an output directory is created."""
+    for key in ('peak_weight', 'stagger_weight', 'soc_reserve_weight',
+                'soc_reserve_ns_gate', 'soc_reserve_spike_weight'):
+        if hasattr(args, key):
+            value = getattr(args, key)
+            if not np.isfinite(value) or value < 0:
+                parser.error(f'{key} 必须为有限非负数')
+    for key in ('team_share', 'attribution', 'peak_anchored',
+                'soc_reserve_target', 'peak_resp_cool_frac'):
+        if hasattr(args, key):
+            value = getattr(args, key)
+            if not np.isfinite(value) or not 0 <= value <= 1:
+                parser.error(f'{key} 必须在[0,1]内')
+    if not np.isfinite(args.peak_resp_batt_discharge) or not -1 <= args.peak_resp_batt_discharge <= 1:
+        parser.error('peak-resp-batt-discharge 必须在[-1,1]内')
+    if args.peak_action_dim not in (0, 1) or args.peak_action_gated not in (0, 1):
+        parser.error('peak-action-dim和peak-action-gated只支持0或1')
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='区域级 MARL 训练（District-aware Multi-Agent SAC）')
+        description='区域级 MARL 训练（District-aware Multi-Agent SAC）', allow_abbrev=False)
     p.add_argument('--train-epochs', type=int, default=dc.DISTRICT_TRAIN_EPOCHS)
     p.add_argument('--output-dir', type=str, default=None)
     p.add_argument('--checkpoint-dir', type=str, default=None,
                    help='断点写入目录；不传 = <output-dir>/checkpoints/multi_agent_resume'
                         '（平台按任务目录落盘，评估端用 --train-task-id 定位）')
     p.add_argument('--seed', type=int, default=dc.DISTRICT_SEED)
+    p.add_argument('--power-outage-seed', type=int, default=None,
+                   help='不填保留数据集停电种子；90000用于显式复现旧包装器行为')
+    p.add_argument('--cooling-reference-mode', choices=('dataset_ideal', 'disabled'),
+                   default='dataset_ideal',
+                   help='dataset_ideal保留旧版理想负荷参考；disabled关闭参考并使用固定动作映射，须匹配训练')
     # --train-schema 是平台 Multi-agent 系列的约定别名，一并接受便于后续接入白名单
     p.add_argument('--schema', '--train-schema', dest='schema', type=str,
                    default=dc.DISTRICT_TRAIN_SCHEMA)
@@ -1265,6 +1366,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    default=dc.DISTRICT_PEAK_ACTION_GATED,
                    help='【方案 3】是否只在峰值步允许削峰动作（0=不门控=纯学习 3a；'
                         '1=峰值步门控=残差式 3b）')
+    from utils.config import (TRAIN_BATCH_SIZE, MIN_SAMPLE_BEFORE_LEARN,
+                              MIN_SAMPLE_TIMESTEPS_PER_ITERATION, TRAIN_INTENSITY)
+    p.add_argument('--train-batch-size', type=int, default=TRAIN_BATCH_SIZE)
+    p.add_argument('--learning-starts', type=int, default=MIN_SAMPLE_BEFORE_LEARN)
+    p.add_argument('--sample-steps-per-iteration', type=int,
+                   default=MIN_SAMPLE_TIMESTEPS_PER_ITERATION)
+    p.add_argument('--training-intensity', type=float, default=TRAIN_INTENSITY)
+    p.add_argument('--train-steps', type=int, default=0,
+                   help='训练回合状态数；0 使用数据集完整窗口')
+    p.add_argument('--ray-num-cpus', type=int, default=None,
+                   help='Ray 可见 CPU 数；不填保留自动检测，Windows 验链可设 1')
     # 【方案 4】SAC 旋钮（不换算法）
     # 默认值 = district_config 的 v4 常量（可复现最优：buffer 20 万 + τ 2e-3 + n_step 1）。
     # 显式传 CLI 时行为与改前逐位一致 —— 三个常量只是"默认值来源"，不参与逻辑判断。
@@ -1317,7 +1429,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         '（默认 40；0 = 关）。best-checkpoint 在停之前已保存 ⇒ 收尾评估'
                         '用的仍是最优权重、产物格式不变。'
                         'v4 的 best_epoch=60/100/100，在 100 轮任务下不会触发；'
-                        '320 轮任务通常能省掉后 40%~50% 的时间，并避免末窗落到更差的评估点。')
+                        '320 轮任务通常能省掉后 40%%~50%% 的时间，并避免末窗落到更差的评估点。')
     p.add_argument('--peak-stop-min-epochs', type=int,
                    default=int(getattr(dc, 'DISTRICT_PEAK_STOP_MIN_EPOCHS', 0) or 0),
                    help='【峰值早停】最早轮数下限（默认 100；0 = 自动取 min(轮数,100)）。'
@@ -1335,13 +1447,57 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                    help='最终评估的决策推演每 N 步记一条（默认 1 = 逐步全记）')
     p.add_argument('--decision-log-max-steps', type=int, default=0,
                    help='最终评估的决策推演条数上限（默认 0 = 不限制）')
-    # parse_known_args：平台可能追加本脚本不认识的 flag（例如 Multi-agent 系列专用参数），
-    # 认识不了就忽略并提示，避免因一个无关参数直接 argparse 退出（exit 2）。
-    args, unknown = p.parse_known_args(argv)
-    if unknown:
-        log_console(f'[district-marl] 忽略未识别的命令行参数: {unknown}')
-    args.unknown_args = list(unknown)
+    # An unknown task parameter is a configuration error, not a successful run
+    # with a different default. The platform must surface the error for correction.
+    args = p.parse_args(argv)
+    args.unknown_args = []
+    validate_district_parameters(p, args)
+    if min(args.train_batch_size, args.learning_starts, args.sample_steps_per_iteration) < 1:
+        p.error('batch、learning-starts 和每轮采样步数必须为正')
+    if not np.isfinite(args.training_intensity) or args.training_intensity <= 0:
+        p.error('training-intensity 必须为有限正数')
+    if args.train_steps < 0 or (args.ray_num_cpus is not None and args.ray_num_cpus < 1):
+        p.error('训练窗口不得为负，Ray CPU 数必须为正')
+    if not np.isfinite(args.sac_tau) or not 0 < args.sac_tau <= 1:
+        p.error('sac-tau 必须是(0,1]内的有限数')
+    if args.sac_n_step < 1 or args.replay_buffer_cap < 0:
+        p.error('sac-n-step至少为1，replay-buffer-cap不得为负')
+    if args.train_epochs < 1 or args.eval_every < 1 or args.eval_steps < 0:
+        p.error('训练迭代和评估间隔必须为正，评估窗口不得为负')
     return args
+
+
+def build_algorithm_config(args, train_env_config, agent_ids):
+    """Build the actual SAC config without starting Ray or training.
+
+    A batch is sampled from replay for a gradient update. Learning starts
+    controls how many environment transitions must exist before updating.
+    Iterations are reporting intervals, not complete CityLearn episodes.
+    """
+    from ray.rllib.algorithms.sac import SACConfig
+    from ray.rllib.policy.policy import PolicySpec
+    from utils.config import CKPT_STORE_REPLAY_BUFFER, ROLLOUT_FRAGMENT_LENGTH
+    shared = not args.no_shared_policy
+    policies = {'shared': PolicySpec()} if shared else {a: PolicySpec() for a in agent_ids}
+    def mapping(aid, episode, worker, **kwargs):
+        return 'shared' if shared else aid
+    overrides = {}
+    if args.replay_buffer_cap:
+        overrides['replay_buffer_config'] = {'capacity': int(args.replay_buffer_cap)}
+    if args.sac_tau != .005:
+        overrides['tau'] = float(args.sac_tau)
+    if args.sac_n_step > 1:
+        overrides['n_step'] = int(args.sac_n_step)
+    return (SACConfig()
+            .environment(DistrictContextRLlibEnv, env_config=train_env_config)
+            .multi_agent(policies=policies, policy_mapping_fn=mapping)
+            .training(train_batch_size=args.train_batch_size,
+                      training_intensity=args.training_intensity,
+                      num_steps_sampled_before_learning_starts=args.learning_starts,
+                      store_buffer_in_checkpoints=CKPT_STORE_REPLAY_BUFFER, **overrides)
+            .rollouts(num_rollout_workers=0, rollout_fragment_length=ROLLOUT_FRAGMENT_LENGTH)
+            .reporting(min_sample_timesteps_per_iteration=args.sample_steps_per_iteration)
+            .debugging(seed=int(args.seed)))
 
 
 # =============================================================================
@@ -1368,6 +1524,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ckpt_dir = Path(args.checkpoint_dir)
     else:
         ckpt_dir = output_dir / dc.DISTRICT_CKPT_REL_DIR
+    # 续训是明确的实验条件：找不到原模型就失败，不能偷偷改成随机初始化。
+    # 在创建输出和启动Ray前定位，裸--resume仍指向本次约定的断点目录。
+    resume_path = None
+    if args.resume is not None:
+        from utils.train import resolve_multi_agent_checkpoint_path
+        resume_path = str(resolve_multi_agent_checkpoint_path(
+            ckpt_dir if args.resume == '' else args.resume))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log_console('=' * 72)
@@ -1483,7 +1646,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         save_multi_agent_checkpoint,
     )
 
-    ensure_ray_initialized(log_console=log_console)
+    ensure_ray_initialized(log_console=log_console, num_cpus=args.ray_num_cpus)
     # 与 Multi-agent.py 同一口径：把动作喂给奖励，制冷电费/电池择时等"动作相关项"才会生效。
     # 本类的 step 覆写过，但 MRO 会走到被包装的 RLlibMultiAgentEnv.step ⇒ 注入依然有效。
     log_console(f'  奖励动作注入 : {install_action_hook()}')
@@ -1494,16 +1657,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     #   --eval-steps 只用于「显式缩短」（例如冒烟测试）。
     #   ⚠️ 原先查硬编码表 _SCHEMA_DEFAULT_EPISODE_STEPS ⇒ 未登记的 schema 会被静默按 720
     #   跑（截断回合）；那张表已按项目约定弃用（见 utils/env.py 与 CHESCA.py 的说明）。
-    train_steps = None
+    train_steps = int(args.train_steps) if args.train_steps else None
     eval_steps = int(args.eval_steps) if args.eval_steps else None
 
     train_env_config = build_district_env_config(
         args.schema, train_steps, enable_render=False,
-        record_details=False, district_obs=not args.no_district_obs)
+        record_details=False, district_obs=not args.no_district_obs,
+        random_seed=args.seed, power_outage_seed=args.power_outage_seed,
+        cooling_reference_mode=args.cooling_reference_mode)
     eval_env_config = build_district_env_config(
         args.eval_schema, eval_steps, enable_render=False,
         output_dir=output_dir, record_details=True,
-        district_obs=not args.no_district_obs)
+        district_obs=not args.no_district_obs, random_seed=args.seed,
+        power_outage_seed=args.power_outage_seed,
+        cooling_reference_mode=args.cooling_reference_mode)
     log_console(f'  回合步数      : 训练='
                 f'{"auto(数据集自带)" if train_steps is None else train_steps}'
                 f' / 评估={"auto(数据集自带)" if eval_steps is None else eval_steps}')
@@ -1545,32 +1712,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               and int(args.sac_n_step) == int(dc.DISTRICT_SAC_N_STEP))
     log_console(f'  SAC 旋钮       : buffer={rb_capacity}  τ={float(args.sac_tau):g}  '
                 f'n_step={int(args.sac_n_step)}'
-                f'{"（= v4 可复现最优）" if _is_v4 else "（非 v4 默认值，已偏离）"}'
+                f'{"（历史 v4 默认组合，非当前最佳证明）" if _is_v4 else "（非 v4 默认值）"}'
                 f'  [下发={sorted(list(sac_kwargs) + list(rb_kwargs)) or "无"}]')
-    config = (
-        Config()
-        .environment(DistrictContextRLlibEnv, env_config=train_env_config)
-        .multi_agent(policies=policies, policy_mapping_fn=policy_mapping_fn)
-        .training(
-            train_batch_size=TRAIN_BATCH_SIZE,
-            training_intensity=TRAIN_INTENSITY,
-            num_steps_sampled_before_learning_starts=MIN_SAMPLE_BEFORE_LEARN,
-            store_buffer_in_checkpoints=CKPT_STORE_REPLAY_BUFFER,
-            **sac_kwargs,
-            **rb_kwargs,
-        )
-        .rollouts(num_rollout_workers=0, rollout_fragment_length=ROLLOUT_FRAGMENT_LENGTH)
-        .reporting(min_sample_timesteps_per_iteration=MIN_SAMPLE_TIMESTEPS_PER_ITERATION)
-        .debugging(seed=int(args.seed))
-    )
+    config = build_algorithm_config(args, train_env_config, agent_ids)
+    from assessment_trace import clean
+    from evaluation_contract import write_json
+    write_json(output_dir / 'district_runtime_config.json', dict(
+        requested_parameters=vars(args),
+        effective_sac={key: clean(config.to_dict().get(key)) for key in (
+            'train_batch_size', 'training_intensity',
+            'num_steps_sampled_before_learning_starts',
+            'min_sample_timesteps_per_iteration', 'seed', 'tau', 'n_step',
+            'replay_buffer_config')}))
 
-    resume_path = args.resume
-    if resume_path == '':                      # 裸 --resume ⇒ 用本次默认断点目录
-        resume_path = str(ckpt_dir)
-    if resume_path and not Path(resume_path).exists():
-        # 首次训练时平台可能已经打开了「续训」开关 ⇒ 不该直接崩，改为从头训
-        log_console(f'  续训          : {resume_path} 不存在，改为从零训练')
-        resume_path = None
     if resume_path:
         from ray.rllib.algorithms.algorithm import Algorithm
         algo = Algorithm.from_checkpoint(str(resume_path))
@@ -1655,13 +1809,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _curve, _stop_state = load_discomfort_curve(_curve_paths)
 
     for epoch in range(1, int(args.train_epochs) + 1):
+        # 此处epoch是一次RLlib训练调用，不保证等于完整数据回合。
+        # SAC在内部采样、放入回放池并更新Actor/Critic；实际更新数要读learner诊断。
+        # sampling预算、learning_starts和batch共同决定“调用成功后是否真的学过”。
         _t_epoch = time.perf_counter()
         _t_train = _t_epoch
         try:
             _result = algo.train()
         except Exception as exc:
-            log_console(f'[district-marl] 第 {epoch} 轮训练异常，提前收工: {exc}')
-            break
+            # 故障不等于主动早停：保存诊断、清理运行时，然后让子进程非零退出。
+            # 不再进入成功导出，也不让平台接力评估此前遗留的检查点。
+            log_console(f'[district-marl] 第 {epoch} 轮训练失败: {exc}')
+            try:
+                write_json(output_dir / 'training_status.json', {
+                    'execution_status': 'failed',
+                    'epochs_done': int(epochs_done),
+                    'epochs_target': int(args.train_epochs),
+                    'failed_epoch': int(epoch),
+                    'error_type': type(exc).__name__,
+                    'error': str(exc),
+                })
+            except Exception as status_error:
+                log_console(f'[district-marl] 失败诊断写入失败: {status_error}')
+            try:
+                algo.stop()
+            except Exception as cleanup_error:
+                log_console(f'[district-marl] 学习器清理失败: {cleanup_error}')
+            try:
+                import ray
+                ray.shutdown()
+            except Exception as cleanup_error:
+                log_console(f'[district-marl] Ray清理失败: {cleanup_error}')
+            raise
         _train_s = time.perf_counter() - _t_train
         epochs_done = epoch
 

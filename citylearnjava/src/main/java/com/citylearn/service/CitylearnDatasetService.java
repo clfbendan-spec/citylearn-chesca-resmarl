@@ -7,6 +7,8 @@ import com.citylearn.entity.CitylearnDataset;
 import com.citylearn.vo.CitylearnDatasetVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.annotation.Resource;
 import java.nio.file.Files;
@@ -14,6 +16,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -25,6 +29,50 @@ public class CitylearnDatasetService {
 
     @Resource
     private FileResourceProperties fileResourceProperties;
+
+    @Resource
+    private JdbcTemplate jdbc;
+
+    public String resolveCurrency(String schemaKey) {
+        if (schemaKey == null || schemaKey.isBlank()) return null;
+        String key = schemaKey;
+        if (key.matches("\\d+")) {
+            CitylearnDataset row = citylearnDatasetMapper.selectById(key);
+            if (row == null) return null;
+            key = row.getSchemaKey();
+        }
+        try {
+            String currency = readCurrency(resolveDatasetDir(key));
+            if (currency != null) return currency;
+        } catch (Exception error) {
+            log.debug("Unable to read currency metadata for dataset {}", key, error);
+        }
+        // Legacy generated releases may predate currency in their manifest.
+        List<String> currencies = jdbc.query(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(c.metadata,'$.currency')) FROM community_dataset_owner o "
+                + "JOIN community_dataset_release r ON r.id=o.release_id "
+                + "JOIN managed_community c ON c.id=o.community_id WHERE BINARY r.schema_key=BINARY ?",
+                (rs, n) -> rs.getString(1), key);
+        return currencies.size() == 1 ? normalizeCurrency(currencies.get(0)) : null;
+    }
+
+    static String readCurrency(Path directory) throws java.io.IOException {
+        Path manifest = directory.resolve("manifest.json");
+        if (Files.isRegularFile(manifest)) {
+            Map<?, ?> metadata = new ObjectMapper().readValue(manifest.toFile(), Map.class);
+            Object building = metadata.get("building");
+            String currency = normalizeCurrency(building instanceof Map ? ((Map<?, ?>) building).get("currency") : metadata.get("currency"));
+            if (currency != null) return currency;
+        }
+        // The bundled original Online1 has no community publication manifest.
+        return "citylearn_challenge_2023_phase_2_online_evaluation_1".equals(directory.getFileName().toString())
+                ? "USD" : null;
+    }
+
+    private static String normalizeCurrency(Object value) {
+        String currency = value instanceof String ? ((String) value).trim().toUpperCase(Locale.ROOT) : "";
+        return currency.isEmpty() ? null : currency;
+    }
 
     public List<CitylearnDatasetVO> listEnabledDatasets() {
         List<CitylearnDataset> rows = citylearnDatasetMapper.selectList(

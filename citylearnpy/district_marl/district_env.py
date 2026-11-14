@@ -5,10 +5,18 @@
   不去改 utils/env.py 的 ContextRLlibEnv，而是**继承**它：
     · 原类负责：观测空间扩展的基础设施、制冷动作映射（COOL_FLOOR/SPAN/a_ref）、
       楼栋 one-hot 身份、制冷能力比值、a_ref 等既有额外观测；
-    · 本类只做两件事：
+    · 区域特征扩展的两个主要步骤：
         ① 在 __init__ 末尾把观测空间再追加 N_FEATURES 维（值域 [-1,1]）；
         ② 覆写 _ctx_augment()，在**原类拼接结果之后**再接上区域特征。
-  于是"关掉本扩展"⟺ 用原 ContextRLlibEnv，行为逐位一致（DISTRICT_OBS_ENABLE=False）。
+  关闭区域观测只移除这9维，不会移除父类a_ref或动作映射。
+  cooling_reference_mode=disabled单独关闭理想参考：保留输入宽度、参考槽置零，
+  改用父类已有固定floor/span动作映射。它改变策略输入/动作含义，须匹配训练。
+  本类另负责停电设置、可选削峰动作及只读输入审计，不能笼统等同于原父类。
+
+【信息来源边界】
+  区域聚合读取已结算历史，但旧参考模式的父类a_ref读取数据集理想制冷需求；
+  动作映射还读取time_step+1的理想需求/天气。启用评估审计时逐次记录来源，
+  不把这套旧控制器描述成仅凭普通实时观测决策。
 
 【为什么在 _ctx_augment 里做】
   · 它是 ContextRLlibEnv 里 reset()/step() 唯一的观测出口 ⇒ 挂在这里，
@@ -45,6 +53,7 @@ from district_marl.district_features import (
 # env_config 里挂区域配置的键（RLlibMultiAgentEnv 只用 env_kwargs / wrappers，
 # 其余顶层键它不管 ⇒ 多挂一个键是安全的）
 DISTRICT_ENV_CONFIG_KEY = 'district_marl'
+COOLING_REFERENCE_MODES = ('dataset_ideal', 'disabled')
 
 
 def read_district_env_config(env_config: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -75,7 +84,16 @@ class DistrictContextRLlibEnv(ContextRLlibEnv):
     """
 
     def __init__(self, env_config: Mapping[str, Any]):
+        self._cooling_reference_mode = env_config.get('cooling_reference_mode', 'dataset_ideal')
+        if self._cooling_reference_mode not in COOLING_REFERENCE_MODES:
+            raise ValueError(f'cooling_reference_mode must be one of {COOLING_REFERENCE_MODES}')
+        # Preserve schema outage settings unless this experiment explicitly
+        # overrides them. The legacy base reset otherwise forces seed 90000.
+        self._preserve_dataset_outages = True
+        self._district_outage_seed = env_config.get('power_outage_seed')
         super().__init__(env_config)
+        if self._cooling_reference_mode == 'disabled':
+            self._cool_centered = False
 
         cfg = read_district_env_config(env_config)
         self._dm_enabled = bool(cfg.get('enabled', True))
@@ -228,7 +246,7 @@ class DistrictContextRLlibEnv(ContextRLlibEnv):
         return out
 
     def step(self, action):
-        """先落实结构化削峰维（方案 3），再走原流程（含 a_ref 制冷映射）。"""
+        """先落实结构化削峰维，再按所选参考模式换算制冷动作并推进环境。"""
         if self._dm_peak_dim > 0:
             action = self._dm_peak_action_apply(action)
         return super().step(action)
@@ -265,6 +283,100 @@ class DistrictContextRLlibEnv(ContextRLlibEnv):
                 pass
 
     # ---- 当前步读楼栋量 -----------------------------------------------------
+    def enable_information_audit(self):
+        """评估时记录包装器的额外输入；训练采样默认关闭，避免无限积累日志。"""
+        self._audit_information_reads = True
+        self._information_reads = []
+
+    def drain_information_reads(self):
+        reads = getattr(self, '_information_reads', [])
+        self._information_reads = []
+        return reads
+
+    def policy_information_audit(self):
+        from utils import env as context_module
+        mode = getattr(self, '_cooling_reference_mode', 'dataset_ideal')
+        current_reference = bool(context_module.OBS_CONTEXT_A_REF and mode != 'disabled')
+        next_reference = bool(getattr(self, '_cool_centered', False))
+        label = 'current_building_and_community_aggregates'
+        if next_reference:
+            label += '_with_current_and_next_index_dataset_ideal_cooling'
+        elif current_reference:
+            label += '_with_current_index_dataset_ideal_cooling'
+        else:
+            label += '_without_ideal_cooling_reference'
+        return dict(
+            schema_version=1, information_access=label,
+            cooling_reference_mode=mode,
+            access_tier='simulator_privileged' if current_reference or next_reference else 'base_observations_and_history',
+            allowed_information_policy=None,
+            enforcement='audited_wrapper_sources_not_access_sandbox',
+            policy_observation_reference=current_reference,
+            action_mapping_reference=next_reference,
+            sources=[
+                dict(field='energy_simulation.cooling_demand_without_control',
+                     provenance='dataset_ground_truth'),
+                dict(field='weather.outdoor_dry_bulb_temperature',
+                     provenance='dataset_ground_truth'),
+            ] if current_reference or next_reference else [],
+            index_basis='episode_local; observation=time_step; action_mapping=time_step+1',
+            read_capture_enabled=bool(getattr(self, '_audit_information_reads', False)))
+
+    def _record_reference_read(self, consumer, index, a_ref):
+        if not getattr(self, '_audit_information_reads', False):
+            return
+        building = self._ctx_buildings[index]
+        time_step = int(getattr(building, 'time_step', 0) or 0)
+        requested = time_step + (1 if consumer == 'action_mapping' else 0)
+        record = dict(consumer=consumer, building=index, decision_local_time_step=time_step,
+                      requested_local_index=requested, a_ref=float(a_ref),
+                      provenance='dataset_ground_truth')
+        for key, values in (
+                ('ideal_cooling_demand', building.energy_simulation.cooling_demand_without_control),
+                ('outdoor_temperature', building.weather.outdoor_dry_bulb_temperature)):
+            array = np.asarray(values, dtype=float).reshape(-1)
+            selected = min(max(requested, 0), len(array) - 1) if len(array) else None
+            value = float(array[selected]) if selected is not None else None
+            record[key] = value if value is None or np.isfinite(value) else None
+            record[key + '_local_index'] = selected
+        self._information_reads.append(record)
+
+    def _ctx_extra(self, agent_id):
+        from utils import env as context_module
+        if getattr(self, '_cooling_reference_mode', 'dataset_ideal') == 'disabled':
+            # Keep the model input width stable without calling the parent path
+            # that reads ideal demand. Capacity and building identity stay intact.
+            if self._ctx_n_extra <= 0:
+                return np.zeros(0, dtype=np.float32)
+            index = self._ctx_ids.index(agent_id) if agent_id in self._ctx_ids else 0
+            parts = []
+            if context_module.OBS_CONTEXT_CAPACITY:
+                cap = self._ctx_cap_ratio[index] if index < len(self._ctx_cap_ratio) else 1.
+                parts.append(np.array([cap], dtype=np.float32))
+            if context_module.OBS_CONTEXT_IDENTITY:
+                identity = np.zeros(self._ctx_n_b, dtype=np.float32)
+                if 0 <= index < self._ctx_n_b:
+                    identity[index] = 1.
+                parts.append(identity)
+            if context_module.OBS_CONTEXT_A_REF:
+                parts.append(np.zeros(1, dtype=np.float32))
+            return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+        # 父包装器把数据集理想负荷推导出的a_ref拼入观测；不能称作普通电表输入。
+        result = super()._ctx_extra(agent_id)
+        if context_module.OBS_CONTEXT_A_REF and self._ctx_n_extra > 0:
+            index = self._ctx_ids.index(agent_id) if agent_id in self._ctx_ids else 0
+            self._record_reference_read('policy_observation', index, result[-1])
+        return result
+
+    def _cool_a_ref_now(self, index):
+        if getattr(self, '_cooling_reference_mode', 'dataset_ideal') == 'disabled':
+            return None
+        # 保留旧控制行为，但明确记录time_step+1的数据读取，供论文区分特权信息组。
+        value = super()._cool_a_ref_now(index)
+        if value is not None:
+            self._record_reference_read('action_mapping', index, value)
+        return value
+
     def _dm_net_by_building(self) -> List[float]:
         """每栋当前步的净用电（买电>0 / 卖电<0）。"""
         return self._dm_read_scalar_attr(
@@ -321,6 +433,10 @@ class DistrictContextRLlibEnv(ContextRLlibEnv):
 
     # ---- 生命周期 -----------------------------------------------------------
     def reset(self, *, seed=None, options=None):
+        self._information_reads = []
+        if self._district_outage_seed is not None:
+            from utils.env import set_power_outage_seed
+            set_power_outage_seed(self, self._district_outage_seed)
         # 必须在 super().reset() 之前清状态：后者内部会调用 _ctx_augment（用新峰值）
         try:
             self._dm_extractor.reset()

@@ -918,8 +918,11 @@
 </template>
 
 <script>
-import axios from 'axios'
+import { themeColor } from '@/utils/theme'
+
 import * as echarts from 'echarts'
+import { getBatteryMinSocConfig, saveBatteryMinSocConfig } from '../api/modelConfig'
+import { getDatasetList } from '../api/dataset'
 
 const DEFAULT_MAX_SOC_NORMAL_PERCENT = 99
 const DEFAULT_MAX_SOC_OUTAGE_PERCENT = 87
@@ -1184,17 +1187,14 @@ export default {
       }
     },
     async loadDatasetOptions() {
-      try {
-        const response = await axios.get('/api/web/basedata/getDatasetList')
-        if (response.data && response.data.code === 0 && Array.isArray(response.data.data)) {
-          this.schemaOptions = response.data.data.map((d) => ({
-            value: d.schemaKey,
-            label: d.displayName,
-            chescaCompatible: d.chescaCompatible
-          }))
-        }
-      } catch (e) {
-        console.error('加载数据集列表失败', e)
+      // 数据集列表拉不到不阻断页面：下拉为空时用户可以手工填 schema
+      const response = await getDatasetList({ silent: true })
+      if (response.ok && Array.isArray(response.data)) {
+        this.schemaOptions = response.data.map((d) => ({
+          value: d.schemaKey,
+          label: d.displayName,
+          chescaCompatible: d.chescaCompatible
+        }))
       }
     },
     initRows() {
@@ -1512,7 +1512,7 @@ export default {
           min: 0,
           max: 100,
           splitLine: {
-            lineStyle: { type: 'dashed', color: '#e4e7ed' }
+            lineStyle: { type: 'dashed', color: themeColor('divider-color') }
           }
         },
         series: [
@@ -1522,7 +1522,7 @@ export default {
             barMaxWidth: 28,
             data: values,
             itemStyle: {
-              color: (params) => (params.dataIndex === selectedIndex ? '#FF9800' : '#03A9F4'),
+              color: (params) => (params.dataIndex === selectedIndex ? themeColor('energy-solar-color') : themeColor('primary-color')),
               cursor: 'pointer'
             },
             emphasis: {
@@ -1537,7 +1537,7 @@ export default {
               position: 'top',
               formatter: (params) => `${params.value}%`,
               fontSize: 11,
-              color: '#727272'
+              color: themeColor('secondary-text-color')
             },
             markLine: {
               symbol: 'none',
@@ -1549,12 +1549,12 @@ export default {
                 {
                   name: `正常上限 ${this.maxSocNormalPercent}%`,
                   yAxis: this.maxSocNormalPercent,
-                  lineStyle: { color: '#43A047', type: 'dashed' }
+                  lineStyle: { color: themeColor('success-color'), type: 'dashed' }
                 },
                 {
                   name: `停电上限 ${this.maxSocOutagePercent}%`,
                   yAxis: this.maxSocOutagePercent,
-                  lineStyle: { color: '#DB4437', type: 'dashed' }
+                  lineStyle: { color: themeColor('error-color'), type: 'dashed' }
                 }
               ]
             }
@@ -1565,14 +1565,15 @@ export default {
     async loadConfig() {
       this.loading = true
       try {
-        const response = await axios.get('/api/web/basedata/getBatteryMinSocConfig')
-        if (response.data && response.data.code === 0) {
-          this.applyConfig(response.data.data)
+        const response = await getBatteryMinSocConfig({ silent: true, failMessage: '加载配置失败' })
+        if (response.ok) {
+          this.applyConfig(response.data)
+        } else if (response.code === null) {
+          // 网络层失败（后端没起）：这条提示带排查指引，比其他接口更需要保留原文
+          this.$message.error('加载配置失败，请确认已执行 algorithm_config.sql 建表并重启 Java 服务')
         } else {
-          this.$message.error((response.data && response.data.message) || '加载配置失败')
+          this.$message.error(response.message || '加载配置失败')
         }
-      } catch (e) {
-        this.$message.error('加载配置失败，请确认已执行 algorithm_config.sql 建表并重启 Java 服务')
       } finally {
         this.loading = false
         this.$nextTick(() => this.renderChart())
@@ -1599,52 +1600,19 @@ export default {
       }
       this.saving = true
       try {
-        const response = await axios.post('/api/web/basedata/saveBatteryMinSocConfig', this.buildPayload())
-        if (response.data && response.data.code === 0) {
+        const response = await saveBatteryMinSocConfig(this.buildPayload(), {
+          silent: true,
+          failMessage: '保存失败'
+        })
+        if (response.ok) {
           if (!silent) this.$message.success('保存成功')
           return true
         }
-        if (!silent) this.$message.error((response.data && response.data.message) || '保存失败')
-        return false
-      } catch (e) {
-        if (!silent) this.$message.error('保存失败')
+        if (!silent) this.$message.error(response.message || '保存失败')
         return false
       } finally {
         this.saving = false
       }
-    },
-    async handleSave() {
-      await this.saveConfig()
-    },
-    /** 供父页统一恢复；skipConfirm/silent 由父页控制提示 */
-    async resetConfig({ silent = false, skipConfirm = false } = {}) {
-      if (!skipConfirm) {
-        try {
-          await this.$confirm('确定恢复为 CHESCA 算法内置默认值吗？', '提示', { type: 'warning' })
-        } catch {
-          return false
-        }
-      }
-      this.loading = true
-      try {
-        const response = await axios.post('/api/web/basedata/resetBatteryMinSocConfig')
-        if (response.data && response.data.code === 0) {
-          this.applyConfig(response.data.data)
-          if (!silent) this.$message.success('已恢复默认值')
-          return true
-        }
-        if (!silent) this.$message.error((response.data && response.data.message) || '恢复失败')
-        return false
-      } catch (e) {
-        if (!silent) this.$message.error('恢复失败')
-        return false
-      } finally {
-        this.loading = false
-        this.$nextTick(() => this.renderChart())
-      }
-    },
-    async handleReset() {
-      await this.resetConfig()
     }
   }
 }
@@ -1766,7 +1734,7 @@ export default {
   border-radius: 4px;
   font-size: 12px;
   color: var(--secondary-text-color);
-  font-family: "Roboto Mono", "SF Mono", Consolas, monospace;
+  font-family: var(--ha-font-family-mono);
 }
 
 .config-section + .config-section {

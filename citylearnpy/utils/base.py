@@ -1,8 +1,4 @@
-# ⚠️ 本文件是**精简注释版**（由 `_gen_marl_split.py` 生成 ✓）：全部「详注块」已整段删除 ✓，
-#    代码与同目录的 `X.detailed.py` **逐字相同** ✓（AST 一致 ⇒ 行为一致 ✓）。
-#    **改注释请改 `.detailed.py` 那份** ✗（本文件每次生成都会被覆盖 ✗），改完重跑 `_gen_marl_split.py` ✓。
-# base = 三个入口共用的「启动靴」：日志工具 + 子进程/Ray 环境准备 + torch 单线程 + 编码与警告 ✓
-# 用法：`from utils.base import …`，必须写在任何重库（numpy/pandas/torch/citylearn/ray）之前 ⇒ 导入即生效 ✓
+# 日志工具 + 子进程/Ray 环境准备 + torch 单线程 + 警告
 from __future__ import annotations
 
 from typing import Any, Dict

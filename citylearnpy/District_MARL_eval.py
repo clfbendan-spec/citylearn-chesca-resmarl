@@ -20,6 +20,8 @@ r"""平台入口：区域级（District-aware）MARL 评估。
 """
 
 import os
+# 新手提示：此文件只引导包路径；实际推理见district_eval.main和rollout_district。
+# 指定train-task-id而找不到模型时会失败，不会借用全局目录冒充该训练任务。
 import sys
 from pathlib import Path
 
@@ -30,7 +32,7 @@ _MARKER = Path('district_marl') / 'district_config.py'
 def _find_root() -> Path:
     """找到含 district_marl 包的 citylearnpy 根目录。"""
     candidates = []
-    env = (os.environ.get('CITYLEARNPY_DIR') or '').strip()
+    env = (os.environ.get('CITYLEARNPY_DIR') or os.environ.get('CITYLEARN_PYTHON_PATH') or '').strip()
     if env:
         candidates.append(Path(env))
     here = Path(__file__).resolve()
@@ -53,6 +55,14 @@ ROOT = _find_root()
 for _p in (str(Path(__file__).resolve().parent), str(ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# ---- 噪声抑制（★必须在 import ray / torch 之前）---------------------------
+#   与 District_MARL_train.py 同款：警告几乎全在 import 阶段产生，
+#   `from district_marl.district_eval import main` 这一行之前必须压住。
+#   详见 district_marl/_quiet.py；`--verbose-warnings` 可看全部。
+from district_marl._quiet import quiet_warnings  # noqa: E402  （必须晚于 sys.path 设置）
+
+quiet_warnings()
 
 # ---- 确定性引导（★平台路径的唯一生效点；评估也必须，否则读到的权重与训练口径不一致）----
 #   `PYTHONHASHSEED` 只在解释器启动时读一次 ⇒ 见 District_MARL_train.py 同名注释。

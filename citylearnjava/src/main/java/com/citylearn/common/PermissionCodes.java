@@ -10,7 +10,17 @@ public final class PermissionCodes {
 
     public static final String MENU_HOME = "menu:home";
     public static final String MENU_REC_DASHBOARD = "menu:recDashboard";
+    /**
+     * 模型优选：重算 KPI。
+     *
+     * <p>该接口虽为 GET，但会真正启动 Python 进程并回写 KPI 数据，属于写操作，
+     * 因此单独发放操作码，而不复用 {@link #MENU_REC_DASHBOARD}——否则任何只有看板
+     * 查看权的用户都能触发一次重算。</p>
+     */
+    public static final String REC_UPDATE_LEARN = "recDashboard:updateLearn";
     public static final String MENU_DATA_LIST = "menu:dataList";
+    public static final String MENU_BUILDING_MANAGEMENT = "menu:buildingManagement";
+    public static final String BUILDING_WRITE = "building:write";
     public static final String MENU_CODE_EDITOR = "menu:codeEditor";
     /** 任务记录：集中查看所有代码执行记录（只读列表，无子权限） */
     public static final String MENU_TASK_LIST = "menu:taskList";

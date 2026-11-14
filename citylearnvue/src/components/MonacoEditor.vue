@@ -427,6 +427,8 @@
 </template>
 
 <script>
+import { themeColor } from '@/utils/theme'
+
 import * as monaco from 'monaco-editor';
 import * as echarts from 'echarts';
 import axios from 'axios';
@@ -2141,7 +2143,7 @@ export default {
 
     /** 构造 ECharts 配置：横轴轮数、纵轴不适比例、每栋一条曲线 */
     buildMidEvalOption(data) {
-      const colors = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#9b59b6', '#00bcd4', '#ff9800', '#795548'];
+      const colors = [themeColor('primary-color'), themeColor('success-color'), themeColor('warning-color'), themeColor('error-color'), themeColor('energy-grid-return-color'), themeColor('energy-water-color'), themeColor('energy-solar-color'), themeColor('secondary-text-color')];
       const fmt = (v) => (v == null || !Number.isFinite(v) ? 'na' : Number(v).toFixed(1) + '%');
       return {
         tooltip: {
@@ -2475,23 +2477,44 @@ export default {
 
 <style scoped>
 .python-editor {
+  width: 100%;
   height: 100%;
+  min-height: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   background: #1e1e1e;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
+}
+
+.editor-header,
+.editor-layout {
+  --card-background-color: #1e1e1e;
+  --input-fill-color: #2d2d30;
+  --primary-text-color: #d4d4d4;
+  --secondary-text-color: #aaaaaa;
+  --divider-color: #3f3f46;
+  --outline-hover-color: #666666;
+  --disabled-text-color: #858585;
+  --el-text-color-primary: var(--primary-text-color);
+  --el-text-color-regular: var(--primary-text-color);
+  --el-text-color-secondary: var(--secondary-text-color);
 }
 
 .editor-layout {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 .file-list {
-  width: 20%;
-  background: #252526;
-  border-right: 1px solid #1a1a1a;
+  width: clamp(220px, 24%, 300px);
+  flex-shrink: 0;
+  min-width: 0;
+  background: var(--card-background-color);
+  border-right: 1px solid var(--divider-color);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -2510,23 +2533,34 @@ export default {
   bottom: 30px;  /* 增加底部间距 */
   left: 10px;
   right: 10px;
-  background: #252526;
+  background: var(--card-background-color);
   
-  border-top: 1px solid #3e3e42;
+  border-top: 1px solid var(--divider-color);
   
 }
 
 .file-description textarea {
   width: 100%;
   min-height: 100px;
+  padding: 8px 12px;
+  border: 1px solid var(--divider-color);
+  border-radius: 4px;
+  color: var(--primary-text-color);
+  background: var(--card-background-color);
+  font: inherit;
   resize: none; /* 禁用缩放功能 */
 }
 
+.file-description textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
 .file-list h4 {
-  color: #cccccc;
+  color: var(--primary-text-color);
   margin: 0 0 10px 0;
   padding: 0 0 5px 0;
-  border-bottom: 1px solid #3e3e42;
+  border-bottom: 1px solid var(--divider-color);
 }
 
 /* ---- 脚本类型筛选（全部 / 训练 / 评估 / 训练+评估）---- */
@@ -2540,8 +2574,8 @@ export default {
 .script-type-btn {
   flex: 1 1 auto;
   background: transparent;
-  color: #999;
-  border: 1px solid #3e3e42;
+  color: var(--secondary-text-color);
+  border: 1px solid var(--divider-color);
   border-radius: 3px;
   padding: 3px 6px;
   font-size: 12px;
@@ -2551,14 +2585,14 @@ export default {
 }
 
 .script-type-btn:hover {
-  color: #d4d4d4;
-  border-color: #5a5a5a;
+  color: var(--primary-text-color);
+  border-color: var(--outline-hover-color);
 }
 
 .script-type-btn.active {
-  background: #0e639c;
-  border-color: #0e639c;
-  color: #ffffff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--text-primary-color);
 }
 
 /* 文件名右侧的类型短标签 */
@@ -2571,18 +2605,18 @@ export default {
   font-style: normal;
   line-height: 16px;
   white-space: nowrap;
-  color: #cfcfcf;
-  background: #3a3d41;
+  color: var(--primary-text-color);
+  background: var(--input-fill-color);
 }
 
 .script-type-tag.tag-train {
-  background: #2f5d3a;
-  color: #b7e4c7;
+  background: var(--ha-success-background);
+  color: var(--success-color);
 }
 
 .script-type-tag.tag-eval {
-  background: #3a4a63;
-  color: #b6d4fe;
+  background: var(--sidebar-selected-background);
+  color: var(--primary-color);
 }
 
 /*
@@ -2601,8 +2635,8 @@ export default {
   font-size: 11px;
   line-height: 16px;
   font-weight: 500;
-  color: #ffffff;
-  background: #f5222d;
+  color: var(--text-primary-color);
+  background: var(--error-color);
   white-space: nowrap;
   cursor: default;
 }
@@ -2615,8 +2649,8 @@ export default {
   border-radius: 3px;
   font-size: 11px;
   line-height: 16px;
-  color: #ffffff;
-  background: #f5222d;
+  color: var(--text-primary-color);
+  background: var(--error-color);
   white-space: nowrap;
 }
 
@@ -2628,7 +2662,7 @@ export default {
 
 .file-list li {
   padding: 8px 10px;
-  color: #d4d4d4;
+  color: var(--primary-text-color);
   border-radius: 3px;
   margin-bottom: 2px;
 }
@@ -2646,7 +2680,7 @@ export default {
 
 .rename-btn {
   background: transparent;
-  color: #999;
+  color: var(--secondary-text-color);
   border: none;
   cursor: pointer;
   padding: 2px 5px;
@@ -2655,7 +2689,7 @@ export default {
 }
 
 .rename-btn:hover {
-  color: #ccc;
+  color: var(--primary-text-color);
   background: rgba(255,255,255,0.1);
 }
 
@@ -2669,9 +2703,9 @@ export default {
 
 .edit-mode input {
   flex-grow: 1;
-  background: #333;
-  border: 1px solid #555;
-  color: #fff;
+  background: var(--input-fill-color);
+  border: 1px solid var(--divider-color);
+  color: var(--primary-text-color);
   padding: 3px 5px;
   border-radius: 3px;
 }
@@ -2679,7 +2713,7 @@ export default {
 .confirm-btn, .cancel-btn {
   background: transparent;
   border: none;
-  color: #ccc;
+  color: var(--primary-text-color);
   cursor: pointer;
   width: 24px;
   height: 24px;
@@ -2690,31 +2724,31 @@ export default {
 }
 
 .confirm-btn:hover {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
+  background: rgba(var(--rgb-success-color), 0.2);
+  color: var(--success-color);
 }
 
 .cancel-btn:hover {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
+  background: rgba(var(--rgb-error-color), 0.2);
+  color: var(--error-color);
 }
 
 .file-list li:hover {
-  background: #2a2d2e;
+  background: var(--ha-hover-background);
 }
 
 .file-list li.active {
-  background: #37373d;
+  background: var(--sidebar-selected-background);
 }
 
 .loading {
-  color: #999;
+  color: var(--secondary-text-color);
   text-align: center;
   padding: 10px;
 }
 
 .editor-area {
-  width: 80%;
+  min-width: 0;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2726,10 +2760,12 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   padding: 12px 16px;
-  background: #2d2d30;
-  color: #cccccc;
-  border-bottom: 1px solid #3e3e42;
+  background: var(--card-background-color);
+  color: var(--primary-text-color);
+  border-bottom: 1px solid var(--divider-color);
 }
 
 .editor-header h3 {
@@ -2741,6 +2777,7 @@ export default {
 .controls {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .controls button {
@@ -2750,6 +2787,8 @@ export default {
   cursor: pointer;
   font-size: 14px;
   transition: background-color 0.2s;
+  min-height: 36px;
+  font-weight: 500;
 }
 
 .controls button:disabled {
@@ -2758,40 +2797,40 @@ export default {
 }
 
 .btn-save {
-  background: #0e639c;
-  color: white;
+  background: var(--primary-color);
+  color: var(--text-primary-color);
 }
 
 .btn-save:hover:not(:disabled) {
-  background: #1177bb;
+  background: var(--dark-primary-color);
 }
 
 .btn-record {
-  background: #6b5b95;
-  color: white;
+  background: var(--input-fill-color);
+  color: var(--primary-text-color);
 }
 
 .btn-record:hover:not(:disabled) {
-  background: #7d6ba8;
+  background: var(--ha-hover-background);
 }
 
 /* 算法配置按钮：与「记录」同为元数据类操作，用蓝灰区分于运行/保存 */
 .btn-config {
-  background: #3f6f8f;
-  color: white;
+  background: var(--input-fill-color);
+  color: var(--primary-text-color);
 }
 
 .btn-config:hover:not(:disabled) {
-  background: #4d82a6;
+  background: var(--ha-hover-background);
 }
 
 .btn-back {
-  background: #5a5a5a;
-  color: white;
+  background: var(--input-fill-color);
+  color: var(--primary-text-color);
 }
 
 .btn-back:hover {
-  background: #6e6e6e;
+  background: var(--ha-hover-background);
 }
 
 /* 断点续训开关：紧挨「执行」左侧，开启时高亮，提醒本次执行会追加 --resume */
@@ -2801,8 +2840,8 @@ export default {
   gap: 6px;
   padding: 5px 10px;
   border-radius: 4px;
-  background: #3a3a3d;
-  color: #cccccc;
+  background: var(--input-fill-color);
+  color: var(--primary-text-color);
   font-size: 13px;
   cursor: pointer;
   user-select: none;
@@ -2810,16 +2849,16 @@ export default {
 }
 
 .resume-switch:hover {
-  background: #4a4a4d;
+  background: var(--ha-hover-background);
 }
 
 .resume-switch.is-on {
-  background: #b8860b;
-  color: #fff;
+  background: var(--ha-warning-background);
+  color: var(--primary-text-color);
 }
 
 .resume-switch.is-on:hover {
-  background: #cf9612;
+  background: var(--ha-warning-background);
 }
 
 .resume-switch.is-disabled {
@@ -2833,21 +2872,21 @@ export default {
 }
 
 .btn-run {
-  background: #55aa55;
-  color: white;
+  background: var(--success-color);
+  color: var(--text-primary-color);
 }
 
 .btn-run:hover:not(:disabled) {
-  background: #66bb66;
+  background: var(--success-color);
 }
 
 .btn-stop {
-  background: #c1444a;
-  color: white;
+  background: var(--error-color);
+  color: var(--text-primary-color);
 }
 
 .btn-stop:hover:not(:disabled) {
-  background: #d4545a;
+  background: var(--error-color);
 }
 
 /* 「子任务」标识：编排任务（训练+评估）拆出的记录，与「未读」并列展示 */
@@ -2858,8 +2897,8 @@ export default {
   border-radius: 3px;
   font-size: 11px;
   line-height: 16px;
-  color: #ffffff;
-  background: #409eff;
+  color: var(--text-primary-color);
+  background: var(--el-color-primary-legacy);
   white-space: nowrap;
 }
 
@@ -2875,13 +2914,13 @@ export default {
 .task-title {
   flex: 1 1 100%;
   font-size: 13px;
-  color: #d4d4d4;
+  color: var(--primary-text-color);
 }
 
 .task-show-name {
   flex: 1 1 100%;
   font-size: 12px;
-  color: #79b8ff;
+  color: var(--primary-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2894,9 +2933,9 @@ export default {
 }
 
 .btn-task-name {
-  border: 1px solid #888;
-  background: #3a3a3a;
-  color: #bbb;
+  border: 1px solid var(--secondary-text-color);
+  background: var(--input-fill-color);
+  color: var(--secondary-text-color);
   border-radius: 3px;
   padding: 1px 8px;
   font-size: 12px;
@@ -2905,15 +2944,15 @@ export default {
 }
 
 .btn-task-name:hover:not(:disabled) {
-  border-color: #79b8ff;
-  color: #79b8ff;
+  border-color: var(--primary-color);
+  color: var(--primary-color);
 }
 
 /* 任务列表里「终止」运行中任务 */
 .btn-task-stop {
-  border: 1px solid #a33;
-  background: #3a2222;
-  color: #e88;
+  border: 1px solid var(--error-color);
+  background: var(--ha-error-background);
+  color: var(--error-color);
   border-radius: 3px;
   padding: 1px 8px;
   font-size: 12px;
@@ -2923,8 +2962,8 @@ export default {
 }
 
 .btn-task-stop:hover:not(:disabled) {
-  border-color: #e55;
-  color: #f88;
+  border-color: var(--error-color);
+  color: var(--error-color);
 }
 
 .btn-task-stop:disabled {
@@ -2938,9 +2977,9 @@ export default {
 }
 
 .btn-task-show {
-  border: 1px solid #888;
-  background: #3a3a3a;
-  color: #bbb;
+  border: 1px solid var(--secondary-text-color);
+  background: var(--input-fill-color);
+  color: var(--secondary-text-color);
   border-radius: 3px;
   padding: 1px 8px;
   font-size: 12px;
@@ -2949,14 +2988,14 @@ export default {
 }
 
 .btn-task-show:hover:not(:disabled) {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--el-color-primary-legacy);
+  color: var(--el-color-primary-legacy);
 }
 
 .btn-task-show-active {
-  background: rgba(64, 158, 255, 0.15);
-  border-color: #409eff;
-  color: #409eff;
+  background: rgba(var(--rgb-primary-color), 0.15);
+  border-color: var(--el-color-primary-legacy);
+  color: var(--el-color-primary-legacy);
 }
 
 .btn-task-show:disabled {
@@ -2965,9 +3004,9 @@ export default {
 }
 
 .btn-task-delete {
-  border: 1px solid #888;
-  background: #3a3a3a;
-  color: #bbb;
+  border: 1px solid var(--secondary-text-color);
+  background: var(--input-fill-color);
+  color: var(--secondary-text-color);
   border-radius: 3px;
   padding: 1px 8px;
   font-size: 12px;
@@ -2976,8 +3015,8 @@ export default {
 }
 
 .btn-task-delete:hover:not(:disabled) {
-  border-color: #f44336;
-  color: #f44336;
+  border-color: var(--error-color);
+  color: var(--error-color);
 }
 
 .btn-task-delete:disabled {
@@ -2986,36 +3025,36 @@ export default {
 }
 
 .task-status-0 {
-  background: rgba(255, 193, 7, 0.2);
-  color: #ffc107;
+  background: rgba(var(--rgb-warning-color), 0.2);
+  color: var(--warning-color);
 }
 
 .task-status-1 {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
+  background: rgba(var(--rgb-success-color), 0.2);
+  color: var(--success-color);
 }
 
 .task-status-2 {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
+  background: rgba(var(--rgb-error-color), 0.2);
+  color: var(--error-color);
 }
 
 /* 3-运行终止 */
 .task-status-3 {
   background: rgba(158, 158, 158, 0.25);
-  color: #bdbdbd;
+  color: var(--disabled-text-color);
 }
 
 /* 4-已中断（后端服务重启导致） */
 .task-status-4 {
   background: rgba(255, 152, 0, 0.2);
-  color: #ff9800;
+  color: var(--accent-color);
 }
 
 /* 6-等待中：编排任务的评估子任务在等训练跑完（这个状态下不允许删除） */
 .task-status-6 {
   background: rgba(230, 162, 60, 0.2);
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 
 .editor-container {
@@ -3026,8 +3065,8 @@ export default {
 .output-panel {
   position: relative;
   flex: 0 0 auto;
-  border-top: 1px solid #3e3e42;
-  background: #1e1e1e;
+  border-top: 1px solid var(--divider-color);
+  background: var(--input-fill-color);
   /* 兜底：窗口很矮时也不允许输出栏吞掉整个编辑区 */
   max-height: 85%;
   display: flex;
@@ -3039,14 +3078,14 @@ export default {
 .output-resizer {
   flex: 0 0 auto;
   height: 6px;
-  background: #2d2d30;
-  border-bottom: 1px solid #3e3e42;
+  background: var(--input-fill-color);
+  border-bottom: 1px solid var(--divider-color);
   cursor: ns-resize;
 }
 
 .output-resizer:hover,
 .output-resizer.active {
-  background: #0e639c;
+  background: var(--primary-color);
 }
 
 .output-header {
@@ -3054,15 +3093,15 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
-  background: #2d2d30;
-  color: #cccccc;
+  background: var(--input-fill-color);
+  color: var(--primary-text-color);
   font-weight: 500;
 }
 
 .btn-clear {
   background: transparent;
-  color: #cccccc;
-  border: 1px solid #5a5a5a;
+  color: var(--primary-text-color);
+  border: 1px solid var(--outline-hover-color);
   border-radius: 4px;
   padding: 4px 8px;
   cursor: pointer;
@@ -3070,7 +3109,7 @@ export default {
 }
 
 .btn-clear:hover {
-  background: #3c3c3c;
+  background: var(--ha-hover-background);
 }
 
 /* 「输出」标题 + 不适曲线按钮（按钮紧跟在「输出」右侧） */
@@ -3083,8 +3122,8 @@ export default {
 
 .btn-chart {
   background: transparent;
-  color: #75bfff;
-  border: 1px solid #0e639c;
+  color: var(--primary-color);
+  border: 1px solid var(--primary-color);
   border-radius: 4px;
   padding: 4px 8px;
   cursor: pointer;
@@ -3092,13 +3131,13 @@ export default {
 }
 
 .btn-chart:hover {
-  background: #0e639c;
-  color: #ffffff;
+  background: var(--primary-color);
+  color: var(--text-primary-color);
 }
 
 .btn-chart-active {
-  background: #0e639c;
-  color: #ffffff;
+  background: var(--primary-color);
+  color: var(--text-primary-color);
 }
 
 /* 不适比例趋势图弹窗 */
@@ -3106,7 +3145,7 @@ export default {
   margin: 0 0 10px;
   font-size: 12px;
   line-height: 1.7;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .mid-eval-chart-wrap {
@@ -3130,27 +3169,27 @@ export default {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background: #ffffff;
-  color: #909399;
+  background: var(--card-background-color);
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 2;
 }
 
 .mid-eval-empty span {
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--secondary-text-color);
 }
 
 /* ---- 续训来源任务选择（P19-1） ---- */
 .resume-dialog-tip {
   margin: 0 0 12px;
   font-size: 12.5px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 1.7;
 }
 
 .resume-dialog-tip strong {
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 
 .resume-dialog-body {
@@ -3172,14 +3211,14 @@ export default {
   right: 0;
   text-align: center;
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   line-height: 2;
 }
 
 .resume-task-empty span {
   display: block;
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--secondary-text-color);
 }
 
 .resume-task-preview {
@@ -3193,12 +3232,12 @@ export default {
   margin-bottom: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .resume-preview-title span {
   font-weight: 400;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .resume-preview-chart-wrap {
@@ -3220,7 +3259,7 @@ export default {
   right: 0;
   text-align: center;
   font-size: 12.5px;
-  color: #c0c4cc;
+  color: var(--secondary-text-color);
 }
 
 .resume-preview-meta {
@@ -3228,7 +3267,7 @@ export default {
   display: flex;
   gap: 14px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .output-content {
@@ -3237,8 +3276,8 @@ export default {
   padding: 12px 16px;
   margin: 0;
   overflow: auto;
-  color: #d4d4d4;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--primary-text-color);
+  font-family: var(--ha-font-family-mono);
   font-size: 13px;
   line-height: 1.4;
   white-space: pre-wrap;
@@ -3252,22 +3291,35 @@ export default {
   padding: 4px 10px;
   border: none;
   border-radius: 12px;
-  background: rgba(14, 99, 156, 0.92);
-  color: #ffffff;
+  background: var(--primary-color);
+  color: var(--text-primary-color);
   font-size: 12px;
   line-height: 1.4;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--ha-card-box-shadow);
 }
 
 .btn-scroll-bottom:hover {
-  background: #1177bb;
+  background: var(--dark-primary-color);
 }
 
 .error-message {
   padding: 12px 16px;
-  background: #c75050;
-  color: white;
+  background: var(--error-color);
+  color: var(--text-primary-color);
   font-size: 14px;
+}
+
+@media (max-width: 680px) {
+  .python-editor { margin: 0; min-height: 0; height: 100%; }
+  .editor-layout { flex-direction: column; }
+  .file-list { width: 100%; height: auto; max-height: 260px; border-right: 0; border-bottom: 1px solid var(--divider-color); }
+  .file-list-content { margin-bottom: 0; }
+  .file-description { position: static; margin-top: var(--space-2); }
+  .file-description textarea { min-height: 64px; }
+  .editor-area { width: 100%; min-height: 0; }
+  .editor-header { padding: var(--space-3); }
+  .resume-dialog-body { flex-direction: column; }
+  .controls { gap: var(--space-2); }
 }
 </style>

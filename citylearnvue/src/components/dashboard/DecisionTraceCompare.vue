@@ -42,12 +42,13 @@
       </div>
 
       <p v-if="coverageHint" :class="['cmp-cover-hint', { 'is-warn': coverageWarn }]">{{ coverageHint }}</p>
+      <p v-if="hasAutomaticCooling" class="cmp-cover-hint">NoControl 储热和电池不调度，按 0 比较；冷机自动满足数据集需求，没有数值动作，因此不计算冷机动作差。</p>
 
       <div v-if="spark.leftPath || spark.rightPath" class="cmp-spark">
         <svg viewBox="0 0 600 64" preserveAspectRatio="none" class="spark-svg">
-          <path :d="spark.leftPath" fill="none" stroke="#409eff" stroke-width="1.2" vector-effect="non-scaling-stroke" />
-          <path :d="spark.rightPath" fill="none" stroke="#67c23a" stroke-width="1.2" vector-effect="non-scaling-stroke" />
-          <line :x1="cursorX" y1="0" :x2="cursorX" y2="64" stroke="#f56c6c" stroke-width="1" stroke-dasharray="3 2" />
+          <path :d="spark.leftPath" fill="none" stroke="var(--primary-color)" stroke-width="1.2" vector-effect="non-scaling-stroke" />
+          <path :d="spark.rightPath" fill="none" stroke="var(--success-color)" stroke-width="1.2" vector-effect="non-scaling-stroke" />
+          <line :x1="cursorX" y1="0" :x2="cursorX" y2="64" stroke="var(--error-color)" stroke-width="1" stroke-dasharray="3 2" />
         </svg>
         <div class="spark-axis">
           <span>全段社区净负荷 · 蓝=左 / 绿=右</span>
@@ -126,7 +127,7 @@
               <tbody>
                 <tr v-for="b in cur.left.buildings" :key="'lb-' + b.id">
                   <td class="cell-bid">{{ b.id }}</td>
-                  <td v-for="(v, di) in b.dims" :key="'ld-' + b.id + '-' + di">{{ fmt(v, 3) }}</td>
+                  <td v-for="(v, di) in b.dims" :key="'ld-' + b.id + '-' + di">{{ actionText(v, b, cur.left.dimNames[di]) }}</td>
                   <td>{{ fmt(b.soc, 3) }}</td>
                 </tr>
               </tbody>
@@ -166,7 +167,7 @@
               <tbody>
                 <tr v-for="b in cur.right.buildings" :key="'rb-' + b.id">
                   <td class="cell-bid">{{ b.id }}</td>
-                  <td v-for="(v, di) in b.dims" :key="'rd-' + b.id + '-' + di">{{ fmt(v, 3) }}</td>
+                  <td v-for="(v, di) in b.dims" :key="'rd-' + b.id + '-' + di">{{ actionText(v, b, cur.right.dimNames[di]) }}</td>
                   <td>{{ fmt(b.soc, 3) }}</td>
                 </tr>
               </tbody>
@@ -208,7 +209,7 @@
             </tr>
           </tbody>
         </table>
-        <p v-else class="diff-missing">两边都缺该步的数据，无法做差</p>
+        <p v-else class="diff-missing">该步缺少一侧记录或共同建筑，无法做差</p>
       </div>
     </template>
   </div>
@@ -301,6 +302,9 @@ export default {
     diff() {
       return diffFrames(this.cur.left, this.cur.right)
     },
+    hasAutomaticCooling() {
+      return [this.cur.left, this.cur.right].some(frame => frame && frame.buildings.some(b => b.automaticCooling))
+    },
     diffDimNames() {
       const l = this.cur.left && this.cur.left.dimNames
       const r = this.cur.right && this.cur.right.dimNames
@@ -331,6 +335,10 @@ export default {
       const max = Math.max(0, this.frames.length - 1)
       if (this.idx > max) this.idx = max
       if (this.idx < 0) this.idx = 0
+      this.requestCurrentFrame()
+    },
+    idx() {
+      this.requestCurrentFrame()
     },
     leftSim() {
       this.idx = 0
@@ -345,6 +353,15 @@ export default {
     this.stop()
   },
   methods: {
+    requestCurrentFrame() {
+      for (const [sim, trace] of [[this.leftSim, this.leftTrace], [this.rightSim, this.rightTrace]]) {
+        const item = trace && trace.steps.find(step => step.step === this.cur.step)
+        if (item && item.pending) this.$emit('step-needed', { sim, step: item.step, episode: item.episode })
+      }
+    },
+    actionText(value, building, dimension) {
+      return dimension === 'tmp' && building.automaticCooling ? '自动（无动作）' : fmtNum(value, 3)
+    },
     fmt(v, d = 2) {
       return fmtNum(v, d)
     },
@@ -353,12 +370,14 @@ export default {
       return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : '—'
     },
     signed(v, d = 2) {
+      if (v == null || v === '') return '—'
       const n = Number(v)
       if (!Number.isFinite(n)) return '—'
       const s = n.toFixed(d)
       return n > 0 ? `+${s}` : s
     },
     signedPct(v) {
+      if (v == null || v === '') return '—'
       const n = Number(v)
       if (!Number.isFinite(n)) return '—'
       const s = `${(n * 100).toFixed(2)}%`
@@ -454,12 +473,12 @@ export default {
   margin: 0 0 4px;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .cmp-head-hint {
   margin: 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .cmp-empty {
   padding: 12px 0 4px;
@@ -475,17 +494,17 @@ export default {
   font-size: 12px;
   padding: 1px 7px;
   border-radius: 3px;
-  color: #fff;
+  color: var(--text-primary-color);
 }
 .pick-left {
-  background: #409eff;
+  background: var(--el-color-primary-legacy);
 }
 .pick-right {
-  background: #67c23a;
+  background: var(--el-color-success);
 }
 .pick-vs {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .pick-select {
   width: 210px;
@@ -493,21 +512,21 @@ export default {
 .cmp-cover-hint {
   margin: 0 0 8px;
   font-size: 12px;
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 .cmp-cover-hint.is-warn {
-  color: #f56c6c;
-  background: #fef0f0;
-  border: 1px solid #fbc4c4;
+  color: var(--el-color-danger);
+  background: var(--ha-error-background);
+  border: 1px solid var(--ha-error-outline);
   border-radius: 4px;
   padding: 6px 10px;
   line-height: 1.6;
 }
 .cmp-spark {
   margin-bottom: 10px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
-  background: #fff;
+  background: var(--card-background-color);
   padding: 6px 8px 4px;
 }
 .spark-svg {
@@ -519,7 +538,7 @@ export default {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   padding: 2px 2px 0;
 }
 .cmp-nav {
@@ -535,11 +554,11 @@ export default {
 }
 .cmp-steplabel {
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
 }
 .cmp-hour {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .cmp-grid {
   display: grid;
@@ -547,17 +566,17 @@ export default {
   gap: 12px;
 }
 .cmp-side {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
-  background: #fff;
+  background: var(--card-background-color);
   padding: 10px 12px;
   min-height: 210px;
 }
 .side-left {
-  border-top: 2px solid #409eff;
+  border-top: 2px solid var(--el-color-primary-legacy);
 }
 .side-right {
-  border-top: 2px solid #67c23a;
+  border-top: 2px solid var(--el-color-success);
 }
 .side-head {
   display: flex;
@@ -572,15 +591,15 @@ export default {
   flex: none;
 }
 .dot-left {
-  background: #409eff;
+  background: var(--el-color-primary-legacy);
 }
 .dot-right {
-  background: #67c23a;
+  background: var(--el-color-success);
 }
 .side-name {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -594,31 +613,31 @@ export default {
 }
 .metric-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .metric-value {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .metric-value small {
   font-size: 12px;
   font-weight: 400;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .metric-sub {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .side-soc {
   display: flex;
   gap: 16px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-bottom: 8px;
 }
 .side-soc b {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 600;
 }
 .side-table,
@@ -631,9 +650,9 @@ export default {
 .diff-table th {
   text-align: right;
   font-weight: 500;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   padding: 4px 6px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--el-border-color-lighter);
   white-space: nowrap;
 }
 .side-table th:first-child,
@@ -644,27 +663,27 @@ export default {
 .diff-table td {
   text-align: right;
   padding: 4px 6px;
-  border-bottom: 1px solid #f5f7fa;
-  color: #303133;
+  border-bottom: 1px solid var(--input-fill-color);
+  color: var(--el-text-color-primary);
   font-variant-numeric: tabular-nums;
 }
 .side-table td.cell-bid,
 .diff-table td.cell-bid {
   text-align: left;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .side-missing,
 .diff-missing {
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--secondary-text-color);
   padding: 24px 0;
   text-align: center;
 }
 .cmp-diff {
   margin-top: 12px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
-  background: #fafafa;
+  background: var(--primary-background-color);
   padding: 10px 12px;
 }
 .diff-head {
@@ -677,33 +696,33 @@ export default {
 .diff-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .diff-net {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .delta {
   font-variant-numeric: tabular-nums;
 }
 .d-none,
 .d-zero {
-  color: #c0c4cc;
+  color: var(--secondary-text-color);
 }
 .d-small {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .d-medium {
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 .d-large {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-weight: 600;
 }
 .d-up {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 .d-down {
-  color: #67c23a;
+  color: var(--el-color-success);
 }
 </style>

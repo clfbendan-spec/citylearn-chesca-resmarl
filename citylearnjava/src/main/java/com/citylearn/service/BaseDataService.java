@@ -1,15 +1,18 @@
 package com.citylearn.service;
 
-
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.citylearn.common.AlgorithmConfigJson;
+import com.citylearn.common.Ids;
 import com.citylearn.common.Result;
+import com.citylearn.common.SimulationDataPaths;
+import com.citylearn.common.TaskNaming;
+import com.citylearn.common.TaskTracer;
+import com.citylearn.common.Texts;
 import com.citylearn.config.FileResourceProperties;
-import com.citylearn.config.SystemConfig;
 import com.citylearn.dao.*;
 import com.citylearn.entity.*;
 import com.citylearn.param.AlgorithmParamConfigParam;
@@ -20,6 +23,7 @@ import com.citylearn.param.PyFileParam;
 import com.citylearn.vo.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
@@ -35,7 +39,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Consumer;
@@ -54,20 +57,8 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @Service
-public class BaseDataService implements SystemConfig {
+public class BaseDataService {
 
-    @Resource
-    private Building1Mapper building1Mapper;
-    @Resource
-    private Building2Mapper building2Mapper;
-    @Resource
-    private Building3Mapper building3Mapper;
-    @Resource
-    private CarbonIntensityMapper carbonIntensityMapper;
-    @Resource
-    private PricingMapper pricingMapper;
-    @Resource
-    private WeatherMapper weatherMapper;
     @Resource
     private KpisMapper kpisMapper;
     @Resource
@@ -75,11 +66,11 @@ public class BaseDataService implements SystemConfig {
     @Resource
     private AlgorithmParamConfigMapper algorithmParamConfigMapper;
     @Resource
-    private AlgorithmParamConfigSetMapper algorithmParamConfigSetMapper;
-    @Resource
     private PyTaskMapper pyTaskMapper;
     @Resource
     private CitylearnDatasetMapper citylearnDatasetMapper;
+    @Resource
+    private CitylearnDatasetService citylearnDatasetService;
     @Resource
     private FileResourceProperties fileResourceProperties;
 
@@ -90,10 +81,6 @@ public class BaseDataService implements SystemConfig {
     private BatteryMinSocConfigService batteryMinSocConfigService;
     @Resource
     private CityLearnLocalDatasetService cityLearnLocalDatasetService;
-
-
-    // 使用普通 Map，并通过 @PostConstruct 初始化
-    private static Map<String, BaseMapper> BUILDING_MAPPER = new HashMap<>();
 
     private static Map<String, List<String>> CONSOLE_MAP = new HashMap<>();
 
@@ -147,6 +134,9 @@ public class BaseDataService implements SystemConfig {
      */
     private static final String MARL_CKPT_REL_DIR = "checkpoints/multi_agent_resume";
 
+    private static final String AAC_CKPT_REL_DIR = "checkpoints/aacmadrl";
+    private static final String AAC_MODEL_MANIFEST = "model_manifest.json";
+
     /** 断点进度文件名（与 Multi-agent.py 的 CKPT_PROGRESS 一致）。 */
     private static final String MARL_CKPT_PROGRESS_FILE = "train_progress.json";
 
@@ -171,9 +161,6 @@ public class BaseDataService implements SystemConfig {
 
     @PostConstruct
     public void init() {
-        BUILDING_MAPPER.put("building1", building1Mapper);
-        BUILDING_MAPPER.put("building2", building2Mapper);
-        BUILDING_MAPPER.put("building3", building3Mapper);
         reconcileInterruptedTasks();
     }
 
@@ -292,6 +279,7 @@ public class BaseDataService implements SystemConfig {
         update.setStatus(TASK_STATUS_INTERRUPTED);
         update.setUpdateTime(new Date());
         pyTaskMapper.updateById(update);
+        TaskTracer.transition(getTaskDir(taskId), taskId, 0, TASK_STATUS_INTERRUPTED, "reconcile-interrupted");
         saveTaskErrorLog(taskId, INTERRUPTED_TASK_MESSAGE);
         // 子任务被中断（后端重启期间进程已不在）→ 父任务同步为已中断
         onSubTaskFinished(taskId, TASK_STATUS_INTERRUPTED);
@@ -382,10 +370,11 @@ public class BaseDataService implements SystemConfig {
         return getList(buildingId, month, hour, dayType, CityLearnLocalDatasetService.DEFAULT_SCHEMA, null);
     }
 
+    @Value("${citylearn.python.executable:python}")
+    private String pythonExecutable;
 
-    private static final String PYTHON_PATH = "D:/Users/clfbe/anaconda3/envs/cl2/python.exe";
-
-
+    @Value("${citylearn.python.aac-executable:}")
+    private String aacPythonExecutable;
 
     private static  final  List<String> LINE_TITLE=new ArrayList<String>(){{
         add("allTimePeakAverage");
@@ -436,7 +425,6 @@ public class BaseDataService implements SystemConfig {
         // 越低越好（不是"达标率"）—— 与前端 kpiLabels.js 的 KPI_HIGHER_IS_BETTER 口径一致。
         add("零净能耗（归一化）");
 
-
     }} ;
     public List<KpisTransVO> getKpis(String agentType) {
         List<Kpis> kpisList=kpisMapper.selectList(new QueryWrapper<Kpis>()
@@ -463,89 +451,6 @@ public class BaseDataService implements SystemConfig {
 
         return returnList;
     }
-
-    /** 脚本类型合法取值：train 只训练 / eval 只评估 / both 训练+评估一体 */
-    private static final Set<String> SCRIPT_TYPES =
-            new HashSet<>(Arrays.asList("train", "eval", "both"));
-
-    /**
-     * 代码编辑器「文件列表」。
-     *
-     * @param createUser 创建人（Controller 固定传 admin）
-     * @param scriptType 脚本类型筛选项：train / eval / both；
-     *                   传 null、空串或 "all" 表示不筛选（返回全部类型）。
-     *                   非法取值按「不筛选」处理并记 warn，避免前端参数拼错导致列表空白。
-     */
-    public List<PyFileVO> getPyFileList(String createUser, String scriptType) {
-        String normalized = normalizeScriptTypeFilter(scriptType);
-        List<PyFile> list = pyFileMapper.getPyFileList(createUser, normalized);
-        List<PyFileVO> returnList = JSON.parseArray(JSON.toJSONString(list), PyFileVO.class);
-        return returnList;
-    }
-
-    /**
-     * 归一化脚本类型筛选值：null / "" / "all" / 非法值 → null（不筛选）。
-     * 与前端 MonacoEditor.normalizeScriptType 的语义保持一致。
-     */
-    private String normalizeScriptTypeFilter(String scriptType) {
-        if (scriptType == null) {
-            return null;
-        }
-        String value = scriptType.trim().toLowerCase();
-        if (value.isEmpty() || "all".equals(value)) {
-            return null;
-        }
-        if (SCRIPT_TYPES.contains(value)) {
-            return value;
-        }
-        log.warn("getPyFileList 收到未知的 scriptType 筛选值: {}，已忽略该筛选（返回全部类型）", scriptType);
-        return null;
-    }
-
-    /**
-     * 算法参数定义目录。
-     *
-     * <p>系统自带（if_system=1）排前面，其余按 id 升序，保证下拉顺序稳定、
-     * 不会因为插入顺序变化而跳动。
-     *
-     * @param isMember 配置组成员筛选：
-     *                 {@code null} = 全部（代码编辑器「配置」弹窗要用全量）；
-     *                 {@code false} = 只看独立参数（参数配置页的「单独配置」页签）；
-     *                 {@code true} = 只看组成员。
-     */
-    public List<AlgorithmParamConfigVO> listAlgorithmParamConfigs(Boolean isMember) {
-        QueryWrapper<AlgorithmParamConfig> wrapper = new QueryWrapper<>();
-        wrapper.lambda()
-                .eq(isMember != null, AlgorithmParamConfig::getIsMember, Boolean.TRUE.equals(isMember))
-                .orderByDesc(AlgorithmParamConfig::getIfSystem)
-                .orderByAsc(AlgorithmParamConfig::getId);
-        List<AlgorithmParamConfig> rows = algorithmParamConfigMapper.selectList(wrapper);
-        List<AlgorithmParamConfigVO> result = new ArrayList<>();
-        if (rows == null) {
-            return result;
-        }
-        for (AlgorithmParamConfig row : rows) {
-            result.add(toAlgorithmParamConfigVO(row));
-        }
-        return result;
-    }
-
-    /** 全量参数定义（代码编辑器「配置」弹窗的下拉框数据源） */
-    public List<AlgorithmParamConfigVO> listAlgorithmParamConfigs() {
-        return listAlgorithmParamConfigs(null);
-    }
-
-    /* ==================== 参数配置页：algorithm_param_config 增删改 ==================== */
-
-    /**
-     * 参数配置页允许的值类型：
-     * num 数字 / text 文字 / bool 布尔（开关）/ ratio 单选 / multiple 多选 /
-     * map 键值对 / special 数据集（历史值，保留可选项）。
-     * ratio / multiple / map 会用到 default_value（内容均为 [{key,value}]），其余一律落 NULL；
-     * key_alias / value_alias 只服务 map。
-     */
-    private static final Set<String> ALGORITHM_VALUE_TYPES =
-            new HashSet<>(Arrays.asList("num", "text", "bool", "ratio", "multiple", "map", "special"));
 
     /*
      * ============================================================================
@@ -585,7 +490,6 @@ public class BaseDataService implements SystemConfig {
      */
     private static final Set<String> RESUME_SUPPORTED_SCRIPTS = new HashSet<>();
 
-
     /**
      * 取本次执行要用的脚本配置 JSON：**优先任务级配置**（{@code py_task.config}，编排任务的
      * 两张卡），没有才回落到脚本文件自己的配置（{@code py_file.algorithm_config}，代码编辑器
@@ -613,7 +517,7 @@ public class BaseDataService implements SystemConfig {
      * 把脚本配置（任务级 py_task.config 内层 config，或脚本文件的 py_file.algorithm_config）
      * 翻译成命令行参数：{@code param_name → --param_name value}。
      *
-     * <p>支持两种落库格式（与 {@link #normalizeAlgorithmConfig} 同口径）：v2 分组
+     * <p>支持两种落库格式（与 {@link AlgorithmConfigJson#normalize(String)} 同口径）：v2 分组
      * {@code [{type,params:[...]}]} 与旧扁平 {@code [{id,param_name,value}]}。参数项既可能是
      * 目录参数（{@code id = algorithm_param_config.id}），也可能是界面上手填的「自定义参数」
      * （{@code id} 是 uuid，只能靠它自己的 param_name 认）。
@@ -738,6 +642,10 @@ public class BaseDataService implements SystemConfig {
         }
         Integer datasetId = parseDatasetId(rawValue);
         if (datasetId == null) {
+            CitylearnDataset dataset = citylearnDatasetMapper.selectOne(new LambdaQueryWrapper<CitylearnDataset>()
+                    .eq(CitylearnDataset::getSchemaKey, text).last("LIMIT 1"));
+            if (dataset != null && !Integer.valueOf(1).equals(dataset.getEnabled()))
+                throw new IllegalArgumentException("数据集已删除或停用，请重新选择数据集");
             return text;      // 不是 id（历史数据可能直接存了 schema 名）→ 原样透传
         }
         CitylearnDataset dataset = citylearnDatasetMapper.selectById(datasetId);
@@ -745,6 +653,8 @@ public class BaseDataService implements SystemConfig {
             log.warn("数据集 id={} 在 citylearn_dataset 里查不到，按原值「{}」传给脚本", datasetId, text);
             return text;
         }
+        if (!Integer.valueOf(1).equals(dataset.getEnabled()))
+            throw new IllegalArgumentException("数据集已删除或停用，请重新选择数据集");
         return dataset.getSchemaKey();
     }
 
@@ -786,635 +696,6 @@ public class BaseDataService implements SystemConfig {
      */
     private static final String PIPELINE_TRAIN_DATASET_PARAM = "train-schema";
     private static final String PIPELINE_EVAL_DATASET_PARAM = "eval-schema";
-
-    /**
-     * 参数配置页：新增一条参数定义。
-     *
-     * <p>页面新增的一律按「用户自定义」入库（if_system=false）；
-     * 系统参数只能由 db/*.sql 预置，避免前端把自己标成系统参数绕开删除保护。
-     *
-     * <p>若入参带了 {@code setId}（在配置组详情页里新建参数），插入后直接把该参数
-     * 追加进这个组：members 追加 + is_member 置 1。
-     */
-    public AlgorithmParamConfigVO addAlgorithmParamConfig(AlgorithmParamConfigParam param) {
-        if (param == null) {
-            throw new RuntimeException("参数不能为空");
-        }
-        String name = trimToNull(param.getName());
-        if (name == null) {
-            throw new RuntimeException("名称不能为空");
-        }
-        String paramName = trimToNull(param.getParamName());
-        if (paramName == null) {
-            throw new RuntimeException("默认参数名不能为空");
-        }
-        ensureParamNameAvailable(paramName, null);
-        String valueType = normalizeAlgorithmValueType(param.getValueType());
-
-        AlgorithmParamConfig row = new AlgorithmParamConfig();
-        row.setName(name);
-        row.setParamName(paramName);
-        row.setDesc(trimToNull(param.getDesc()));
-        row.setValueType(valueType);
-        row.setDefaultValue(normalizeAlgorithmDefaultValue(valueType, param.getDefaultValue()));
-        row.setKeyAlias(normalizeMapAlias(valueType, param.getKeyAlias()));
-        row.setValueAlias(normalizeMapAlias(valueType, param.getValueAlias()));
-        row.setIfSystem(false);
-        row.setIsMember(false);
-        row.setCreateTime(new Date());
-        algorithmParamConfigMapper.insert(row);
-
-        Integer setId = param.getSetId();
-        if (setId != null) {
-            AlgorithmParamConfigSet set = algorithmParamConfigSetMapper.selectById(setId);
-            if (set == null) {
-                throw new RuntimeException("配置组不存在: " + setId);
-            }
-            List<Integer> memberIds = parseSetMemberIds(set.getMembers());
-            if (!memberIds.contains(row.getId())) {
-                memberIds.add(row.getId());
-            }
-            updateSetMembers(set, memberIds);
-        }
-        log.info("新增算法参数定义: id={}, name={}, paramName={}, valueType={}, setId={}",
-                row.getId(), name, paramName, valueType, setId);
-        return toAlgorithmParamConfigVO(algorithmParamConfigMapper.selectById(row.getId()));
-    }
-
-    /**
-     * 参数配置页：编辑一条参数定义。
-     *
-     * <p>系统自带参数（if_system=1）只允许改简介 —— 名称 / 默认参数名 / 值类型
-     * 可能已被历史 py_file.algorithm_config 引用，改了会让旧配置对不上。
-     */
-    public void updateAlgorithmParamConfig(AlgorithmParamConfigParam param) {
-        if (param == null || param.getId() == null) {
-            throw new RuntimeException("参数 id 不能为空");
-        }
-        AlgorithmParamConfig exist = algorithmParamConfigMapper.selectById(param.getId());
-        if (exist == null) {
-            throw new RuntimeException("参数不存在: " + param.getId());
-        }
-        if (Boolean.TRUE.equals(exist.getIfSystem())) {
-            com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<AlgorithmParamConfig> uw =
-                    new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
-            uw.eq("id", exist.getId()).set("`desc`", trimToNull(param.getDesc()));
-            algorithmParamConfigMapper.update(null, uw);
-            log.info("更新系统参数简介: id={}, name={}", exist.getId(), exist.getName());
-            return;
-        }
-
-        String name = trimToNull(param.getName());
-        if (name == null) {
-            throw new RuntimeException("名称不能为空");
-        }
-        String paramName = trimToNull(param.getParamName());
-        if (paramName == null) {
-            throw new RuntimeException("默认参数名不能为空");
-        }
-        ensureParamNameAvailable(paramName, exist.getId());
-        String valueType = normalizeAlgorithmValueType(param.getValueType());
-        String defaultValue = normalizeAlgorithmDefaultValue(valueType, param.getDefaultValue());
-
-        // 用 UpdateWrapper 显式 set：值类型从单选/多选改成文字时，default_value 要真正置回 NULL
-        // （updateById 默认忽略 null 字段，会留下过期的候选项）
-        com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<AlgorithmParamConfig> uw =
-                new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
-        uw.eq("id", exist.getId())
-                .set("name", name)
-                .set("param_name", paramName)
-                .set("`desc`", trimToNull(param.getDesc()))
-                .set("value_type", valueType)
-                .set("default_value", defaultValue)
-                .set("key_alias", normalizeMapAlias(valueType, param.getKeyAlias()))
-                .set("value_alias", normalizeMapAlias(valueType, param.getValueAlias()));
-        algorithmParamConfigMapper.update(null, uw);
-        log.info("更新算法参数定义: id={}, name={}, paramName={}, valueType={}",
-                exist.getId(), name, paramName, valueType);
-    }
-
-    /** 参数配置页：删除一条参数定义（系统自带参数禁止删除） */
-    public void deleteAlgorithmParamConfig(Integer id) {
-        if (id == null) {
-            throw new RuntimeException("参数 id 不能为空");
-        }
-        AlgorithmParamConfig exist = algorithmParamConfigMapper.selectById(id);
-        if (exist == null) {
-            throw new RuntimeException("参数不存在: " + id);
-        }
-        if (Boolean.TRUE.equals(exist.getIfSystem())) {
-            throw new RuntimeException("系统内置参数不可删除");
-        }
-        algorithmParamConfigMapper.deleteById(id);
-        log.info("删除算法参数定义: id={}, name={}", id, exist.getName());
-    }
-
-    /* ==================== 参数配置页：algorithm_param_config_set 配置组 ==================== */
-
-    /**
-     * 配置组列表（按 id 升序）。
-     * 列表页只展示 组名称 / 创建时间 / 简介 / 成员数，不返回成员明细。
-     */
-    public List<AlgorithmParamConfigSetVO> listAlgorithmParamConfigSets() {
-        List<AlgorithmParamConfigSet> rows = algorithmParamConfigSetMapper.selectList(
-                new QueryWrapper<AlgorithmParamConfigSet>().lambda()
-                        .orderByAsc(AlgorithmParamConfigSet::getId));
-        List<AlgorithmParamConfigSetVO> result = new ArrayList<>();
-        if (rows == null) {
-            return result;
-        }
-        for (AlgorithmParamConfigSet row : rows) {
-            result.add(toAlgorithmParamConfigSetVO(row));
-        }
-        return result;
-    }
-
-    /**
-     * 配置组详情：组信息 + 组内参数定义（按组内顺序）。
-     * members 里已被删掉的 id 会被静默跳过，不报错。
-     */
-    public AlgorithmParamConfigSetDetailVO getAlgorithmParamConfigSetDetail(Integer id) {
-        AlgorithmParamConfigSet set = requireAlgorithmParamConfigSet(id);
-        AlgorithmParamConfigSetDetailVO vo = new AlgorithmParamConfigSetDetailVO();
-        vo.setId(set.getId());
-        vo.setCreateTime(set.getCreateTime());
-        vo.setName(set.getName());
-        vo.setDesc(set.getDesc());
-        for (Integer memberId : parseSetMemberIds(set.getMembers())) {
-            AlgorithmParamConfig member = algorithmParamConfigMapper.selectById(memberId);
-            if (member != null) {
-                vo.getMembers().add(toAlgorithmParamConfigVO(member));
-            }
-        }
-        return vo;
-    }
-
-    /** 新增配置组；组内参数同步标记 is_member */
-    public AlgorithmParamConfigSetVO addAlgorithmParamConfigSet(AlgorithmParamConfigSetParam param) {
-        if (param == null) {
-            throw new RuntimeException("配置组不能为空");
-        }
-        String name = trimToNull(param.getName());
-        if (name == null) {
-            throw new RuntimeException("组名称不能为空");
-        }
-        AlgorithmParamConfigSet set = new AlgorithmParamConfigSet();
-        set.setName(name);
-        set.setDesc(trimToNull(param.getDesc()));
-        set.setCreateTime(new Date());
-        set.setMembers("[]");
-        algorithmParamConfigSetMapper.insert(set);
-        updateSetMembers(set, normalizeMemberIds(param.getMemberIds()));
-        log.info("新增参数配置组: id={}, name={}, members={}", set.getId(), name, set.getMembers());
-        return toAlgorithmParamConfigSetVO(algorithmParamConfigSetMapper.selectById(set.getId()));
-    }
-
-    /** 编辑配置组：名称 / 简介 / 成员；成员增删会同步 is_member */
-    public void updateAlgorithmParamConfigSet(AlgorithmParamConfigSetParam param) {
-        if (param == null || param.getId() == null) {
-            throw new RuntimeException("配置组 id 不能为空");
-        }
-        AlgorithmParamConfigSet set = requireAlgorithmParamConfigSet(param.getId());
-        String name = trimToNull(param.getName());
-        if (name == null) {
-            throw new RuntimeException("组名称不能为空");
-        }
-        set.setName(name);
-        set.setDesc(trimToNull(param.getDesc()));
-        // 不传 memberIds 表示「本次只改名称/简介」，保留原成员
-        List<Integer> memberIds = param.getMemberIds() == null
-                ? parseSetMemberIds(set.getMembers())
-                : normalizeMemberIds(param.getMemberIds());
-        updateSetMembers(set, memberIds);
-        log.info("更新参数配置组: id={}, name={}, members={}", set.getId(), name, set.getMembers());
-    }
-
-    /**
-     * 删除配置组。
-     *
-     * <p>组内还有参数时直接拒绝 —— 否则那些参数会在用户没察觉的情况下悄悄回到
-     * 「单独配置」页签。想删组，得先把成员全部移出。
-     */
-    public void deleteAlgorithmParamConfigSet(Integer id) {
-        AlgorithmParamConfigSet set = requireAlgorithmParamConfigSet(id);
-        List<Integer> memberIds = parseSetMemberIds(set.getMembers());
-        if (!memberIds.isEmpty()) {
-            throw new RuntimeException(
-                    "配置组内还有 " + memberIds.size() + " 个参数，请先全部移出后再删除配置组");
-        }
-        algorithmParamConfigSetMapper.deleteById(id);
-        log.info("删除参数配置组: id={}, name={}", id, set.getName());
-    }
-
-    private AlgorithmParamConfigSet requireAlgorithmParamConfigSet(Integer id) {
-        if (id == null) {
-            throw new RuntimeException("配置组 id 不能为空");
-        }
-        AlgorithmParamConfigSet set = algorithmParamConfigSetMapper.selectById(id);
-        if (set == null) {
-            throw new RuntimeException("配置组不存在: " + id);
-        }
-        return set;
-    }
-
-    /**
-     * 重写某个组的名称/简介/成员，并同步 is_member。
-     *
-     * <p>同步范围取「旧成员 ∪ 新成员」：被移出组的参数必须一起重算，
-     * 否则它会永远挂着 is_member=1，从「单独配置」页签里消失。
-     */
-    private void updateSetMembers(AlgorithmParamConfigSet set, List<Integer> memberIds) {
-        List<Integer> oldMembers = parseSetMemberIds(set.getMembers());
-        List<Integer> normalized = new ArrayList<>();
-        for (Integer memberId : memberIds) {
-            if (memberId == null || normalized.contains(memberId)) {
-                continue;
-            }
-            // 只收真实存在的参数，避免 members 里留下脏 id（详情页会查不到）
-            AlgorithmParamConfig member = algorithmParamConfigMapper.selectById(memberId);
-            if (member == null) {
-                throw new RuntimeException("参数不存在: " + memberId);
-            }
-            // 系统内置参数不允许入组：它们由 db/*.sql 预置、全局共享，
-            // 挂进某个组会让「单独配置」页看不到它们，语义上也不该被"归档"。
-            // 只拦新加入的 —— 老成员即使（被手工改库）已是系统参数也能照常移出。
-            if (!oldMembers.contains(memberId) && Boolean.TRUE.equals(member.getIfSystem())) {
-                throw new RuntimeException("系统内置参数不能加入配置组：" + member.getName());
-            }
-            normalized.add(memberId);
-        }
-        String membersJson = JSON.toJSONString(normalized);
-        com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<AlgorithmParamConfigSet> uw =
-                new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
-        uw.eq("id", set.getId())
-                .set("name", set.getName())
-                .set("`desc`", set.getDesc())
-                .set("members", membersJson);
-        algorithmParamConfigSetMapper.update(null, uw);
-        set.setMembers(membersJson);
-
-        Set<Integer> affected = new LinkedHashSet<>(oldMembers);
-        affected.addAll(normalized);
-        refreshMemberFlags(affected);
-    }
-
-    /**
-     * 重算一批参数的 is_member：只要还挂在任意一个组的 members 里就是 1，否则 0。
-     */
-    private void refreshMemberFlags(Collection<Integer> paramIds) {
-        if (paramIds == null || paramIds.isEmpty()) {
-            return;
-        }
-        Set<Integer> allMembers = new HashSet<>();
-        List<AlgorithmParamConfigSet> sets = algorithmParamConfigSetMapper.selectList(null);
-        if (sets != null) {
-            for (AlgorithmParamConfigSet set : sets) {
-                allMembers.addAll(parseSetMemberIds(set.getMembers()));
-            }
-        }
-        for (Integer paramId : paramIds) {
-            if (paramId == null || algorithmParamConfigMapper.selectById(paramId) == null) {
-                continue;
-            }
-            com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<AlgorithmParamConfig> uw =
-                    new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<>();
-            uw.eq("id", paramId).set("is_member", allMembers.contains(paramId) ? 1 : 0);
-            algorithmParamConfigMapper.update(null, uw);
-        }
-    }
-
-    /** members 文本 → id 列表；脏数据当作空，不阻塞页面 */
-    private List<Integer> parseSetMemberIds(String raw) {
-        List<Integer> result = new ArrayList<>();
-        if (isBlank(raw)) {
-            return result;
-        }
-        try {
-            JSONArray array = JSON.parseArray(raw.trim());
-            if (array != null) {
-                for (int i = 0; i < array.size(); i++) {
-                    Integer id = array.getInteger(i);
-                    if (id != null && !result.contains(id)) {
-                        result.add(id);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("配置组成员不是合法 JSON，已按空处理: {}", raw);
-        }
-        return result;
-    }
-
-    private List<Integer> normalizeMemberIds(List<Integer> memberIds) {
-        List<Integer> result = new ArrayList<>();
-        if (memberIds == null) {
-            return result;
-        }
-        for (Integer id : memberIds) {
-            if (id != null && !result.contains(id)) {
-                result.add(id);
-            }
-        }
-        return result;
-    }
-
-    private AlgorithmParamConfigSetVO toAlgorithmParamConfigSetVO(AlgorithmParamConfigSet set) {
-        AlgorithmParamConfigSetVO vo = new AlgorithmParamConfigSetVO();
-        vo.setId(set.getId());
-        vo.setCreateTime(set.getCreateTime());
-        vo.setName(set.getName());
-        vo.setDesc(set.getDesc());
-        List<Integer> memberIds = parseSetMemberIds(set.getMembers());
-        vo.setMemberIds(memberIds);
-        vo.setMemberCount(memberIds.size());
-        return vo;
-    }
-
-    /** 默认参数名唯一：拼命令行时它就是参数标识，重复会导致下游无法区分 */
-    private void ensureParamNameAvailable(String paramName, Integer excludeId) {
-        List<AlgorithmParamConfig> same = algorithmParamConfigMapper.selectList(
-                new QueryWrapper<AlgorithmParamConfig>().lambda()
-                        .eq(AlgorithmParamConfig::getParamName, paramName));
-        if (same == null) {
-            return;
-        }
-        for (AlgorithmParamConfig row : same) {
-            if (excludeId == null || !excludeId.equals(row.getId())) {
-                throw new RuntimeException("默认参数名已存在：" + paramName);
-            }
-        }
-    }
-
-    /** 值类型归一化：空值按 text（普通文本）处理，未知值直接报错 */
-    private String normalizeAlgorithmValueType(String valueType) {
-        String type = trimToNull(valueType);
-        if (type == null) {
-            return "text";
-        }
-        type = type.toLowerCase();
-        if (!ALGORITHM_VALUE_TYPES.contains(type)) {
-            throw new RuntimeException("未知的值类型: " + valueType);
-        }
-        return type;
-    }
-
-    /**
-     * 单选 / 多选的候选项校验与归一化。
-     *
-     * <p>入参是前端拼好的 JSON 数组字符串 [{key,value}]，这里逐项校验：
-     * key 必填且同一参数内不重复；value 缺省时用 key 兜底（界面上至少能显示出来）。
-     * 值类型不是单选/多选时一律返回 null（落库即清空默认值）。
-     */
-    private String normalizeAlgorithmDefaultValue(String valueType, String raw) {
-        // ratio / multiple / map 三者都用 [{key,value}] 表达内容，校验逻辑一致
-        if (!"ratio".equals(valueType) && !"multiple".equals(valueType) && !"map".equals(valueType)) {
-            return null;
-        }
-        if (isBlank(raw)) {
-            throw new RuntimeException("值类型为单选 / 多选 / 键值对时，必须至少配置一项");
-        }
-        JSONArray array;
-        try {
-            array = JSON.parseArray(raw.trim());
-        } catch (Exception e) {
-            throw new RuntimeException("选项不是合法的 JSON 数组: " + e.getMessage());
-        }
-        if (array == null || array.isEmpty()) {
-            throw new RuntimeException("值类型为单选 / 多选 / 键值对时，必须至少配置一项");
-        }
-        JSONArray normalized = new JSONArray();
-        Set<String> keys = new LinkedHashSet<>();
-        for (int i = 0; i < array.size(); i++) {
-            Object item = array.get(i);
-            if (!(item instanceof JSONObject)) {
-                throw new RuntimeException("选项格式应为 {\"key\":\"..\",\"value\":\"..\"}");
-            }
-            JSONObject obj = (JSONObject) item;
-            String key = trimToNull(obj.getString("key"));
-            if (key == null) {
-                throw new RuntimeException("第 " + (i + 1) + " 个选项缺少 key");
-            }
-            if (!keys.add(key)) {
-                throw new RuntimeException("选项 key 重复：" + key);
-            }
-            String label = trimToNull(obj.getString("value"));
-            JSONObject one = new JSONObject(true);
-            one.put("key", key);
-            one.put("value", label == null ? key : label);
-            normalized.add(one);
-        }
-        return normalized.toJSONString();
-    }
-
-    /**
-     * key / value 别名只服务 map 类型：其它类型一律落 NULL，
-     * 避免「先存成 map 又改成文字」时留下过期别名。
-     */
-    private static String normalizeMapAlias(String valueType, String alias) {
-        return "map".equals(valueType) ? trimToNull(alias) : null;
-    }
-
-    private AlgorithmParamConfigVO toAlgorithmParamConfigVO(AlgorithmParamConfig row) {
-        AlgorithmParamConfigVO vo = new AlgorithmParamConfigVO();
-        vo.setId(row.getId());
-        vo.setName(row.getName());
-        vo.setParamName(row.getParamName());
-        vo.setIfSystem(Boolean.TRUE.equals(row.getIfSystem()));
-        vo.setValueType(row.getValueType());
-        vo.setDefaultValue(row.getDefaultValue());
-        vo.setKeyAlias(row.getKeyAlias());
-        vo.setValueAlias(row.getValueAlias());
-        vo.setDesc(row.getDesc());
-        vo.setCreateTime(row.getCreateTime());
-        vo.setIsMember(Boolean.TRUE.equals(row.getIsMember()));
-        return vo;
-    }
-
-    /** 去空白；空串一律归一成 null，避免库里出现 "" 与 null 两种空值 */
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    /**
-     * 保存某个脚本的算法配置到 py_file.algorithm_config。
-     *
-     * <p>入参是前端拼好的 JSON 数组字符串，支持两种形态：
-     * <pre>
-     * 旧格式（扁平）：[{"id":1,"param_name":"train-schema","value":"1"}, ...]
-     * 新格式（分组）：[
-     *   {"type":"alone","params":[{"id":1,"param_name":"..","value":".."}]},
-     *   {"type":"set","set_id":3,"params":[{...}, ...]}
-     * ]
-     * </pre>
-     * 这里只做结构校验（必须是 JSON 数组、每个参数项必须带 id），**不解释 value 的语义** ——
-     * value 的含义由参数自身决定（目前数据集类参数存 citylearn_dataset.id）。
-     *
-     * @param pyFileId        脚本 id
-     * @param algorithmConfig JSON 数组字符串；空值视为清空配置
-     */
-    public void savePyFileAlgorithmConfig(String pyFileId, String algorithmConfig) {
-        if (isBlank(pyFileId)) {
-            throw new RuntimeException("文件 id 不能为空");
-        }
-        PyFile file = pyFileMapper.selectById(pyFileId);
-        if (file == null) {
-            throw new RuntimeException("文件不存在: " + pyFileId);
-        }
-        String normalized = normalizeAlgorithmConfig(algorithmConfig);
-        PyFile update = new PyFile();
-        update.setId(pyFileId);
-        update.setAlgorithmConfig(normalized);
-        pyFileMapper.updateById(update);
-        log.info("保存脚本算法配置, pyFileId={}, 配置={}", pyFileId, normalized);
-    }
-
-    /**
-     * 归一化算法配置 JSON。
-     *
-     * <p>空值统一落成 <code>"[]"</code> 而不是 null —— MyBatis-Plus 默认
-     * updateStrategy 是 NOT_NULL，null 字段不会进 UPDATE 语句，
-     * 那样「清空配置」这个操作会静默失效。
-     *
-     * <p>非法 JSON 直接抛错，避免把脏数据写进库。
-     */
-    private String normalizeAlgorithmConfig(String algorithmConfig) {
-        if (isBlank(algorithmConfig)) {
-            return "[]";
-        }
-        JSONArray array;
-        try {
-            array = JSON.parseArray(algorithmConfig.trim());
-        } catch (Exception e) {
-            throw new RuntimeException("算法配置不是合法的 JSON 数组: " + e.getMessage());
-        }
-        if (array == null) {
-            return "[]";
-        }
-        for (int i = 0; i < array.size(); i++) {
-            JSONObject item = array.getJSONObject(i);
-            if (item == null) {
-                throw new RuntimeException("算法配置第 " + (i + 1) + " 项不是合法的 JSON 对象");
-            }
-            if (item.containsKey("params")) {
-                // 新格式：按「单独配置 / 配置组」分组，顶层没有 id，id 在每个参数项上
-                validateAlgorithmConfigSection(item, i + 1);
-            } else if (item.get("id") == null) {
-                throw new RuntimeException("算法配置第 " + (i + 1) + " 项缺少 id");
-            }
-        }
-        return array.toJSONString();
-    }
-
-    /**
-     * 校验新格式里的一个分组（{@code {"type":"alone","params":[...]}} 或
-     * {@code {"type":"set","set_id":3,"params":[...]}}）。
-     *
-     * @param section      分组对象
-     * @param sectionIndex 分组序号（从 1 开始，仅用于报错提示）
-     */
-    private void validateAlgorithmConfigSection(JSONObject section, int sectionIndex) {
-        String type = section.getString("type");
-        if (isBlank(type)) {
-            throw new RuntimeException("算法配置第 " + sectionIndex + " 组缺少 type");
-        }
-        if (!"alone".equals(type) && !"set".equals(type)) {
-            throw new RuntimeException("算法配置第 " + sectionIndex + " 组的 type 非法: " + type);
-        }
-        if ("set".equals(type) && section.get("set_id") == null) {
-            throw new RuntimeException("算法配置第 " + sectionIndex + " 组缺少 set_id");
-        }
-        JSONArray params = section.getJSONArray("params");
-        if (params == null) {
-            throw new RuntimeException("算法配置第 " + sectionIndex + " 组缺少 params");
-        }
-        for (int i = 0; i < params.size(); i++) {
-            JSONObject param = params.getJSONObject(i);
-            if (param == null || param.get("id") == null) {
-                throw new RuntimeException("算法配置第 " + sectionIndex + " 组第 " + (i + 1) + " 项缺少 id");
-            }
-        }
-    }
-
-    private static final String basePath="D:\\citylearn-demo\\citylearnpy\\";
-
-    public String getPyFile(String id) {
-        PyFile pyFile = pyFileMapper.selectById(id);
-
-        try {
-            return new String(Files.readAllBytes(Paths.get(basePath+pyFile.getFileName())));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return "";
-    }
-
-    public void savePyFile(PyFileParam pyFileParam) throws Exception {
-        PyFile pyFile = pyFileMapper.selectById(pyFileParam.getId());
-
-        if(null!=pyFileParam.getFileName()){
-            List<PyFile> list=pyFileMapper.selectList(new QueryWrapper<PyFile>().lambda()
-                    .eq(PyFile::getFileName,pyFileParam.getFileName())
-                    .ne(PyFile::getId,pyFile.getId()));
-            if(null!=list && list.size()>0){
-                throw new Exception("文件名已存在");
-            }
-
-            Path source = Paths.get(basePath+pyFile.getFileName());
-            Path target = Paths.get(basePath+pyFileParam.getFileName());
-            try {
-                Files.move(source, target);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            pyFile.setFileName(pyFileParam.getFileName());
-            pyFileMapper.updateById(pyFile);
-
-        }else if(null!=pyFileParam.getDescription()){
-            pyFile.setDescription(pyFileParam.getDescription());
-            pyFileMapper.updateById(pyFile);
-        }else{
-            Files.write(Paths.get(basePath+pyFile.getFileName()),pyFileParam.getCode().getBytes());
-        }
-
-
-
-    }
-
-    public PyFileVO addPyFile() throws IOException {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
-        Date newDate = new Date();
-        PyFile pyFile=new PyFile();
-        pyFile.setId(sdf.format(newDate));
-        pyFile.setFileName(pyFile.getId()+".py");
-        pyFile.setDescription("无");
-        pyFile.setCreateUser("admin");
-        pyFile.setIfSystem(false);
-        // py_file.if_show 列保留但已不参与文件列表过滤（展示语义只认 py_task.if_show）
-        // 新建文件默认「训练+评估一体」；需要区分时改 py_file.script_type（train/eval/both）
-        pyFile.setScriptType("both");
-        pyFile.setCreateTime(newDate);
-        pyFileMapper.insert(pyFile);
-        Files.createFile(Paths.get(basePath+pyFile.getFileName()));
-        return JSON.parseObject(JSON.toJSONString(pyFile),PyFileVO.class);
-    }
-
-    public void deletePyFile(PyFileParam pyFileParam) {
-        if (pyFileParam == null || pyFileParam.getId() == null || pyFileParam.getId().trim().isEmpty()) {
-            throw new RuntimeException("文件 id 不能为空");
-        }
-        PyFile existing = pyFileMapper.selectById(pyFileParam.getId());
-        if (existing == null) {
-            throw new RuntimeException("文件不存在");
-        }
-        if (Boolean.TRUE.equals(existing.getIfSystem())) {
-            throw new RuntimeException("系统内置文件不可删除");
-        }
-        pyFileMapper.deleteById(pyFileParam.getId());
-    }
 
     /**
      * 执行记录「展示/未展示」：仅执行完成的任务可切换；默认未展示。
@@ -1560,8 +841,12 @@ public class BaseDataService implements SystemConfig {
      * 分组名优先用自定义展示名称，否则为「代码名+记录时间」。
      */
     public List<DashboardSimulationVO> getDashboardSimulations() {
+        return getDashboardSimulations(true);
+    }
+
+    public List<DashboardSimulationVO> getDashboardSimulations(boolean shownOnly) {
         List<PyTask> showTasks = pyTaskMapper.selectList(new QueryWrapper<PyTask>().lambda()
-                .eq(PyTask::getIfShow, true)
+                .eq(shownOnly, PyTask::getIfShow, true)
                 .eq(PyTask::getStatus, 1)
                 .eq(PyTask::getIfDelete, false)
                 .orderByDesc(PyTask::getCreateTime));
@@ -1570,9 +855,17 @@ public class BaseDataService implements SystemConfig {
             return result;
         }
         Map<String, Integer> nameCount = new HashMap<>();
+        Map<String, String> datasetNames = new HashMap<>();
+        if (citylearnDatasetMapper != null) for (CitylearnDataset dataset : citylearnDatasetMapper.selectList(null)) {
+            datasetNames.put(String.valueOf(dataset.getId()), dataset.getDisplayName());
+            datasetNames.put(dataset.getSchemaKey(), dataset.getDisplayName());
+        }
         for (PyTask task : showTasks) {
             PyFile pyFile = pyFileMapper.selectById(task.getPyId());
             if (pyFile == null) {
+                continue;
+            }
+            if (!shownOnly && "train".equals(pyFile.getScriptType())) {
                 continue;
             }
             String groupName = buildDashboardGroupName(pyFile, task);
@@ -1587,10 +880,27 @@ public class BaseDataService implements SystemConfig {
             }
             DashboardSimulationVO vo = new DashboardSimulationVO();
             vo.setGroupName(groupName);
+            vo.setRecordName(TaskNaming.groupName(pyFile.getFileName(), null));
+            if (task.getShowName() != null && !task.getShowName().trim().isEmpty()) {
+                vo.setRecordName(task.getShowName().trim());
+            }
             vo.setPyId(pyFile.getId());
             vo.setTaskId(task.getId());
             vo.setFileName(pyFile.getFileName());
             vo.setTaskCreateTime(task.getCreateTime());
+            try {
+                Path taskDir = getTaskDir(task.getId());
+                vo.setEvaluationDataset(dashboardEvaluationDataset(task, taskDir, resolveSimulationDataRoot(taskDir), datasetNames));
+                Map<String, String> summary = new HashMap<>();
+                for (Map<String, String> row : parseKpisCsvToRows(
+                        readExportedKpisCsv(taskDir, resolveSimulationDataRoot(taskDir)))) {
+                    String metric = row.getOrDefault("KPI", row.get("cost_function"));
+                    if (metric != null) summary.put(metric, row.get("District"));
+                }
+                com.citylearn.common.DashboardKpiSummary.apply(vo, summary);
+            } catch (IOException error) {
+                log.warn("Unable to read dashboard KPI summary for task {}", task.getId(), error);
+            }
             result.add(vo);
         }
         result.sort(Comparator.comparing(DashboardSimulationVO::getGroupName,
@@ -1598,13 +908,68 @@ public class BaseDataService implements SystemConfig {
         return result;
     }
 
+    private String dashboardEvaluationDataset(PyTask task, Path taskDir, Path dataRoot, Map<String,String> names) {
+        for (String filename : List.of("evaluation_manifest.json", "agent_config.json", "chesca_agent_config.json", "aacmadrl_config.json")) {
+            for (Path directory : new LinkedHashSet<>(List.of(dataRoot, taskDir))) {
+                Path path = directory.resolve(filename);
+                try {
+                    if (!Files.isRegularFile(path) || Files.size(path) > 1_000_000) continue;
+                    JSONObject config = JSON.parseObject(Files.readString(path, StandardCharsets.UTF_8));
+                    JSONObject resolved = config.getJSONObject("resolved_parameters");
+                    String value = dashboardSchemaValue(resolved == null ? config : resolved);
+                    if (!isBlank(value)) return names.getOrDefault(dashboardDatasetKey(value), dashboardDatasetKey(value));
+                } catch (IOException | RuntimeException error) {
+                    log.debug("Unable to read evaluation dataset from {}", path, error);
+                }
+            }
+        }
+        try {
+            if (isBlank(task.getConfig())) return null;
+            JSONObject step = JSON.parseObject(task.getConfig());
+            if (!isBlank(step.getString("config"))) {
+                List<JSONObject> params = flattenAlgorithmConfigParams(JSON.parseArray(step.getString("config")));
+                for (String key : List.of("eval-schema", "schema")) for (JSONObject param : params) {
+                    String name = Objects.toString(param.get("param_name"), "").replace('_', '-').replaceFirst("^--", "");
+                    if (key.equals(name) && !isBlank(param.getString("value"))) {
+                        String value = dashboardDatasetKey(param.getString("value"));
+                        return names.getOrDefault(value, value);
+                    }
+                }
+            }
+            String value = step.getString("schemaKey");
+            if (isBlank(value) && step.get("datasetId") != null) value = step.getString("datasetId");
+            if (!isBlank(value)) return names.getOrDefault(dashboardDatasetKey(value),
+                    isBlank(step.getString("datasetName")) ? dashboardDatasetKey(value) : step.getString("datasetName"));
+        } catch (RuntimeException error) { log.debug("Unable to read dataset from task {}", task.getId(), error); }
+        return null;
+    }
+
+    private static String dashboardSchemaValue(JSONObject config) {
+        for (String name : List.of("eval_schema", "eval-schema", "schema", "schema_path")) {
+            Object value = config.get(name);
+            if (value instanceof String && !((String)value).isBlank()) return (String)value;
+        }
+        return null;
+    }
+
+    static String dashboardDatasetKey(String value) {
+        String path = value.trim().replace('\\', '/').replaceAll("/+$", "");
+        if (path.endsWith("/schema.json")) path = path.substring(0, path.length() - 12);
+        return path.substring(path.lastIndexOf('/') + 1);
+    }
+
     /**
      * 仿真仪表盘：加载指定成功任务目录下的 KPI 与 exported_data CSV。
      */
     public DashboardSimulationDetailVO getDashboardSimulationDetail(String taskId) throws IOException {
+        return getDashboardSimulationDetail(taskId, false);
+    }
+
+    public DashboardSimulationDetailVO getDashboardSimulationDetail(String taskId, boolean pagedTrace) throws IOException {
         PyTask task = pyTaskMapper.selectById(taskId);
-        if (task == null || task.getStatus() == null || task.getStatus() != 1) {
-            throw new RuntimeException("任务不存在或未执行成功");
+        if (task == null || Boolean.TRUE.equals(task.getIfDelete())
+                || task.getStatus() == null || task.getStatus() != 1) {
+            throw new IllegalArgumentException("任务不存在、已删除或未执行成功");
         }
         PyFile pyFile = pyFileMapper.selectById(task.getPyId());
         if (pyFile == null) {
@@ -1617,16 +982,18 @@ public class BaseDataService implements SystemConfig {
         vo.setGroupName(buildDashboardGroupName(pyFile, task));
         vo.setPyId(pyFile.getId());
         vo.setTaskId(taskId);
+        vo.setEvaluationAnalysis(new EvaluationAnalysisService().read(taskDir, taskId));
+        String datasetKey = dashboardEvaluationDataset(task, taskDir, dataRoot, Collections.emptyMap());
+        if (!isBlank(datasetKey)) vo.setCurrency(citylearnDatasetService.resolveCurrency(datasetKey));
 
         String kpisCsv = readExportedKpisCsv(taskDir, dataRoot);
-        if (kpisCsv == null || kpisCsv.trim().isEmpty()) {
-            kpisCsv = buildKpisCsvFromDb(pyFile.getId());
-        }
+        // Script-level KPI rows cannot prove which evaluation produced them.
+        // Keep missing historical artifacts explicit instead of mixing runs.
         String normalizedKpisCsv = stripUtf8Bom(kpisCsv == null ? "" : kpisCsv);
         vo.setKpisCsv(normalizedKpisCsv);
         List<Map<String, String>> kpiRows = parseKpisCsvToRows(normalizedKpisCsv);
         if (kpiRows.isEmpty()) {
-            kpiRows = buildKpiRowsFromDb(pyFile.getId());
+            vo.getArtifactWarnings().add("该评估记录没有可读取的任务级 KPI 文件，请重新评估；脚本级历史指标不能证明属于本次任务。");
         }
         vo.setKpiRows(kpiRows);
 
@@ -1637,15 +1004,32 @@ public class BaseDataService implements SystemConfig {
         }
         vo.setDataFiles(dataFiles);
 
-        String chescaTraceCsv = readChescaTraceCsv(taskDir, dataRoot);
+        Map<String, Object> trace = pagedTrace ? getDashboardTracePage(taskId, 0,
+                DecisionTracePageService.DEFAULT_LIMIT, null) : null;
+        String chescaTraceCsv = pagedTrace ? (String) trace.get("chescaTraceCsv") : readChescaTraceCsv(taskDir, dataRoot);
         vo.setChescaTraceCsv(stripUtf8Bom(chescaTraceCsv == null ? "" : chescaTraceCsv));
-        String decisionTraceJson = readDecisionTraceJson(taskDir, dataRoot);
+        String decisionTraceJson = pagedTrace ? (String) trace.get("decisionTraceJson") : readDecisionTraceJson(taskDir, dataRoot);
         vo.setDecisionTraceJson(stripUtf8Bom(decisionTraceJson == null ? "" : decisionTraceJson));
+        if (pagedTrace) vo.setTracePage((Map<String, Object>) trace.get("tracePage"));
 
         String agentConfigJson = readAgentConfigJson(taskDir, dataRoot);
         vo.setAgentConfigJson(stripUtf8Bom(agentConfigJson == null ? "" : agentConfigJson));
         vo.setResmarlSummary(buildResmarlSummary(agentConfigJson));
+        if(dataFiles.isEmpty())vo.getArtifactWarnings().add("该历史记录未找到任务时序文件，请重新评估生成曲线。");
+        if((decisionTraceJson==null||decisionTraceJson.isBlank())&&(chescaTraceCsv==null||chescaTraceCsv.isBlank()))vo.getArtifactWarnings().add("该历史记录没有保存决策推演日志，请重新评估；KPI 不能还原逐步决策。");
         return vo;
+    }
+
+    public Map<String, Object> getDashboardTracePage(String taskId, int offset,
+                                                    int limit, Integer building) throws IOException {
+        PyTask task = pyTaskMapper.selectById(taskId);
+        if (task == null || Boolean.TRUE.equals(task.getIfDelete())
+                || !Integer.valueOf(1).equals(task.getStatus()))
+            throw new IllegalArgumentException("任务不存在、已删除或未执行成功");
+        Path root = getTaskDir(taskId);
+        Path data = resolveSimulationDataRoot(root);
+        return new DecisionTracePageService().read(root, findDecisionTraceJson(root, data),
+                findChescaTraceCsv(root, data), offset, limit, building);
     }
 
     private PyTask findLatestSuccessTaskByPyId(String pyId) {
@@ -1662,67 +1046,25 @@ public class BaseDataService implements SystemConfig {
     }
 
     private String stripPyExtension(String fileName) {
-        if (fileName == null || fileName.isEmpty()) {
-            return "";
-        }
-        if (fileName.toLowerCase().endsWith(".py")) {
-            return fileName.substring(0, fileName.length() - 3);
-        }
-        int dot = fileName.lastIndexOf('.');
-        return dot > 0 ? fileName.substring(0, dot) : fileName;
+        return TaskNaming.stripPyExtension(fileName);
     }
 
     /** 仪表盘分组名：有展示名称用展示名称，否则代码名 + 记录创建时间 */
     private String buildDashboardGroupName(PyFile pyFile, PyTask task) {
-        if (task != null && task.getShowName() != null && !task.getShowName().trim().isEmpty()) {
-            return task.getShowName().trim();
-        }
-        String fileName = pyFile == null ? null : pyFile.getFileName();
-        Date createTime = task == null ? null : task.getCreateTime();
-        return buildDashboardGroupName(fileName, createTime);
+        return TaskNaming.groupName(pyFile, task);
     }
 
     /** 仪表盘分组名回退：代码名 + 记录创建时间 */
     private String buildDashboardGroupName(String fileName, Date taskCreateTime) {
-        String base = stripPyExtension(fileName);
-        if (base == null || base.isEmpty()) {
-            base = "未命名";
-        }
-        if (taskCreateTime == null) {
-            return base;
-        }
-        return base + " " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(taskCreateTime);
+        return TaskNaming.groupName(fileName, taskCreateTime);
     }
 
     private Path resolveSimulationDataRoot(Path taskDir) throws IOException {
-        if (!Files.exists(taskDir)) {
-            return taskDir;
-        }
-        if (hasExportedDataCsv(taskDir)) {
-            return taskDir;
-        }
-        try (Stream<Path> children = Files.list(taskDir)) {
-            List<Path> subdirs = children.filter(Files::isDirectory)
-                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
-                    .collect(Collectors.toList());
-            for (Path sub : subdirs) {
-                if (hasExportedDataCsv(sub)) {
-                    return sub;
-                }
-            }
-        }
-        return taskDir;
+        return SimulationDataPaths.resolve(taskDir);
     }
 
     private boolean hasExportedDataCsv(Path dir) throws IOException {
-        if (!Files.isDirectory(dir)) {
-            return false;
-        }
-        try (Stream<Path> stream = Files.list(dir)) {
-            return stream.anyMatch(p -> Files.isRegularFile(p)
-                    && p.getFileName().toString().startsWith("exported_data_")
-                    && p.getFileName().toString().endsWith(".csv"));
-        }
+        return SimulationDataPaths.hasExportedDataCsv(dir);
     }
 
     private Path findExportedKpisCsv(Path taskDir, Path dataRoot) throws IOException {
@@ -1810,6 +1152,14 @@ public class BaseDataService implements SystemConfig {
     }
 
     private Path findAgentConfigJson(Path taskDir, Path dataRoot) throws IOException {
+        Path genericInRoot = dataRoot.resolve("agent_config.json");
+        if (Files.exists(genericInRoot)) {
+            return genericInRoot;
+        }
+        Path genericInTask = taskDir.resolve("agent_config.json");
+        if (Files.exists(genericInTask)) {
+            return genericInTask;
+        }
         Path inRoot = dataRoot.resolve("chesca_agent_config.json");
         if (Files.exists(inRoot)) {
             return inRoot;
@@ -1823,7 +1173,8 @@ public class BaseDataService implements SystemConfig {
         }
         try (Stream<Path> walk = Files.walk(taskDir, 2)) {
             return walk.filter(Files::isRegularFile)
-                    .filter(p -> "chesca_agent_config.json".equals(p.getFileName().toString()))
+                    .filter(p -> "agent_config.json".equals(p.getFileName().toString())
+                            || "chesca_agent_config.json".equals(p.getFileName().toString()))
                     .findFirst()
                     .orElse(null);
         }
@@ -2093,7 +1444,7 @@ public class BaseDataService implements SystemConfig {
 
         Path scriptPath = Paths.get(fileResourceProperties.getPythonFilePath(), pyFile.getFileName()).normalize();
 
-        String taskId = getUUID();
+        String taskId = Ids.uuid();
 
         insertPyTask(taskId, pyFile.getId());
         CONSOLE_MAP.put(taskId, Collections.synchronizedList(new ArrayList<>()));
@@ -2335,6 +1686,7 @@ public class BaseDataService implements SystemConfig {
         task.setIfNotified(false);
         task.setCreateTime(new Date());
         pyTaskMapper.insert(task);
+        TaskTracer.born(getTaskDir(taskId), taskId, pyId, "editor");
     }
 
     /**
@@ -2366,8 +1718,9 @@ public class BaseDataService implements SystemConfig {
         }
         // 评估卡里若已经选好「历史成功训练任务」（train-task-id 非空），本次就**不训练**：
         // 不校验训练卡、不建训练子任务，执行时只跑评估子任务（见 executePipelineTask）。
-        boolean reuseTrain = isReuseTrainModel(param.getEvalConfig(), null);
         validatePipelineScript(param.getEvalConfig(), "eval", "评估卡");
+        boolean directEvaluation = isDirectEvaluation(param.getEvalConfig());
+        boolean reuseTrain = directEvaluation || isReuseTrainModel(param.getEvalConfig(), null);
         normalizePipelineStepConfig(param.getEvalConfig(), "评估卡");
         resolvePipelineDataset(param.getEvalConfig(), "评估卡", PIPELINE_EVAL_DATASET_PARAM, "评估数据集");
         if (!reuseTrain) {
@@ -2378,7 +1731,7 @@ public class BaseDataService implements SystemConfig {
         }
         String taskName = validatePipelineTaskName(param.getTaskName());
 
-        String taskId = getUUID();
+        String taskId = Ids.uuid();
         PyTask task = new PyTask();
         task.setId(taskId);
         task.setPyId(null);
@@ -2393,6 +1746,7 @@ public class BaseDataService implements SystemConfig {
         task.setConfig(null);
         task.setCreateTime(new Date());
         pyTaskMapper.insert(task);
+        TaskTracer.born(getTaskDir(taskId), taskId, null, "pipeline");
 
         // 拆子任务：默认 <父id>-train / <父id>-eval（执行时由后台按顺序串联）；
         // 复用历史训练模型时只建 <父id>-eval（upsertSubTasks 内部判断）
@@ -2441,8 +1795,9 @@ public class BaseDataService implements SystemConfig {
         }
 
         // 与新建同一套判断：选了「历史成功训练任务」⇒ 本次不训练（不校验训练卡、不建训练子任务）
-        boolean reuseTrain = isReuseTrainModel(param.getEvalConfig(), param.getTaskId());
         validatePipelineScript(param.getEvalConfig(), "eval", "评估卡");
+        boolean reuseTrain = isDirectEvaluation(param.getEvalConfig())
+                || isReuseTrainModel(param.getEvalConfig(), param.getTaskId());
         normalizePipelineStepConfig(param.getEvalConfig(), "评估卡");
         resolvePipelineDataset(param.getEvalConfig(), "评估卡", PIPELINE_EVAL_DATASET_PARAM, "评估数据集");
         if (!reuseTrain) {
@@ -2540,12 +1895,13 @@ public class BaseDataService implements SystemConfig {
     private void upsertSubTasks(String parentTaskId, String taskName,
                                 PipelineStepConfig trainStep, PipelineStepConfig evalStep) {
         // 复用历史训练任务 ⇒ 不建训练子任务（评估子任务的 config 里记着"用哪个任务训练出的模型"）
-        if (isReuseTrainModel(evalStep, parentTaskId)) {
+        boolean directEvaluation = isDirectEvaluation(evalStep);
+        if (directEvaluation || isReuseTrainModel(evalStep, parentTaskId)) {
             removeTrainSubTaskIfPresent(parentTaskId);
         } else {
             upsertSubTask(parentTaskId, taskName, PyTaskVO.SUB_TASK_SUFFIX_TRAIN, "·训练", trainStep, false);
         }
-        upsertSubTask(parentTaskId, taskName, PyTaskVO.SUB_TASK_SUFFIX_EVAL, "·评估", evalStep, true);
+        upsertSubTask(parentTaskId, taskName, PyTaskVO.SUB_TASK_SUFFIX_EVAL, "·评估", evalStep, !directEvaluation);
     }
 
     /**
@@ -2592,6 +1948,10 @@ public class BaseDataService implements SystemConfig {
             sub.setUpdateTime(new Date());
             pyTaskMapper.updateById(sub);
             log.info("编排任务 {} 的子任务已更新: {}", parentTaskId, subId);
+        }
+        // 埋点：只有「新建」才登记生命周期起点；更新已有子任务不重置起点
+        if (existing == null) {
+            TaskTracer.born(getTaskDir(subId), subId, sub.getPyId(), "pipeline-sub");
         }
     }
 
@@ -2649,7 +2009,7 @@ public class BaseDataService implements SystemConfig {
         boolean reuse = isReuseTrainModelValue(chosen, parentTaskId);
         String value = reuse ? chosen.trim() : parentTaskId;
         fixed.put("name", "训练模型");
-        fixed.put("id", found == null || found.get("id") == null ? getUUID() : found.get("id"));
+        fixed.put("id", found == null || found.get("id") == null ? Ids.uuid() : found.get("id"));
         fixed.put("type", "extra");
         fixed.put("param_name", TRAIN_MODEL_PARAM_NAME);
         fixed.put("value", value);
@@ -2693,20 +2053,7 @@ public class BaseDataService implements SystemConfig {
                 ? chosen.trim()
                 : PyTaskVO.subTaskIdOf(parentId, PyTaskVO.SUB_TASK_SUFFIX_TRAIN);
         Path dir = getTaskDir(target).resolve(MARL_CKPT_REL_DIR);
-        if (!isUsableCheckpointDir(dir)) {
-            /*
-             * 目标任务目录里没有断点 —— 典型场景：复用的是「只训练」的简易任务，
-             * 它当年把模型写进了全局目录（那时后端还没给简易任务注入任务级 --checkpoint-dir）。
-             * 按全局兜底目录再找一次：找到就用它，评估仍能跑起来；
-             * 找不到仍返回任务目录，让脚本报出「checkpoint 不存在」的明确错误。
-             */
-            Path global = resolveGlobalMarlCkptDir();
-            if (global != null) {
-                log.info("评估子任务：任务 {} 目录无断点，回退全局兜底目录 {}",
-                        target, global);
-                return global.toAbsolutePath().toString();
-            }
-        }
+        // Missing task-owned weights must fail at load time, never borrow a shared model.
         return dir.toAbsolutePath().toString();
     }
 
@@ -2905,7 +2252,8 @@ public class BaseDataService implements SystemConfig {
         //   此时 <父id>-train 子任务本就不存在（upsertSubTasks 建的只有评估），
         //   也不置 6-等待中 —— 没有前置，评估直接开跑，跑完由 onSubTaskFinished 收父任务状态。
         if (evalSub != null
-                && isReuseTrainModelValue(trainModelValueOfJson(evalSub.getConfig()), taskId)) {
+                && (isDirectEvaluation(parsePipelineStepConfig(evalSub.getConfig()))
+                    || isReuseTrainModelValue(trainModelValueOfJson(evalSub.getConfig()), taskId))) {
             String reusedTaskId = trainModelValueOfJson(evalSub.getConfig());
             requireScriptRunnable(evalSub, "评估子任务");
             setTaskStatus(taskId, 0);
@@ -2954,6 +2302,7 @@ public class BaseDataService implements SystemConfig {
      */
     private void launchTaskProcess(PyTask task) {
         String taskId = task.getId();
+        TaskTracer.event(getTaskDir(taskId), taskId, "LAUNCH", "pyId", task.getPyId());
         PyFile pyFile = pyFileMapper.selectById(task.getPyId());
         if (pyFile == null) {
             markPyTaskFailed(taskId, "关联脚本不存在: " + task.getPyId());
@@ -3003,6 +2352,8 @@ public class BaseDataService implements SystemConfig {
                 log.warn("子任务 id 不符合 <父id>-train/-eval 约定，跳过接力: {}", taskId);
                 return;
             }
+            TaskTracer.event(getTaskDir(taskId), taskId, "RELAY",
+                    "parentId", parentId, "subTaskStatus", String.valueOf(status));
             if (PyTaskVO.isTrainSubTask(taskId)) {
                 if (status == 1) {
                     startEvalSubTask(parentId);
@@ -3023,6 +2374,12 @@ public class BaseDataService implements SystemConfig {
 
     /** 训练子任务成功后启动评估子任务（等待中 → 执行中）。 */
     private void startEvalSubTask(String parentId) {
+        PyTask parent = pyTaskMapper.selectById(parentId);
+        if (parent == null || !Integer.valueOf(0).equals(parent.getStatus())
+                || STOPPED_TASKS.contains(parentId)) {
+            log.info("父任务已结束或正在终止，取消评估接力: {}", parentId);
+            return;
+        }
         String evalId = PyTaskVO.subTaskIdOf(parentId, PyTaskVO.SUB_TASK_SUFFIX_EVAL);
         PyTask evalSub = pyTaskMapper.selectById(evalId);
         if (evalSub == null) {
@@ -3049,6 +2406,8 @@ public class BaseDataService implements SystemConfig {
         update.setStatus(status);
         update.setUpdateTime(new Date());
         pyTaskMapper.updateById(update);
+        // 埋点：这条路径没有前置状态（不改库就读不到 from），留给 reason 说明是接力
+        TaskTracer.transition(getTaskDir(taskId), taskId, null, status, "relay");
     }
 
     /** 校验并归一化任务名称：必填、最长 128（与 py_task.task_name 列宽一致）。 */
@@ -3226,7 +2585,7 @@ public class BaseDataService implements SystemConfig {
      * 前端下拉已经按类型过滤过，这里再校验一次 —— 接口不能依赖前端约束。
      */
     private void validatePipelineScript(PipelineStepConfig step, String expectedType, String cardName) {
-        if (isBlank(step.getPyId())) {
+        if (step == null || isBlank(step.getPyId())) {
             throw new RuntimeException(cardName + "未选择脚本");
         }
         PyFile file = pyFileMapper.selectById(step.getPyId());
@@ -3234,11 +2593,53 @@ public class BaseDataService implements SystemConfig {
             throw new RuntimeException(cardName + "选择的脚本不存在（pyId=" + step.getPyId() + "）");
         }
         String actualType = file.getScriptType() == null ? "" : file.getScriptType().trim().toLowerCase();
-        if (!expectedType.equals(actualType)) {
+        boolean baseline = "eval".equals(expectedType) && "NOCONTROL.py".equalsIgnoreCase(file.getFileName());
+        if (!expectedType.equals(actualType) && !baseline) {
             throw new RuntimeException(String.format(
                     "%s只能选择 %s 类型的脚本，而「%s」的类型是 %s",
                     cardName, expectedType, file.getFileName(), actualType.isEmpty() ? "(未设置)" : actualType));
         }
+        step.setScriptName(file.getFileName());
+    }
+
+    /** Resolve direct execution from the registered entrypoint and explicit model source. */
+    private boolean isDirectEvaluation(PipelineStepConfig step) {
+        if (step == null || isBlank(step.getPyId())) return false;
+        PyFile file = pyFileMapper.selectById(step.getPyId());
+        if (file == null) return false;
+        if ("CHESCA.py".equalsIgnoreCase(file.getFileName())
+                || "NOCONTROL.py".equalsIgnoreCase(file.getFileName())) return true;
+        if (!"AACMADRL_eval.py".equalsIgnoreCase(file.getFileName())
+                || !"on".equals(pipelineParamValue(step.getConfig(), "frozen-anchor"))) return false;
+        if (!isBlank(trainModelValueOf(step))
+                || !isBlank(pipelineParamValue(step.getConfig(), "checkpoint"))) {
+            throw new RuntimeException("固定 Anchor 不能同时选择训练任务或 checkpoint");
+        }
+        return true;
+    }
+
+    private static String pipelineParamValue(String config, String name) {
+        if (isBlank(config)) return null;
+        Object parsed = JSON.parse(config);
+        if (parsed instanceof JSONObject) {
+            JSONObject object = (JSONObject) parsed;
+            return pipelineParamValue(object.getString("config"), name);
+        }
+        if (!(parsed instanceof JSONArray)) return null;
+        for (Object item : (JSONArray) parsed) {
+            if (!(item instanceof JSONObject)) continue;
+            JSONArray params = ((JSONObject) item).getJSONArray("params");
+            if (params == null) continue;
+            for (Object raw : params) {
+                if (!(raw instanceof JSONObject)) continue;
+                JSONObject param = (JSONObject) raw;
+                if (name.equals(param.getString("param_name"))) {
+                    String value = param.getString("value");
+                    return value == null ? null : value.trim();
+                }
+            }
+        }
+        return null;
     }
 
     /** 训练卡额外要求训练轮数与批大小为正整数。 */
@@ -3255,7 +2656,7 @@ public class BaseDataService implements SystemConfig {
      * 归一化卡片上的「任务级脚本配置」。
      *
      * <p>留空表示不覆盖 —— 运行时沿用脚本文件自身的配置；有值则复用
-     * {@link #normalizeAlgorithmConfig(String)} 的同一套结构校验（与代码编辑器保存
+     * {@link AlgorithmConfigJson#normalize(String)} 的同一套结构校验（与代码编辑器保存
      * py_file.algorithm_config 完全同口径），校验通过后把归一化结果写回入参。
      *
      * @param step     卡片配置
@@ -3271,14 +2672,15 @@ public class BaseDataService implements SystemConfig {
             return;
         }
         try {
-            step.setConfig(normalizeAlgorithmConfig(config));
+            step.setConfig(AlgorithmConfigJson.normalize(config));
         } catch (RuntimeException e) {
             throw new RuntimeException(cardName + "的脚本配置非法：" + e.getMessage());
         }
     }
 
+    /** 判空语义统一定义在 {@link Texts}，这里保留薄委托，免得改几十处调用点。 */
     private static boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
+        return Texts.isBlank(value);
     }
 
     /**
@@ -3486,6 +2888,7 @@ public class BaseDataService implements SystemConfig {
         task.setStatus(1);
         task.setUpdateTime(new Date());
         pyTaskMapper.updateById(task);
+        TaskTracer.transition(getTaskDir(taskId), taskId, null, 1, "success");
         // 编排任务的子任务：训练成功要接力启动评估，评估成功要回写父任务（见 onSubTaskFinished）
         onSubTaskFinished(taskId, 1);
     }
@@ -3496,6 +2899,7 @@ public class BaseDataService implements SystemConfig {
         task.setStatus(2);
         task.setUpdateTime(new Date());
         pyTaskMapper.updateById(task);
+        TaskTracer.transition(getTaskDir(taskId), taskId, null, 2, errorMessage);
         saveTaskErrorLog(taskId, errorMessage);
         List<String> consoleList = CONSOLE_MAP.get(taskId);
         if (consoleList != null) {
@@ -3515,6 +2919,7 @@ public class BaseDataService implements SystemConfig {
         task.setStatus(3);
         task.setUpdateTime(new Date());
         pyTaskMapper.updateById(task);
+        TaskTracer.transition(getTaskDir(taskId), taskId, null, 3, "user-stopped");
         saveTaskErrorLog(taskId, "任务已被手动终止");
         List<String> consoleList = CONSOLE_MAP.get(taskId);
         if (consoleList != null) {
@@ -3536,23 +2941,44 @@ public class BaseDataService implements SystemConfig {
         if (task == null) {
             throw new RuntimeException("任务不存在");
         }
-        if (!Integer.valueOf(0).equals(task.getStatus())) {
+        boolean stoppedPipeline = Integer.valueOf(PyTaskVO.TASK_TYPE_PIPELINE).equals(task.getType())
+                && Integer.valueOf(3).equals(task.getStatus());
+        if (!Integer.valueOf(0).equals(task.getStatus()) && !stoppedPipeline) {
             // 已结束（1/2/3）：不重复终止
             log.info("任务已结束，无需终止, taskId={}, status={}", taskId, task.getStatus());
             return getPyTaskResult(taskId);
         }
+        if (Integer.valueOf(PyTaskVO.TASK_TYPE_PIPELINE).equals(task.getType())) {
+            // Fence the relay before stopping workers: training can finish during cancellation.
+            STOPPED_TASKS.add(taskId);
+            markPyTaskStopped(taskId);
+            List<PyTask> children = new ArrayList<>();
+            for (String suffix : Arrays.asList(PyTaskVO.SUB_TASK_SUFFIX_TRAIN, PyTaskVO.SUB_TASK_SUFFIX_EVAL)) {
+                PyTask child = pyTaskMapper.selectById(PyTaskVO.subTaskIdOf(taskId, suffix));
+                if (child != null && (Integer.valueOf(0).equals(child.getStatus())
+                        || Integer.valueOf(PyTaskVO.TASK_STATUS_PENDING).equals(child.getStatus())
+                        || Integer.valueOf(PyTaskVO.TASK_STATUS_WAITING).equals(child.getStatus()))) {
+                    children.add(child);
+                    STOPPED_TASKS.add(child.getId());
+                }
+            }
+            for (PyTask child : children) {
+                if (!Integer.valueOf(0).equals(child.getStatus())) {
+                    markPyTaskStopped(child.getId());
+                }
+            }
+            for (PyTask child : children) {
+                if (Integer.valueOf(0).equals(child.getStatus())) {
+                    stopPyTask(child.getId());
+                }
+            }
+            return getPyTaskResult(taskId);
+        }
         STOPPED_TASKS.add(taskId);
+        TaskTracer.event(getTaskDir(taskId), taskId, "STOP_REQUEST", "pyTaskStatus", String.valueOf(task.getStatus()));
         Process process = RUNNING_PROCESS.get(taskId);
         if (process != null) {
-            process.destroy();
-            try {
-                if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                process.destroyForcibly();
-            }
+            killProcessTree(process.toHandle());
             log.info("已终止 Python 进程, taskId={}, alive={}", taskId, process.isAlive());
         } else {
             // 后端重启过：内存里已没有 Process 对象，改为按 task.pid 找回子进程并终止，
@@ -3585,6 +3011,8 @@ public class BaseDataService implements SystemConfig {
                                     String taskOutputDir, String pyFileName, boolean resume,
                                     String resumeFromTaskId) {
         try {
+            TaskTracer.event(getTaskDir(taskId), taskId, "ASYNC_ENTER",
+                    "script", pyFileName, "resume", String.valueOf(resume));
             List<String> extraArgs = new ArrayList<>();
             extraArgs.add("--output-dir");
             extraArgs.add(taskOutputDir);
@@ -3793,6 +3221,7 @@ public class BaseDataService implements SystemConfig {
             log.error("Python 异步任务失败, taskId={}", taskId, e);
             markPyTaskFailed(taskId, e.getMessage());
         } finally {
+            TaskTracer.event(getTaskDir(taskId), taskId, "ASYNC_EXIT");
             RUNNING_PROCESS.remove(taskId);
             STOPPED_TASKS.remove(taskId);
         }
@@ -3834,7 +3263,7 @@ public class BaseDataService implements SystemConfig {
     }
 
     private Path getTaskDir(String taskId) {
-        return Paths.get(fileResourceProperties.getOutFilePath(), "outkpis", taskId);
+        return SimulationDataPaths.taskDir(fileResourceProperties.getOutFilePath(), taskId);
     }
 
     // =========================================================================
@@ -4079,22 +3508,12 @@ public class BaseDataService implements SystemConfig {
                             t.getPyId() == null ? "" : t.getPyId().trim())) {
                 continue;
             }
-            Path ckptDir = getTaskDir(t.getId()).resolve(MARL_CKPT_REL_DIR);
-            /*
-             * 模型还在不在都列出来（2026-10-08 使用者要求「下拉里要能看到自己训练过的子任务」）：
-             *   · 本任务目录里有 → 可直接复用（训练已统一写进
-             *     <任务id>/checkpoints/multi_agent_resume，简易任务与编排子任务一致）；
-             *   · 本任务目录里没有 → 再按全局兜底目录找一次（早期训练不接收任务级
-             *     --checkpoint-dir，把模型写进了全局目录）：
-             *       找得到 → modelReady=true（复用那版共享模型，checkpointDir 指向它）；
-             *       找不到 → modelReady=false，前端显示「（模型已丢失）」并禁选。
-             */
+            boolean aacTask = isAacTrainScript(scriptName);
+            Path ckptDir = getTaskDir(t.getId()).resolve(
+                    aacTask ? AAC_CKPT_REL_DIR : MARL_CKPT_REL_DIR);
+            // Keep historical records visible, but only their own model proves readiness.
             boolean modelReady = isUsableCheckpointDir(ckptDir);
-            Path globalCkptDir = modelReady ? null : resolveGlobalMarlCkptDir();
-            if (globalCkptDir != null) {
-                modelReady = true;
-            }
-            Path effectiveCkptDir = globalCkptDir != null ? globalCkptDir : ckptDir;
+            Path effectiveCkptDir = ckptDir;
             String parentId = PyTaskVO.parentTaskIdOf(t.getId());
             PyTask parent = parentId == null ? null : taskById.get(parentId);
             // 展示名一律不带 32 位任务 id（界面上放不下）：优先「父任务名（训练）」，
@@ -4127,8 +3546,7 @@ public class BaseDataService implements SystemConfig {
             }
             item.put("checkpointDir", effectiveCkptDir.toAbsolutePath().toString());
             item.put("modelReady", modelReady);
-            // 模型来自全局兜底目录（不是本任务自己的）：前端据此提示"历史任务共用同一个模型"
-            item.put("modelFromGlobal", globalCkptDir != null);
+            item.put("modelFromGlobal", false);
             /*
              * 排序 / 展示用同一个时间：优先训练断点的 updated（= 模型最后写盘时间，最贴近
              * "这条记录"），没有断点进度才用任务创建时间。
@@ -4179,8 +3597,25 @@ public class BaseDataService implements SystemConfig {
         if (!Files.isDirectory(ckptDir)) {
             return false;
         }
+        Path manifest = ckptDir.resolve(AAC_MODEL_MANIFEST);
+        if (Files.isRegularFile(manifest)) {
+            try {
+                JSONObject json = JSON.parseObject(Files.readString(manifest, StandardCharsets.UTF_8));
+                if (json == null || !"AACMADRL".equals(json.getString("algorithm"))
+                        || !"model.pt".equals(json.getString("checkpoint"))) {
+                    return false;
+                }
+                return Files.isRegularFile(ckptDir.resolve("model.pt"));
+            } catch (Exception e) {
+                return false;
+            }
+        }
         return Files.isRegularFile(ckptDir.resolve(MARL_CKPT_PROGRESS_FILE))
                 || Files.isRegularFile(ckptDir.resolve("rllib_checkpoint.json"));
+    }
+
+    private static boolean isAacTrainScript(String scriptName) {
+        return "AACMADRL_train.py".equalsIgnoreCase(scriptName);
     }
 
     /**
@@ -4486,7 +3921,14 @@ public class BaseDataService implements SystemConfig {
             throws IOException, InterruptedException {
         StringBuilder output = new StringBuilder();
         List<String> command = new ArrayList<>();
-        command.add(PYTHON_PATH);
+        boolean aacTask = scriptPath != null
+                && ("AACMADRL_train.py".equalsIgnoreCase(Paths.get(scriptPath).getFileName().toString())
+                || "AACMADRL_eval.py".equalsIgnoreCase(Paths.get(scriptPath).getFileName().toString()));
+        if (aacTask && (isBlank(aacPythonExecutable) || !Files.isRegularFile(Paths.get(aacPythonExecutable)))) {
+            throw new IOException("AAC-MADRL 专用 Python 环境不存在；请设置 CITYLEARN_AAC_PYTHON: "
+                    + (aacPythonExecutable == null ? "" : aacPythonExecutable));
+        }
+        command.add(aacTask ? aacPythonExecutable : pythonExecutable);
         command.add("-u");
         /*
          * 统一经 _task_runner.py 包装执行，让目标脚本的真实退出码落到任务目录的
@@ -4522,6 +3964,10 @@ public class BaseDataService implements SystemConfig {
         env.put("PYTHONIOENCODING", "utf-8");
         env.put("PYTHONUTF8", "1");
         env.put("NO_COLOR", "1");
+        if (aacTask) {
+            env.put("CITYLEARNPY_DIR", Paths.get(fileResourceProperties.getPythonFilePath())
+                    .toAbsolutePath().normalize().toString());
+        }
         /*
          * 【可复现性】District-MARL 必须由父进程固定 PYTHONHASHSEED。
          *   Python 只在**解释器启动时**读一次该变量，进程内 os.environ 赋值完全无效
@@ -4560,6 +4006,10 @@ public class BaseDataService implements SystemConfig {
             // 登记进程引用，供「终止运行」按钮 kill；同时落盘 PID，供后端重启后仍能终止
             RUNNING_PROCESS.put(taskId, process);
             saveTaskPidFile(taskId, process);
+            TaskTracer.event(getTaskDir(taskId), taskId, "PROCESS_START",
+                    "pid", String.valueOf(process.pid()),
+                    "script", scriptPath == null ? "" : Paths.get(scriptPath).getFileName().toString(),
+                    "args", String.valueOf(extraArgs == null ? 0 : extraArgs.length));
         }
 
         Thread stdoutThread = null;
@@ -4592,6 +4042,13 @@ public class BaseDataService implements SystemConfig {
             if (taskId != null) {
                 RUNNING_PROCESS.remove(taskId);
             }
+        }
+
+        if (taskId != null) {
+            // 埋点：退出码是「成功 / 失败 / 终止」三种收尾的唯一客观依据，必须落下来
+            TaskTracer.event(getTaskDir(taskId), taskId, "PROCESS_EXIT",
+                    "code", String.valueOf(exitCode),
+                    "stopped", String.valueOf(STOPPED_TASKS.contains(taskId)));
         }
 
         // 用户点了「终止运行」：进程是被 kill 的，退出码非 0 属预期，抛专用异常让上层标为「运行终止」
@@ -4635,8 +4092,6 @@ public class BaseDataService implements SystemConfig {
     interface TriConsumer<T1,T2,T3>{
         void accept(T1 a, T2 b,T3 c);
     }
-
-
 
     private static final Pattern KPI_NUMBER_TOKEN = Pattern.compile(
             "^(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|NaN|nan)$");
@@ -4797,7 +4252,7 @@ public class BaseDataService implements SystemConfig {
         List<String> list=CONSOLE_MAP.get(taskId);
         StringBuilder output = new StringBuilder();
         try {
-            ProcessBuilder pb = new ProcessBuilder(PYTHON_PATH, scriptPath);
+            ProcessBuilder pb = new ProcessBuilder(pythonExecutable, scriptPath);
             pb.redirectErrorStream(true); // 合并标准输出和错误输出
             Process process = pb.start();
 
@@ -4843,559 +4298,4 @@ public class BaseDataService implements SystemConfig {
         return sb.toString();
     }
 
-    /**
-     * α 扫描 registry：citylearnpy/ablation_results/registry/index.json
-     */
-    public List<Map<String, Object>> listAlphaSweepRuns() {
-        Path indexPath = getAlphaSweepRegistryIndexPath();
-        if (!Files.isRegularFile(indexPath)) {
-            return Collections.emptyList();
-        }
-        try {
-            String text = new String(Files.readAllBytes(indexPath), StandardCharsets.UTF_8);
-            if (text.startsWith("\uFEFF")) {
-                text = text.substring(1);
-            }
-            Object parsed = JSON.parse(text);
-            if (parsed instanceof JSONArray) {
-                return toMapList((JSONArray) parsed);
-            }
-            if (parsed instanceof JSONObject) {
-                JSONArray runs = ((JSONObject) parsed).getJSONArray("runs");
-                return runs == null ? Collections.emptyList() : toMapList(runs);
-            }
-        } catch (Exception e) {
-            log.warn("读取 α 扫描 registry 失败: {}", e.getMessage());
-        }
-        return Collections.emptyList();
-    }
-
-    public Map<String, Object> getAlphaSweepDetail(String runId) throws IOException {
-        if (runId == null || runId.trim().isEmpty()) {
-            throw new IllegalArgumentException("runId 不能为空");
-        }
-        List<Map<String, Object>> runs = listAlphaSweepRuns();
-        Map<String, Object> entry = null;
-        for (Map<String, Object> r : runs) {
-            if (runId.equals(String.valueOf(r.get("run_id")))) {
-                entry = r;
-                break;
-            }
-        }
-        Path summaryPath = null;
-        Path pyRoot = Paths.get(fileResourceProperties.getPythonFilePath()).normalize();
-        if (entry != null && entry.get("rel_dir") != null) {
-            summaryPath = pyRoot.resolve(String.valueOf(entry.get("rel_dir")))
-                    .resolve(entry.get("summary_file") != null
-                            ? String.valueOf(entry.get("summary_file"))
-                            : "alpha_sweep_summary.json")
-                    .normalize();
-        }
-        if (summaryPath == null || !Files.isRegularFile(summaryPath)) {
-            // 兜底：按 run_id 目录扫描
-            Path candidate = pyRoot.resolve("ablation_results").resolve(runId).resolve("alpha_sweep_summary.json");
-            if (Files.isRegularFile(candidate)) {
-                summaryPath = candidate;
-            }
-        }
-        if (summaryPath == null || !Files.isRegularFile(summaryPath)) {
-            throw new FileNotFoundException("未找到 α 扫描结果: " + runId);
-        }
-        String text = new String(Files.readAllBytes(summaryPath), StandardCharsets.UTF_8);
-        if (text.startsWith("\uFEFF")) {
-            text = text.substring(1);
-        }
-        JSONObject obj = JSON.parseObject(text);
-        Map<String, Object> result = new LinkedHashMap<>(obj);
-        result.put("_summary_path", summaryPath.toAbsolutePath().toString());
-        return result;
-    }
-
-    private Path getAlphaSweepRegistryIndexPath() {
-        return Paths.get(fileResourceProperties.getPythonFilePath(), "ablation_results", "registry", "index.json")
-                .normalize();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> toMapList(JSONArray arr) {
-        List<Map<String, Object>> list = new ArrayList<>();
-        if (arr == null) {
-            return list;
-        }
-        for (int i = 0; i < arr.size(); i++) {
-            Object item = arr.get(i);
-            if (item instanceof Map) {
-                list.add(new LinkedHashMap<>((Map<String, Object>) item));
-            } else if (item instanceof JSONObject) {
-                list.add(new LinkedHashMap<String, Object>(((JSONObject) item)));
-            }
-        }
-        return list;
-    }
-
-    /**
-     * 首页能源分配轻量接口：服务端按日预聚合，避免下发全年 CSV。
-     *
-     * @param mode today=仅当日；history=截止 untilTs 的全部日期
-     */
-    public HomeEnergyFlowVO getHomeEnergyFlow(String taskId, String untilTs, Integer datasetYear, String mode)
-            throws IOException {
-        if (taskId == null || taskId.trim().isEmpty()) {
-            throw new RuntimeException("taskId 不能为空");
-        }
-        String normalizedMode = "history".equalsIgnoreCase(mode) ? "history" : "today";
-        int year = datasetYear == null || datasetYear < 2000 ? 2026 : datasetYear;
-        String until = untilTs == null ? "" : untilTs.trim().replace('T', ' ');
-        if (until.length() >= 19) {
-            until = until.substring(0, 19);
-        } else if (until.length() >= 16) {
-            until = until.substring(0, 16) + ":00";
-        }
-        if (until.isEmpty()) {
-            throw new RuntimeException("untilTs 不能为空");
-        }
-
-        String cacheKey = taskId + "|" + until + "|" + year + "|" + normalizedMode;
-        HomeEnergyFlowVO cached = homeEnergyFlowCache.get(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-
-        PyTask task = pyTaskMapper.selectById(taskId);
-        if (task == null || task.getStatus() == null || task.getStatus() != 1) {
-            throw new RuntimeException("任务不存在或未执行成功");
-        }
-        PyFile pyFile = pyFileMapper.selectById(task.getPyId());
-        if (pyFile == null) {
-            throw new RuntimeException("关联 Python 文件不存在");
-        }
-
-        Path taskDir = getTaskDir(taskId);
-        Path dataRoot = resolveSimulationDataRoot(taskDir);
-        String todayKey = until.length() >= 10 ? until.substring(0, 10) : null;
-        String onlyMonthDay = "today".equals(normalizedMode) && todayKey != null && todayKey.length() >= 10
-                ? todayKey.substring(5, 10)
-                : null;
-
-        List<BuildingExportPair> pairs = listBuildingExportPairs(dataRoot);
-        if (pairs.isEmpty() && !dataRoot.equals(taskDir)) {
-            pairs = listBuildingExportPairs(taskDir);
-        }
-
-        // day -> buildingId -> accumulator
-        Map<String, Map<String, Map<String, Double>>> byDayBuilding = new LinkedHashMap<>();
-        List<String> buildings = new ArrayList<>();
-
-        for (BuildingExportPair pair : pairs) {
-            buildings.add(pair.buildingId);
-            Map<String, double[]> batByTs = loadBatteryByTimestamp(pair.batteryFile, onlyMonthDay, until, year);
-            accumulateBuildingDays(pair.buildingFile, pair.buildingId, batByTs, onlyMonthDay, until, year, byDayBuilding);
-        }
-
-        buildings.sort((a, b) -> {
-            int na = Integer.parseInt(a.replaceAll("\\D+", "0"));
-            int nb = Integer.parseInt(b.replaceAll("\\D+", "0"));
-            return Integer.compare(na, nb);
-        });
-
-        Map<String, Map<String, Map<String, Double>>> flows = new LinkedHashMap<>();
-        List<String> days = new ArrayList<>(byDayBuilding.keySet());
-        Collections.sort(days);
-        for (String day : days) {
-            Map<String, Map<String, Double>> scopeMap = new LinkedHashMap<>();
-            Map<String, Double> community = HomeEnergyHaMath.emptyFlow();
-            Map<String, Map<String, Double>> buildingAcc = byDayBuilding.get(day);
-            for (String bId : buildings) {
-                Map<String, Double> acc = buildingAcc.get(bId);
-                if (acc == null) {
-                    acc = HomeEnergyHaMath.emptyFlow();
-                }
-                Map<String, Double> finalized = HomeEnergyHaMath.finalizeFlow(acc);
-                scopeMap.put(bId, finalized);
-                for (Map.Entry<String, Double> e : finalized.entrySet()) {
-                    community.put(e.getKey(), community.getOrDefault(e.getKey(), 0d) + e.getValue());
-                }
-            }
-            // community 的 otherLoad/nonShiftable 用各建筑已 finalize 后的和再 round
-            for (String k : new ArrayList<>(community.keySet())) {
-                community.put(k, HomeEnergyHaMath.round3(community.get(k)));
-            }
-            scopeMap.put("community", community);
-            flows.put(day, scopeMap);
-        }
-
-        HomeEnergyFlowVO vo = new HomeEnergyFlowVO();
-        vo.setTaskId(taskId);
-        vo.setGroupName(buildDashboardGroupName(pyFile, task));
-        vo.setMode(normalizedMode);
-        vo.setUntilTs(until);
-        vo.setDatasetYear(year);
-        vo.setDays(days);
-        vo.setBuildings(buildings);
-        vo.setFlows(flows);
-
-        homeEnergyFlowCache.put(cacheKey, vo);
-        // 限制缓存体积：同一 task 只保留少量条目
-        if (homeEnergyFlowCache.size() > 32) {
-            Iterator<String> it = homeEnergyFlowCache.keySet().iterator();
-            if (it.hasNext()) {
-                homeEnergyFlowCache.remove(it.next());
-            }
-        }
-        return vo;
-    }
-
-    /**
-     * 指定日 + scope 的逐小时家庭用电（对齐 HA energy more-info）。
-     */
-    public HomeEnergyHourlyVO getHomeEnergyHourly(String taskId, String day, String scope,
-                                                  String untilTs, Integer datasetYear) throws IOException {
-        if (taskId == null || taskId.trim().isEmpty()) {
-            throw new RuntimeException("taskId 不能为空");
-        }
-        if (day == null || day.trim().length() < 10) {
-            throw new RuntimeException("day 不能为空");
-        }
-        int year = datasetYear == null || datasetYear < 2000 ? 2026 : datasetYear;
-        String dayKey = day.trim().substring(0, 10);
-        // 映射到数据集年份（前端选中日可能已是 2026）
-        if (dayKey.length() >= 10) {
-            dayKey = year + dayKey.substring(4);
-        }
-        String until = untilTs == null ? "" : untilTs.trim().replace('T', ' ');
-        if (until.length() >= 19) {
-            until = until.substring(0, 19);
-        } else if (until.length() >= 16) {
-            until = until.substring(0, 16) + ":00";
-        }
-        if (until.isEmpty()) {
-            throw new RuntimeException("untilTs 不能为空");
-        }
-        String normalizedScope = scope == null || scope.trim().isEmpty()
-                ? "community"
-                : scope.trim().toLowerCase(Locale.ROOT);
-
-        PyTask task = pyTaskMapper.selectById(taskId);
-        if (task == null || task.getStatus() == null || task.getStatus() != 1) {
-            throw new RuntimeException("任务不存在或未执行成功");
-        }
-        PyFile pyFile = pyFileMapper.selectById(task.getPyId());
-        if (pyFile == null) {
-            throw new RuntimeException("关联 Python 文件不存在");
-        }
-
-        Path taskDir = getTaskDir(taskId);
-        Path dataRoot = resolveSimulationDataRoot(taskDir);
-        String onlyMonthDay = dayKey.length() >= 10 ? dayKey.substring(5, 10) : null;
-
-        List<BuildingExportPair> pairs = listBuildingExportPairs(dataRoot);
-        if (pairs.isEmpty() && !dataRoot.equals(taskDir)) {
-            pairs = listBuildingExportPairs(taskDir);
-        }
-
-        // ts -> 累加指标
-        Map<String, Map<String, Double>> byTs = new LinkedHashMap<>();
-        for (BuildingExportPair pair : pairs) {
-            if (!"community".equals(normalizedScope) && !normalizedScope.equals(pair.buildingId)) {
-                continue;
-            }
-            Map<String, double[]> batByTs = loadBatteryByTimestamp(pair.batteryFile, onlyMonthDay, until, year);
-            accumulateBuildingHours(pair.buildingFile, batByTs, onlyMonthDay, dayKey, until, year, byTs);
-        }
-
-        List<String> tsList = new ArrayList<>(byTs.keySet());
-        Collections.sort(tsList);
-        List<Map<String, Object>> points = new ArrayList<>();
-        double totalHome = 0;
-        String[] metricKeys = {
-                "home", "pv", "gridIn", "gridOut", "batIn", "batOut", "nonShiftable",
-                "solarToHome", "solarToGrid", "solarToBattery",
-                "gridToHome", "gridToBattery",
-                "batteryToHome", "batteryToGrid"
-        };
-        for (String ts : tsList) {
-            Map<String, Double> acc = byTs.get(ts);
-            double home = HomeEnergyHaMath.round3(acc.getOrDefault("home", 0d));
-            totalHome += home;
-            Map<String, Object> point = new LinkedHashMap<>();
-            point.put("ts", ts);
-            for (String key : metricKeys) {
-                point.put(key, HomeEnergyHaMath.round3(acc.getOrDefault(key, 0d)));
-            }
-            // 净用电量 = 购入 − 外送（可负），与 CSV Net Electricity Consumption 一致
-            double net = acc.getOrDefault("gridIn", 0d) - acc.getOrDefault("gridOut", 0d);
-            point.put("net", HomeEnergyHaMath.round3(net));
-            points.add(point);
-        }
-
-        HomeEnergyHourlyVO vo = new HomeEnergyHourlyVO();
-        vo.setTaskId(taskId);
-        vo.setGroupName(buildDashboardGroupName(pyFile, task));
-        vo.setDay(dayKey);
-        vo.setScope(normalizedScope);
-        vo.setUntilTs(until);
-        vo.setDatasetYear(year);
-        vo.setTotalHome(HomeEnergyHaMath.round3(totalHome));
-        vo.setPoints(points);
-        return vo;
-    }
-
-    private static final class BuildingExportPair {
-        private final String buildingId;
-        private final Path buildingFile;
-        private final Path batteryFile;
-
-        private BuildingExportPair(String buildingId, Path buildingFile, Path batteryFile) {
-            this.buildingId = buildingId;
-            this.buildingFile = buildingFile;
-            this.batteryFile = batteryFile;
-        }
-    }
-
-    private List<BuildingExportPair> listBuildingExportPairs(Path dir) throws IOException {
-        List<BuildingExportPair> out = new ArrayList<>();
-        if (!Files.isDirectory(dir)) {
-            return out;
-        }
-        Map<String, Path> buildingFiles = new LinkedHashMap<>();
-        Map<String, Path> batteryFiles = new LinkedHashMap<>();
-        try (Stream<Path> stream = Files.list(dir)) {
-            stream.filter(Files::isRegularFile).forEach(p -> {
-                String name = p.getFileName().toString();
-                if (!name.startsWith("exported_data_") || !name.endsWith(".csv")) {
-                    return;
-                }
-                String cleaned = name.substring("exported_data_".length(), name.length() - 4);
-                String base = cleaned.replaceAll("(?i)_ep\\d+$", "").toLowerCase(Locale.ROOT);
-                if (base.matches("building_\\d+")) {
-                    buildingFiles.put(base, p);
-                } else if (base.matches("building_\\d+_battery.*")) {
-                    String bId = base.replaceFirst("_battery.*", "");
-                    batteryFiles.put(bId, p);
-                }
-            });
-        }
-        for (Map.Entry<String, Path> e : buildingFiles.entrySet()) {
-            out.add(new BuildingExportPair(e.getKey(), e.getValue(), batteryFiles.get(e.getKey())));
-        }
-        out.sort(Comparator.comparing(p -> p.buildingId));
-        return out;
-    }
-
-    private Map<String, double[]> loadBatteryByTimestamp(Path batteryFile, String onlyMonthDay,
-                                                         String untilTs, int year) throws IOException {
-        Map<String, double[]> map = new HashMap<>();
-        if (batteryFile == null || !Files.isRegularFile(batteryFile)) {
-            return map;
-        }
-        try (BufferedReader reader = Files.newBufferedReader(batteryFile, StandardCharsets.UTF_8)) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
-                return map;
-            }
-            if (headerLine.startsWith("\uFEFF")) {
-                headerLine = headerLine.substring(1);
-            }
-            String[] headers = splitCsvLine(headerLine);
-            int tsIdx = indexOfHeader(headers, "timestamp");
-            int batIdx = indexOfHeader(headers,
-                    "Battery (Dis)Charge-kWh", "Battery (Dis)Charge");
-            if (tsIdx < 0 || batIdx < 0) {
-                return map;
-            }
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (onlyMonthDay != null
-                        && !line.contains("-" + onlyMonthDay + "T")
-                        && !line.contains("-" + onlyMonthDay + " ")) {
-                    continue;
-                }
-                String[] cols = splitCsvLine(line);
-                if (cols.length <= Math.max(tsIdx, batIdx)) {
-                    continue;
-                }
-                String norm = HomeEnergyHaMath.normalizeTs(cols[tsIdx], year);
-                if (norm.isEmpty() || norm.compareTo(untilTs) > 0) {
-                    continue;
-                }
-                double bat = HomeEnergyHaMath.parseDouble(cols[batIdx]);
-                map.put(norm, new double[]{bat});
-            }
-        }
-        return map;
-    }
-
-    private void accumulateBuildingDays(Path buildingFile, String buildingId,
-                                        Map<String, double[]> batByTs,
-                                        String onlyMonthDay, String untilTs, int year,
-                                        Map<String, Map<String, Map<String, Double>>> byDayBuilding)
-            throws IOException {
-        if (buildingFile == null || !Files.isRegularFile(buildingFile)) {
-            return;
-        }
-        try (BufferedReader reader = Files.newBufferedReader(buildingFile, StandardCharsets.UTF_8)) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
-                return;
-            }
-            if (headerLine.startsWith("\uFEFF")) {
-                headerLine = headerLine.substring(1);
-            }
-            String[] headers = splitCsvLine(headerLine);
-            int tsIdx = indexOfHeader(headers, "timestamp");
-            int pvIdx = indexOfHeader(headers,
-                    "Energy Production from PV-kWh", "Energy Production from PV", "Total Solar Generation-kWh");
-            int netIdx = indexOfHeader(headers,
-                    "Net Electricity Consumption-kWh", "Net Electricity Consumption");
-            int loadIdx = indexOfHeader(headers,
-                    "Non-shiftable Load Electricity Consumption-kWh",
-                    "Non-shiftable Load-kWh",
-                    "Non-shiftable Load");
-            if (tsIdx < 0) {
-                return;
-            }
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (onlyMonthDay != null
-                        && !line.contains("-" + onlyMonthDay + "T")
-                        && !line.contains("-" + onlyMonthDay + " ")) {
-                    continue;
-                }
-                String[] cols = splitCsvLine(line);
-                if (cols.length <= tsIdx) {
-                    continue;
-                }
-                String norm = HomeEnergyHaMath.normalizeTs(cols[tsIdx], year);
-                if (norm.isEmpty() || norm.compareTo(untilTs) > 0) {
-                    continue;
-                }
-                String day = HomeEnergyHaMath.dayKey(norm);
-                if (day == null) {
-                    continue;
-                }
-                double pvH = Math.abs(pvIdx >= 0 && cols.length > pvIdx
-                        ? HomeEnergyHaMath.parseDouble(cols[pvIdx]) : 0);
-                double net = netIdx >= 0 && cols.length > netIdx
-                        ? HomeEnergyHaMath.parseDouble(cols[netIdx]) : 0;
-                double gridInH = Math.max(net, 0);
-                double gridOutH = Math.max(-net, 0);
-                double loadH = Math.max(loadIdx >= 0 && cols.length > loadIdx
-                        ? HomeEnergyHaMath.parseDouble(cols[loadIdx]) : 0, 0);
-                double batVal = 0;
-                double[] bat = batByTs.get(norm);
-                if (bat == null) {
-                    // 电池文件可能仍是原始年份时间戳，再试未映射 key
-                    bat = batByTs.get(HomeEnergyHaMath.normalizeTs(cols[tsIdx], year));
-                }
-                if (bat != null) {
-                    batVal = bat[0];
-                }
-                double batInH = Math.max(batVal, 0);
-                double batOutH = Math.max(-batVal, 0);
-
-                Map<String, Map<String, Double>> buildingMap =
-                        byDayBuilding.computeIfAbsent(day, d -> new LinkedHashMap<>());
-                Map<String, Double> acc =
-                        buildingMap.computeIfAbsent(buildingId, b -> HomeEnergyHaMath.emptyFlow());
-                HomeEnergyHaMath.addHour(acc, pvH, gridInH, gridOutH, batInH, batOutH, loadH);
-            }
-        }
-    }
-
-    /**
-     * 将单栋楼指定日的逐小时 HA 分摊累加进 byTs（community 时多栋同 ts 相加）。
-     */
-    private void accumulateBuildingHours(Path buildingFile, Map<String, double[]> batByTs,
-                                         String onlyMonthDay, String dayKey, String untilTs, int year,
-                                         Map<String, Map<String, Double>> byTs) throws IOException {
-        if (buildingFile == null || !Files.isRegularFile(buildingFile)) {
-            return;
-        }
-        try (BufferedReader reader = Files.newBufferedReader(buildingFile, StandardCharsets.UTF_8)) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
-                return;
-            }
-            if (headerLine.startsWith("\uFEFF")) {
-                headerLine = headerLine.substring(1);
-            }
-            String[] headers = splitCsvLine(headerLine);
-            int tsIdx = indexOfHeader(headers, "timestamp");
-            int pvIdx = indexOfHeader(headers,
-                    "Energy Production from PV-kWh", "Energy Production from PV", "Total Solar Generation-kWh");
-            int netIdx = indexOfHeader(headers,
-                    "Net Electricity Consumption-kWh", "Net Electricity Consumption");
-            int loadIdx = indexOfHeader(headers,
-                    "Non-shiftable Load Electricity Consumption-kWh",
-                    "Non-shiftable Load-kWh",
-                    "Non-shiftable Load");
-            if (tsIdx < 0) {
-                return;
-            }
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (onlyMonthDay != null
-                        && !line.contains("-" + onlyMonthDay + "T")
-                        && !line.contains("-" + onlyMonthDay + " ")) {
-                    continue;
-                }
-                String[] cols = splitCsvLine(line);
-                if (cols.length <= tsIdx) {
-                    continue;
-                }
-                String norm = HomeEnergyHaMath.normalizeTs(cols[tsIdx], year);
-                if (norm.isEmpty() || norm.compareTo(untilTs) > 0) {
-                    continue;
-                }
-                String day = HomeEnergyHaMath.dayKey(norm);
-                if (day == null || !day.equals(dayKey)) {
-                    continue;
-                }
-                double pvH = Math.abs(pvIdx >= 0 && cols.length > pvIdx
-                        ? HomeEnergyHaMath.parseDouble(cols[pvIdx]) : 0);
-                double net = netIdx >= 0 && cols.length > netIdx
-                        ? HomeEnergyHaMath.parseDouble(cols[netIdx]) : 0;
-                double gridInH = Math.max(net, 0);
-                double gridOutH = Math.max(-net, 0);
-                double loadH = Math.max(loadIdx >= 0 && cols.length > loadIdx
-                        ? HomeEnergyHaMath.parseDouble(cols[loadIdx]) : 0, 0);
-                double batVal = 0;
-                double[] bat = batByTs.get(norm);
-                if (bat != null) {
-                    batVal = bat[0];
-                }
-                double batInH = Math.max(batVal, 0);
-                double batOutH = Math.max(-batVal, 0);
-
-                Map<String, Double> step = HomeEnergyHaMath.computeHaConsumption(
-                        pvH, gridInH, gridOutH, batInH, batOutH);
-                Map<String, Double> acc = byTs.computeIfAbsent(norm, t -> new HashMap<>());
-                acc.merge("pv", pvH, Double::sum);
-                acc.merge("gridIn", gridInH, Double::sum);
-                acc.merge("gridOut", gridOutH, Double::sum);
-                acc.merge("batIn", batInH, Double::sum);
-                acc.merge("batOut", batOutH, Double::sum);
-                acc.merge("nonShiftable", loadH, Double::sum);
-                for (Map.Entry<String, Double> e : step.entrySet()) {
-                    acc.merge(e.getKey(), e.getValue(), Double::sum);
-                }
-            }
-        }
-    }
-
-    private static String[] splitCsvLine(String line) {
-        return line.split(",", -1);
-    }
-
-    private static int indexOfHeader(String[] headers, String... keys) {
-        for (int i = 0; i < headers.length; i++) {
-            String h = headers[i] == null ? "" : headers[i].trim();
-            for (String k : keys) {
-                if (h.equalsIgnoreCase(k)) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
 }

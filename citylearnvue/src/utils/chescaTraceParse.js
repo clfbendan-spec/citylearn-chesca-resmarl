@@ -1,6 +1,9 @@
+
+import { themeColor } from './theme'
 /**
  * 解析 chesca_trace.csv 为结构化行，供可解释可视化使用。
  */
+import Papa from 'papaparse'
 
 const BOOL_FIELDS = new Set([
   'outage_flag',
@@ -141,23 +144,8 @@ export function parseChescaTraceCsv(csvText) {
   if (!csvText || !String(csvText).trim()) {
     return []
   }
-  const lines = String(csvText).trim().split(/\r?\n/)
-  if (lines.length < 2) {
-    return []
-  }
-  const headers = lines[0].split(',').map((h) => h.trim().replace(/^\ufeff/, ''))
-  const rows = []
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
-    const fields = line.split(',')
-    const raw = {}
-    headers.forEach((header, idx) => {
-      raw[header] = idx < fields.length ? fields[idx] : ''
-    })
-    rows.push(normalizeRow(raw))
-  }
-  return rows
+  const parsed = Papa.parse(String(csvText), { header: true, skipEmptyLines: 'greedy' })
+  return (parsed.data || []).map(normalizeRow)
 }
 
 export function listTraceBuildings(rows) {
@@ -194,12 +182,12 @@ export function buildingLabel(building) {
 }
 
 export const ACTION_SERIES = [
-  { key: 'action_dhw_final', label: 'DHW 储热', color: '#5470c6' },
-  { key: 'action_ele_final', label: '电池充放电', color: '#91cc75' },
-  { key: 'action_tmp_final', label: '冷机', color: '#fac858' }
+  { key: 'action_dhw_final', label: 'DHW 储热', color: themeColor('energy-water-color') },
+  { key: 'action_ele_final', label: '电池充放电', color: themeColor('energy-battery-out-color') },
+  { key: 'action_tmp_final', label: '冷机', color: themeColor('primary-color') }
 ]
 
-const BUILDING_COLORS = ['#5470c6', '#91cc75', '#ee6666']
+const BUILDING_COLORS = [themeColor('primary-color'), themeColor('energy-battery-out-color'), themeColor('error-color')]
 
 /**
  * 按 step 对齐多建筑动作序列，供折线图使用。

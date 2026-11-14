@@ -382,7 +382,7 @@ export default {
   padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
   background: var(--card-background-color);
   border-top: 1px solid var(--divider-color);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--ha-card-box-shadow);
 }
 
 .period-start,
@@ -408,7 +408,7 @@ export default {
   justify-content: center;
   gap: 6px;
   padding: 3px;
-  border-radius: 22px;
+  border-radius: 4px;
   background: rgba(var(--rgb-primary-color), 0.06);
   max-width: 100%;
   overflow-x: auto;
@@ -418,7 +418,7 @@ export default {
   margin: 0;
   padding: 7px 14px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 4px;
   background: transparent;
   color: var(--secondary-text-color);
   font: inherit;
@@ -438,7 +438,7 @@ export default {
 .period-building-btn.active {
   background: var(--card-background-color);
   color: var(--primary-color);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--ha-card-box-shadow);
 }
 
 .period-agg-select {
@@ -548,7 +548,7 @@ export default {
   margin: 0 0 0 4px;
   padding: 8px 14px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 4px;
   background: rgba(var(--rgb-primary-color), 0.12);
   color: var(--primary-color);
   font: inherit;

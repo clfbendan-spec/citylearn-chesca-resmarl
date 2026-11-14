@@ -3,7 +3,6 @@
  */
 
 import { buildingLabel, filterTraceRows, listTraceEpisodes, parseChescaTraceCsv } from './chescaTraceParse'
-import { buildNarrativeEntriesFromLines, buildCodeRefForLine, classifyNarrativeLine } from './decisionTraceCodeRefs'
 
 export const DECISION_PHASES = [
   { id: 1, name: '时序预测', icon: 'el-icon-data-analysis' },
@@ -216,10 +215,15 @@ function actionTripletText(dhw, ele, tmp) {
 }
 
 /**
- * 若剧本缺少三行动作对照，用 residual / actions 字段补全（兼容旧 trace）。
+ * Only explicit CHESCA residual records may synthesize the three-stage comparison.
  */
-export function ensureActionCompareLines(building) {
+export function ensureActionCompareLines(building, traceData = null) {
   if (!building) return building
+  const algorithm = String(traceData && (traceData.algorithm || traceData.agent) || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const mode = String(building.control_mode || '').toLowerCase()
+  if (algorithm.startsWith('aac') || ['policy', 'no_control', 'common_baseline_warmup', 'aacmadrl'].includes(mode)) return building
+  if (!building.residual || building.residual.enabled !== true) return building
+  if (algorithm && !algorithm.includes('chesca') && !algorithm.includes('resmarl')) return building
   const lines = Array.isArray(building.narrative_lines) ? [...building.narrative_lines] : []
   // Multi-agent 剧本已有 [观测动作]/[奖励计算]，勿注入 CHESCA 三行动作对照
   const isMultiAgent = lines.some(
@@ -287,35 +291,52 @@ export function ensureActionCompareLines(building) {
   return { ...building, narrative_lines: lines }
 }
 
-export function resolveNarrativeEntries(building, traceData = null) {
+export function resolveNarrativeEntries(building, traceData = null, stepData = null) {
   if (!building) return []
-  const enriched = ensureActionCompareLines(building)
-  const lines = enriched.narrative_lines || []
-  const refOpts = {
-    reward_kwargs: (traceData && traceData.reward_kwargs) || null,
-    agent: (traceData && traceData.agent) || null
+  const original = (building.narrative_lines || []).concat(
+    (building.narrative_entries || []).map(entry => entry && entry.text).filter(Boolean)
+  )
+  const display = value => JSON.stringify(value, (key, item) =>
+    typeof item === 'number' && Number.isFinite(item) ? Number(item.toFixed(3)) : item)
+  const present = value => value != null && (typeof value !== 'object' || Object.values(value).some(present))
+  const fields = {
+    indoor_dry_bulb_temperature: '室温', electricity_pricing: '电价',
+    non_shiftable_load: '不可移峰负荷', solar_generation: '光伏',
+    occupant_count: '人数', power_outage: '停电', net_electricity_consumption: '净用电量',
+    electrical_storage_soc: '电池SOC', dhw_storage_soc: '储热SOC'
   }
-  if (lines.length) {
-    return buildNarrativeEntriesFromLines(lines, refOpts)
+  const values = source => Object.entries(fields).filter(([key]) => source && source[key] != null)
+    .map(([key, label]) => `${label}=${display(source[key])}`).join('；')
+  const legacy = pattern => original.filter(line => pattern.test(String(line)))
+    .map(line => String(line).replace(/^\s*>?\s*\[[^\]]+\]\s*/, '')).join('；')
+  const observations = values(building.observations) || legacy(/\[(观测|观测动作|电价观测|电池状态)\]/)
+  const actions = building.actions || {}
+  const noControl = String(building.control_mode || (stepData && stepData.control_mode) || '').toLowerCase() === 'no_control'
+  let action = noControl ? '储热=0；电池=0；冷机=自动（无数值动作）' : ''
+  if (!action) {
+    const executed = present(actions.named) ? actions.named : actions.final
+    if (present(executed)) action = `执行=${display(executed)}`
+    if (present(actions.raw)) action += `${action ? '；' : ''}策略输出=${display(actions.raw)}`
+    if (!action) action = legacy(/\[(执行动作|动作|策略输出|观测动作|最终执行|CHESCA-RESMARL动作)\]|最终执行/)
   }
-  const entries = building.narrative_entries || []
-  if (!entries.length) return []
-  return entries.map((e) => {
-    const text = e && e.text != null ? String(e.text) : ''
-    // 若 JSON 已嵌入完整 snippet，优先使用
-    if (e && e.code_snippet) {
-      return {
-        text,
-        code_tag: e.code_tag || classifyNarrativeLine(text),
-        source_file: e.source_file || 'Multi-agent.py',
-        source_line_start: e.source_line_start != null ? e.source_line_start : '—',
-        source_line_end: e.source_line_end != null ? e.source_line_end : '—',
-        source_label: e.source_label || '',
-        code_snippet: e.code_snippet
-      }
-    }
-    return { text, ...buildCodeRefForLine(text, refOpts) }
-  })
+  const state = values(building.settled) || values(building.next_observations) || legacy(/\[(状态|环境反馈|净负荷更新)\]/)
+  let reward = building.reward != null ? display(building.reward) : legacy(/\[(奖励|奖励计算)\]/)
+  if (!reward && stepData && stepData.reward != null) {
+    const recorded = stepData.reward
+    const agentKey = `agent_${building.building}`
+    reward = recorded && !Array.isArray(recorded) && typeof recorded === 'object' && recorded[agentKey] != null
+      ? display(recorded[agentKey]) : `环境返回=${display(recorded)}`
+  }
+  return [['观测', observations], ['动作', action], ['状态', state], ['奖励', reward]].map(([label, content]) => ({
+    text: `[${label}] ${content || '未记录'}`.replace(/（环境原始口径）/g, ''),
+    code_tag: 'recorded_transition', source_file: 'decision_trace.json',
+    source_line_start: '—', source_line_end: '—', source_label: '本步实际日志',
+    code_snippet: display({ algorithm: traceData && (traceData.algorithm || traceData.agent),
+      building: building.building,
+      [label]: label === '观测' ? building.observations : label === '动作' ? actions
+        : label === '状态' ? (building.settled || building.next_observations) : (building.reward ?? (stepData && stepData.reward))
+    }) || '未记录'
+  }))
 }
 
 export function resolveDecisionTrace({ decisionTraceJson, chescaTraceCsv }) {
@@ -323,7 +344,7 @@ export function resolveDecisionTrace({ decisionTraceJson, chescaTraceCsv }) {
   if (fromJson && fromJson.steps.length) {
     fromJson.steps = fromJson.steps.map((step) => ({
       ...step,
-      buildings: (step.buildings || []).map((b) => ensureActionCompareLines(b))
+      buildings: (step.buildings || []).map((b) => ensureActionCompareLines(b, fromJson))
     }))
     return fromJson
   }

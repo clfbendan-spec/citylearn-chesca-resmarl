@@ -10,7 +10,7 @@ CHESCA.py 通过本模块加载控制算法（CHESCA-copy 副本，原版见 CHE
     └── SubmissionAgent (= my_agent)
           ├── register_reset(obs)   # episode 开始时
           │     ├── self.reset()    # 清空 Checa 内部历史/计数器
-          │     └── Checa.predict() # 完整 5 阶段决策
+          │     └── Checa.predict() # 6阶段决策（含可选残差和历史更新）
           └── predict(obs)          # 每个 step 之后
                 └── Checa.predict() # 同上
 
@@ -54,7 +54,7 @@ class my_agent(Checa):
         """
         环境 reset 后、第一个 env.step 之前调用。
 
-        reset() 清空 CHESCA 内部历史 → predict() 走完整阶段 1～5，得到第 0 小时 a_final。
+        reset() 清空 CHESCA 内部历史 → predict() 走阶段1～6，得到第0步a_final。
         ResMARL 时 a_final 已含 SAC 残差，不是单独的「纯 CHESCA 动作」。
         """
         self.reset()

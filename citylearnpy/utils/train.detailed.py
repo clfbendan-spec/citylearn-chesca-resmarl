@@ -614,7 +614,7 @@ _CHECKPOINT_MARKERS = (
 
 
 # 确保 Ray 已初始化（启动前先做 Ray 环境准备，见 utils/process_env） ✓
-def ensure_ray_initialized(log_console: Optional[LogFn] = None) -> None:
+def ensure_ray_initialized(log_console: Optional[LogFn] = None, num_cpus: Optional[int] = None) -> None:
     # [详注-BEGIN]（生成简版时整段删除）
     # 确保 Ray 已初始化（启动前先做 Ray 环境准备，见 utils/process_env）。
     # [详注-END]
@@ -640,6 +640,10 @@ def ensure_ray_initialized(log_console: Optional[LogFn] = None) -> None:
     # （worker 是独立进程，只继承环境变量、不带父进程的 sys.path ✗）
     if sys.platform == 'win32':
         init_kwargs['runtime_env'] = ray_runtime_env()
+    if num_cpus is not None:
+        if int(num_cpus) < 1:
+            raise ValueError('Ray CPU count must be positive')
+        init_kwargs['num_cpus'] = int(num_cpus)
     ray.init(**init_kwargs)
 
 

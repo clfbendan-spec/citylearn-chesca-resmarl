@@ -304,10 +304,30 @@ export const AGENT_CONFIG_FIELDS = [
   },
   {
     key: 'eval_schema',
-    label: 'CHESCA 评估数据集',
+    label: '评估数据集',
     group: 'resmarl',
-    hint: 'CHESCA / ResMARL 仿真与 KPI'
-  }
+    hint: '模型评估使用的数据集'
+  },
+  { key: 'algorithm', label: '算法', group: 'aacmadrl' },
+  { key: 'mode', label: '任务类型', group: 'aacmadrl' },
+  { key: 'device', label: '训练设备', group: 'aacmadrl' },
+  { key: 'aac_train_schema', label: '训练数据集', group: 'aacmadrl' },
+  { key: 'aac_eval_schema', label: '评估数据集', group: 'aacmadrl' },
+  { key: 'train_epochs', label: '训练轮数', group: 'aacmadrl' },
+  { key: 'train_batch_size', label: '批次大小', group: 'aacmadrl' },
+  { key: 'seed', label: '随机种子', group: 'aacmadrl' },
+  { key: 'actor_lr', label: 'Actor 学习率', group: 'aacmadrl' },
+  { key: 'history', label: '历史状态输入', group: 'aacmadrl' },
+  { key: 'actor_architecture', label: 'Actor 结构', group: 'aacmadrl' },
+  { key: 'critic_objective', label: 'Critic 目标', group: 'aacmadrl' },
+  { key: 'discomfort_weight', label: '不适权重', group: 'aacmadrl' },
+  { key: 'discomfort_target', label: '不适目标', group: 'aacmadrl' },
+  { key: 'warm_start_anchor', label: '历史模型初始化', group: 'aacmadrl' },
+  { key: 'warmup_policy', label: '探索策略', group: 'aacmadrl' },
+  { key: 'optimizer_updates_per_step', label: '每步更新次数', group: 'aacmadrl' },
+  { key: 'train_steps', label: '训练步数', group: 'aacmadrl' },
+  { key: 'eval_steps', label: '评估步数', group: 'aacmadrl' },
+  { key: 'score_alpha', label: '综合评分权重 α', group: 'aacmadrl' }
 ]
 
 const GROUP_META = {
@@ -317,7 +337,8 @@ const GROUP_META = {
   cooling: { title: '冷机开环保底', order: 4 },
   battery: { title: '电池 SOC 约束', order: 5 },
   resmarl: { title: 'CHESCA-ResMARL', order: 6 },
-  other: { title: '其它参数', order: 7 }
+  aacmadrl: { title: 'AAC-MADRL', order: 7 },
+  other: { title: '其它参数', order: 8 }
 }
 
 const KNOWN_KEYS = new Set([

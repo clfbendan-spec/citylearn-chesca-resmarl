@@ -179,7 +179,13 @@
 </template>
 
 <script>
-import axios from 'axios'
+import {
+  listTasks,
+  listSubTasks,
+  deleteTask,
+  executePipelineTask,
+  markTaskNotified
+} from '../api/task'
 import PipelineTaskDialog from '../components/PipelineTaskDialog.vue'
 import { PERMS } from '../utils/permissions'
 
@@ -293,9 +299,9 @@ export default {
         this.loading = true
       }
       try {
-        const response = await axios.get('/api/web/basedata/getAllPyTaskList')
-        if (response.data && response.data.code === 0) {
-          const list = response.data.data || []
+        const { ok, data, message } = await listTasks({ silent: true })
+        if (ok) {
+          const list = data || []
           // 后端已按 create_time 倒序；这里再兜一层，避免同一秒创建的多条记录顺序不稳定
           list.sort((a, b) => this.timeValue(b.createTime) - this.timeValue(a.createTime))
           this.tasks = list
@@ -308,12 +314,7 @@ export default {
             this.currentPage = maxPage
           }
         } else if (!opts.silent) {
-          this.$message.error((response.data && response.data.message) || '加载任务列表失败')
-        }
-      } catch (error) {
-        console.error('加载任务列表失败:', error)
-        if (!opts.silent) {
-          this.$message.error('加载任务列表失败')
+          this.$message.error(message || '加载任务列表失败')
         }
       } finally {
         if (!opts.silent) {
@@ -409,12 +410,12 @@ export default {
         return
       }
       try {
-        const response = await axios.post('/api/web/basedata/deletePyTask', { taskId: row.taskId })
-        if (response.data && response.data.code === 0) {
+        const { ok, message } = await deleteTask(row.taskId, { silent: true })
+        if (ok) {
           this.$message.success('已删除')
           this.loadTasks()
         } else {
-          this.$message.error((response.data && response.data.message) || '删除失败')
+          this.$message.error(message || '删除失败')
         }
       } catch (error) {
         console.error('删除任务失败:', error)
@@ -500,10 +501,8 @@ export default {
         return
       }
       try {
-        const response = await axios.post('/api/web/basedata/executePipelineTask', {
-          taskId: row.taskId
-        })
-        if (response.data && response.data.code === 0) {
+        const { ok, message } = await executePipelineTask(row.taskId, { silent: true })
+        if (ok) {
           this.$message.success(reuseTaskId
             ? '已开始执行：评估子任务运行中（复用历史训练模型）'
             : '已开始执行：训练子任务运行中')
@@ -515,13 +514,11 @@ export default {
             }
           })
         } else {
-          this.$message.error((response.data && response.data.message) || '执行失败')
+          this.$message.error(message || '执行失败')
         }
       } catch (error) {
         console.error('执行任务失败:', error)
-        const msg = (error.response && error.response.data && error.response.data.message)
-          || error.message || '网络错误'
-        this.$message.error('执行失败：' + msg)
+        this.$message.error('执行失败：' + (error.message || '网络错误'))
       }
     },
 
@@ -542,8 +539,11 @@ export default {
       if (!row || !row.taskId || !this.isUnread(row)) {
         return
       }
-      axios.post('/api/web/basedata/markPyTaskNotified', { taskId: row.taskId })
-        .then(() => {
+      markTaskNotified(row.taskId, { silent: true })
+        .then(({ ok }) => {
+          if (!ok) {
+            return
+          }
           const idx = this.tasks.findIndex((t) => t.taskId === row.taskId)
           if (idx >= 0) {
             this.$set(this.tasks, idx, { ...this.tasks[idx], ifNotified: true })
@@ -565,13 +565,11 @@ export default {
     async loadSubTasks(taskId) {
       this.$set(this.subTaskLoading, taskId, true)
       try {
-        const response = await axios.get('/api/web/basedata/getSubTaskList', {
-          params: { taskId }
-        })
-        if (response.data && response.data.code === 0) {
-          this.$set(this.subTasks, taskId, response.data.data || [])
+        const { ok, data, message } = await listSubTasks(taskId, { silent: true })
+        if (ok) {
+          this.$set(this.subTasks, taskId, data || [])
         } else {
-          this.$message.error((response.data && response.data.message) || '加载子任务失败')
+          this.$message.error(message || '加载子任务失败')
         }
       } catch (error) {
         console.error('加载子任务失败:', error)
@@ -654,7 +652,7 @@ export default {
 }
 
 .table-card {
-  border-radius: 10px;
+  border-radius: var(--ha-card-border-radius);
 }
 
 .empty-tip {
@@ -678,34 +676,34 @@ export default {
 }
 
 .task-status.st-0 {
-  background: rgba(255, 193, 7, 0.2);
-  color: #ffc107;
+  background: rgba(var(--rgb-warning-color), 0.2);
+  color: var(--warning-color);
 }
 
 .task-status.st-1 {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
+  background: rgba(var(--rgb-success-color), 0.2);
+  color: var(--success-color);
 }
 
 .task-status.st-2 {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
+  background: rgba(var(--rgb-error-color), 0.2);
+  color: var(--error-color);
 }
 
 .task-status.st-3 {
   background: rgba(158, 158, 158, 0.25);
-  color: #9e9e9e;
+  color: var(--disabled-text-color);
 }
 
 .task-status.st-4 {
   background: rgba(255, 152, 0, 0.2);
-  color: #ff9800;
+  color: var(--accent-color);
 }
 
 /* 5-待执行：编排任务（type=0）创建后的初始状态 */
 .task-status.st-5 {
   background: rgba(144, 147, 153, 0.2);
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 /* 任务类型标签：编排任务 vs 代码编辑器直接执行的简易任务 */
@@ -719,22 +717,22 @@ export default {
 }
 
 .task-type-tag.tt-pipeline {
-  background: rgba(64, 158, 255, 0.15);
-  color: #409eff;
+  background: rgba(var(--rgb-primary-color), 0.15);
+  color: var(--el-color-primary-legacy);
 }
 
 .task-type-tag.tt-simple {
   background: rgba(144, 147, 153, 0.15);
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 /* 删除按钮：文本按钮形态，用危险色与「编辑/详情」区分 */
 .danger-text-btn {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 
 .danger-text-btn:hover {
-  color: #f78989;
+  color: var(--error-color);
 }
 
 .task-status.st-unknown {
@@ -745,16 +743,16 @@ export default {
 /* 6-等待中：编排任务的评估子任务在等训练跑完（只有子任务会出现这个状态） */
 .task-status.st-6 {
   background: rgba(230, 162, 60, 0.2);
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 
 /* 「执行」按钮：与「编辑 / 详情」的文本按钮区分，用主色强调 */
 .primary-text-btn {
-  color: #409eff;
+  color: var(--el-color-primary-legacy);
 }
 
 .primary-text-btn:hover {
-  color: #66b1ff;
+  color: var(--primary-color);
 }
 
 /* 详情展开区：训练 / 评估子表格 */
@@ -785,8 +783,8 @@ export default {
   border-radius: 3px;
   font-size: 11px;
   line-height: 16px;
-  color: #ffffff;
-  background: #f5222d;
+  color: var(--text-primary-color);
+  background: var(--error-color);
   white-space: nowrap;
 }
 </style>

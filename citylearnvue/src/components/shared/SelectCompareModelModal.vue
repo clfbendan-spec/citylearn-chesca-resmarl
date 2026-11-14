@@ -2,95 +2,117 @@
   <el-dialog
     title="选择比较模型"
     :visible.sync="visible"
-    width="720px"
+    width="min(1180px, 96vw)"
     custom-class="select-compare-model-dialog"
     @close="onDialogClosed"
   >
-    <div class="compare-lists">
-      <div class="compare-col">
-        <div class="compare-col-title">评估模型</div>
-        <el-radio-group v-model="evalModel" class="compare-radio-group" @change="onEvalChange">
-          <el-radio
-            v-for="sim in simulationList"
-            :key="'eval-' + sim"
-            :label="sim"
-            class="compare-radio"
+    <el-table
+      v-loading="loading"
+      :data="visibleRecords"
+      row-key="taskId"
+      :row-class-name="rowClassName"
+      max-height="480"
+      empty-text="暂无可选模型"
+      @row-click="toggleRow"
+    >
+      <el-table-column label="选择" width="66" align="center">
+        <template slot-scope="scope">
+          <button
+            type="button"
+            class="selection-button"
+            :class="{ selected: selectionIndex(scope.row) >= 0 }"
+            :disabled="loading"
+            :aria-pressed="selectionIndex(scope.row) >= 0 ? 'true' : 'false'"
+            :aria-label="selectionLabel(scope.row)"
+            :title="selectionLabel(scope.row)"
+            @click.stop="toggleRow(scope.row)"
           >
-            {{ sim }}
-          </el-radio>
-        </el-radio-group>
-        <div v-if="!simulationList.length" class="compare-empty">暂无可选模型</div>
-      </div>
-      <div class="compare-col" :class="{ disabled: !evalModel }">
-        <div class="compare-col-title">对照组</div>
-        <el-radio-group
-          v-model="controlModel"
-          class="compare-radio-group"
-          :disabled="!evalModel"
-        >
-          <el-radio
-            v-for="sim in controlCandidates"
-            :key="'ctrl-' + sim"
-            :label="sim"
-            class="compare-radio"
-          >
-            {{ sim }}
-          </el-radio>
-        </el-radio-group>
-        <div v-if="!evalModel" class="compare-hint">请先在左侧选择评估模型</div>
-        <div v-else-if="!controlCandidates.length" class="compare-empty">暂无其他可选模型</div>
-      </div>
-    </div>
+            <span v-if="selectionIndex(scope.row) >= 0">{{ selectionIndex(scope.row) === 0 ? '①' : '②' }}</span>
+            <span v-else class="empty-selection" aria-hidden="true" />
+          </button>
+        </template>
+      </el-table-column>
+      <el-table-column label="记录名" min-width="220" show-overflow-tooltip>
+        <template slot-scope="scope">{{ recordName(scope.row) }}</template>
+      </el-table-column>
+      <el-table-column label="评估数据集" min-width="230" show-overflow-tooltip>
+        <template slot-scope="scope">{{ scope.row.evaluationDataset || '—' }}</template>
+      </el-table-column>
+      <el-table-column label="时间" width="166">
+        <template slot-scope="scope">{{ formatTime(scope.row.taskCreateTime) }}</template>
+      </el-table-column>
+      <el-table-column label="总不适比例" width="120" align="right">
+        <template slot-scope="scope">{{ formatNumber(scope.row.discomfortProportion, true) }}</template>
+      </el-table-column>
+      <el-table-column label="成本" width="110" align="right">
+        <template slot-scope="scope">{{ formatNumber(scope.row.costTotal) }}</template>
+      </el-table-column>
+    </el-table>
     <span slot="footer">
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!canConfirm" @click="confirm">确认</el-button>
+      <el-button type="primary" :disabled="loading || !canConfirm" @click="confirm">确认</el-button>
     </span>
   </el-dialog>
 </template>
 
 <script>
+import dayjs from 'dayjs'
+
 export default {
   name: 'SelectCompareModelModal',
   props: {
     value: { type: Boolean, default: false },
+    loading: { type: Boolean, default: false },
     simulationList: { type: Array, default: () => [] }
   },
   data() {
-    return {
-      evalModel: '',
-      controlModel: '',
-      confirmed: false
-    }
+    return { selectedIds: [], confirmed: false }
   },
   computed: {
+    visibleRecords() {
+      return this.simulationList.filter(row => !/^(2026|2023)/.test((this.recordName(row) || '').trim()))
+    },
     visible: {
       get() { return this.value },
       set(v) { this.$emit('input', v) }
     },
-    controlCandidates() {
-      return (this.simulationList || []).filter((sim) => sim !== this.evalModel)
-    },
     canConfirm() {
-      return !!(this.evalModel && this.controlModel && this.evalModel !== this.controlModel)
+      return this.selectedIds.length === 2 && this.selectedIds.every(id =>
+        this.visibleRecords.some(row => row.taskId === id))
     }
   },
   watch: {
     value(open) {
       if (open) {
-        this.evalModel = ''
-        this.controlModel = ''
+        this.selectedIds = []
         this.confirmed = false
       }
+    },
+    visibleRecords(rows) {
+      this.selectedIds = this.selectedIds.filter(id => rows.some(row => row.taskId === id))
     }
   },
   methods: {
-    onEvalChange() {
-      if (this.controlModel === this.evalModel) {
-        this.controlModel = ''
-      }
-      if (this.controlModel && !this.controlCandidates.includes(this.controlModel)) {
-        this.controlModel = ''
-      }
+    recordName(row) { return row.recordName || row.groupName },
+    selectionIndex(row) { return this.selectedIds.indexOf(row.taskId) },
+    selectionLabel(row) {
+      const index = this.selectionIndex(row)
+      return index >= 0 ? `取消选择${index === 0 ? '评估模型' : '对照组'}：${this.recordName(row)}` : `选择：${this.recordName(row)}`
+    },
+    rowClassName({ row }) { return this.selectionIndex(row) >= 0 ? 'selected-model-row' : '' },
+    toggleRow(row) {
+      if (this.loading || !this.visibleRecords.some(item => item.taskId === row.taskId)) return
+      const index = this.selectionIndex(row)
+      if (index >= 0) this.selectedIds.splice(index, 1)
+      else if (this.selectedIds.length < 2) this.selectedIds.push(row.taskId)
+      else this.$message.info('最多选择两条记录，请先取消一条已选记录')
+    },
+    formatTime(value) {
+      return value && dayjs(value).isValid() ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '—'
+    },
+    formatNumber(value, proportion = false) {
+      if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—'
+      return proportion ? `${(Number(value) * 100).toFixed(2)}%` : Number(value).toFixed(4)
     },
     onDialogClosed() {
       if (this.confirmed) {
@@ -100,12 +122,9 @@ export default {
       this.$emit('cancel')
     },
     confirm() {
-      if (!this.canConfirm) {
-        return
-      }
-      // 顺序：评估模型 → 对照组
+      if (this.loading || !this.canConfirm) return
       this.confirmed = true
-      this.$emit('confirm', [this.evalModel, this.controlModel])
+      this.$emit('confirm', this.selectedIds.map(id => this.simulationList.find(row => row.taskId === id).groupName))
       this.visible = false
     }
   }
@@ -113,62 +132,25 @@ export default {
 </script>
 
 <style scoped>
-.compare-lists {
-  display: flex;
-  gap: 16px;
-  min-height: 280px;
+.selection-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--secondary-text-color);
+  font-size: 22px;
+  cursor: pointer;
 }
-
-.compare-col {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  padding: 12px;
-  background: #fafafa;
-}
-
-.compare-col.disabled {
-  opacity: 0.65;
-}
-
-.compare-col-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.compare-radio-group {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-}
-
-.compare-radio {
-  margin: 0 !important;
-  padding: 8px 10px;
+.selection-button.selected { color: var(--el-color-primary, #409eff); }
+.empty-selection { width: 17px; height: 17px; border: 1px solid currentColor; border-radius: 50%; }
+.selection-button:focus-visible {
+  outline: 2px solid var(--el-color-primary, #409eff);
   border-radius: 4px;
-  background: #fff;
-  border: 1px solid #ebeef5;
-  white-space: normal;
-  line-height: 1.4;
-  height: auto;
 }
-
-.compare-radio:hover {
-  border-color: #c0c4cc;
-}
-
-.compare-hint,
-.compare-empty {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #909399;
-}
+:deep(.el-table__body tr) { cursor: pointer; }
+:deep(.selected-model-row > td) { background: var(--primary-background-color); }
 </style>

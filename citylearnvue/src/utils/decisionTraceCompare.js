@@ -111,7 +111,7 @@ function resolveDimNames(step, buildings) {
  *   dimNames:string[], buildings:object[], summary:string
  * }}
  */
-export function summarizeStep(step) {
+export function summarizeStep(step, trace = null) {
   const district = (step && step.district) || {}
   const rawBuildings = (step && step.buildings) || []
   const dimNames = resolveDimNames(step, rawBuildings)
@@ -131,6 +131,11 @@ export function summarizeStep(step) {
   }
 
   let netKw = num(district.community_net_kw)
+  const hours = num(trace && (trace.seconds_per_time_step || trace.secondsPerTimeStep)) / 3600 || 1
+  const settledLoads = rawBuildings.map(b => num(b.settled && b.settled.net_electricity_consumption))
+  if (settledLoads.length && settledLoads.every(value => value != null)) {
+    netKw = settledLoads.reduce((total, value) => total + value, 0) / hours
+  }
   if (netKw == null) netKw = netFromNarrative(step)
 
   const buildings = rawBuildings.map((b, i) => {
@@ -139,11 +144,18 @@ export function summarizeStep(step) {
     const raw = actions.raw || {}
     const execVec = pickVec(execMap, execKeys, i)
     const rawVec = pickVec(rawMap, rawKeys, i)
+    const noControl = String(b.control_mode || step.control_mode || '').toLowerCase() === 'no_control'
+    const named = actions.named || {}
+    const aliases = { dhw: 'dhw_storage', ele: 'electrical_storage', tmp: 'cooling_device' }
 
     const dims = (execVec && execVec.length >= dimNames.length)
       ? dimNames.map((_name, di) => num(execVec[di]))
       : dimNames.map((name, di) => {
-        if (name === 'dhw' || name === 'ele' || name === 'tmp') return num(fin[name])
+        if (name === 'dhw' || name === 'ele' || name === 'tmp') {
+          const recorded = num(fin[name] ?? named[aliases[name]])
+          if (recorded != null) return recorded
+          return noControl && (name === 'dhw' || name === 'ele') ? 0 : null
+        }
         const vec = Array.isArray(b.action_vector) ? b.action_vector : null
         return vec && vec.length > di ? num(vec[di]) : null
       })
@@ -162,6 +174,7 @@ export function summarizeStep(step) {
       dhwSoc: num(b.dhw_soc),
       dims,
       rawDims,
+      automaticCooling: noControl && dims[dimNames.indexOf('tmp')] == null,
       summary: String(b.decision_summary || '')
     }
   })
@@ -196,7 +209,7 @@ export function buildFrameMap(trace) {
   steps.forEach((step) => {
     const key = Number(step && step.step)
     if (!Number.isFinite(key) || map.has(key)) return
-    map.set(key, summarizeStep(step))
+    map.set(key, step.pending ? null : summarizeStep(step, trace))
   })
   return map
 }
@@ -241,17 +254,16 @@ export function frameCoverage(leftTrace, rightTrace) {
 /** 逐维做差（只在两边都有该栋、该维时给数）。 */
 export function diffFrames(left, right) {
   if (!left || !right) return null
-  const n = Math.min(left.buildings.length, right.buildings.length)
   const dimNames = left.dimNames.length >= right.dimNames.length
     ? left.dimNames
     : right.dimNames
   const buildings = []
-  for (let i = 0; i < n; i += 1) {
-    const a = left.buildings[i]
-    const b = right.buildings[i]
-    const dimDiffs = dimNames.map((_name, di) => {
-      const va = a.dims[di]
-      const vb = b.dims[di]
+  for (const a of left.buildings) {
+    const b = right.buildings.find(row => String(row.id) === String(a.id))
+    if (!b) continue
+    const dimDiffs = dimNames.map(name => {
+      const va = a.dims[left.dimNames.indexOf(name)]
+      const vb = b.dims[right.dimNames.indexOf(name)]
       return (va == null || vb == null) ? null : (vb - va)
     })
     buildings.push({

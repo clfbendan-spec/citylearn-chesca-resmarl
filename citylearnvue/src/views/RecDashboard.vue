@@ -3,36 +3,47 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">模型优选</h1>
-        <p class="ha-muted">能源流向 · KPI · 决策轨迹</p>
       </div>
       <div class="ha-toolbar toolbar">
+        <el-button v-if="hasPermission('codeEditor:showRecord') || hasPermission('building:write')" icon="el-icon-monitor" @click="openHomeSource">设置首页显示数据</el-button>
         <el-button
           type="primary"
           icon="el-icon-refresh"
           :loading="loadingList"
-          @click="loadShowSimulations"
+          @click="loadShowSimulations()"
         >
           加载展示模型
         </el-button>
         <el-button
           v-if="selectedSimulations.length"
-          :type="configSidebarCollapsed ? 'default' : 'warning'"
           icon="el-icon-notebook-2"
-          @click="configSidebarCollapsed = !configSidebarCollapsed"
+          @click="taskConfigVisible = true"
         >
-          {{ configSidebarCollapsed ? '展开任务配置' : '收起任务配置' }}
+          任务配置
         </el-button>
       </div>
     </div>
 
     <select-compare-model-modal
       v-model="showSelect"
-      :simulation-list="simulationFolders"
+      :simulation-list="simulationRecords"
+      :loading="loadingList"
       @confirm="onSimulationsSelected"
-      @cancel="goHome"
+      @cancel="$emit('navigate-back')"
     />
+    <el-dialog title="设置首页显示数据" :visible.sync="homeSourceVisible" width="min(680px, 94vw)" :close-on-click-modal="false">
+      <el-form v-loading="homeSourceLoading" label-position="top">
+        <el-form-item label="评估记录">
+          <el-select v-model="homeSourceTaskId" filterable placeholder="选择评估记录" style="width:100%">
+            <el-option label="默认数据" value="" />
+            <el-option v-for="item in homeSourceOptions" :key="item.taskId" :label="item.groupName" :value="item.taskId" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div slot="footer"><el-button @click="homeSourceVisible = false">取消</el-button><el-button type="primary" :loading="homeSourceSaving" :disabled="homeSourceLoading" @click="saveHomeSource">保存</el-button></div>
+    </el-dialog>
 
-    <div class="dashboard-body" :class="{ 'with-sidebar': selectedSimulations.length }">
+    <div class="dashboard-body">
       <div class="dashboard-main">
         <el-tabs v-if="selectedSimulations.length" v-model="activeTab" type="border-card" class="mt-16">
           <el-tab-pane
@@ -41,6 +52,7 @@
             :label="tabLabel(sim)"
             :name="sim"
           >
+            <el-alert v-for="(warning, index) in artifactWarnings[sim] || []" :key="index" :title="warning" type="warning" :closable="false" class="mt-12" />
             <el-row :gutter="16">
               <el-col :span="6" v-if="false">
                 <simulation-data-tree
@@ -67,6 +79,17 @@
                   prefer-latest-day
                   class="energy-dist-above"
                   @node-click="(p) => openEnergyNodeMoreInfo(sim, p)"
+                />
+                <evaluation-action-cards
+                  v-if="filteredData(sim)"
+                  :folder-data="filteredData(sim)"
+                  :task-id="(simulationMeta[sim] || {}).taskId"
+                  :sim-name="sim"
+                  :episode="episodeBySim[sim] || (episodesBySim[sim] || [])[0] || 'ep0'"
+                  :trace="decisionTraceBySim[sim] || null"
+                  :scope="energyScope"
+                  :selected-day="energySelectedDay || ''"
+                  :active="activeTab === sim"
                 />
                 <el-card v-if="graphBySim[sim]" shadow="never" class="mt-12">
                   <simulation-chart-card
@@ -95,8 +118,11 @@
           v-if="selectedSimulations.length"
           :active-sim="activeTab"
           :parsed-kpis="parsedKpis"
+          :simulation-series="parsedSimulations"
           :selected-simulations="selectedSimulationsSorted"
           :resmarl-by-sim="resmarlBySim"
+          :analysis-by-sim="analysisBySim"
+          :currency-by-sim="currencyBySim"
         />
 
         <chesca-trace-panel
@@ -105,16 +131,20 @@
           :parsed-trace="parsedTrace"
           :decision-trace-by-sim="decisionTraceBySim"
           :resmarl-by-sim="resmarlBySim"
+          :trace-page="tracePageBySim[activeTab] || {}"
+          :trace-loading="!!traceLoadingBySim[activeTab]"
+          @trace-step-needed="loadTraceStep"
         />
       </div>
 
-      <task-config-sidebar
-        v-if="selectedSimulations.length"
-        :config="agentConfigBySim[activeTab] || null"
-        :sim-name="activeTab"
-        :collapsed.sync="configSidebarCollapsed"
-      />
     </div>
+
+    <task-config-dialog
+      v-if="selectedSimulations.length"
+      :visible.sync="taskConfigVisible"
+      :config="agentConfigBySim[activeTab] || null"
+      :sim-name="activeTab"
+    />
 
     <energy-home-more-info-dialog
       :visible.sync="energyDialogVisible"
@@ -144,17 +174,18 @@
 </template>
 
 <script>
-import axios from 'axios'
 import Papa from 'papaparse'
+import { listDashboardSimulations, getDashboardSimulationDetail, getDashboardTracePage, listHomeEvaluations, getHomeEvaluationSource, setHomeEvaluation } from '../api/dashboard'
 import SelectCompareModelModal from '@/components/shared/SelectCompareModelModal.vue'
 import SimulationDataTree from '@/components/dashboard/SimulationDataTree.vue'
 import SimulationChartCard from '@/components/charts/SimulationChartCard.vue'
 import EnergyDistributionPanel from '@/components/dashboard/EnergyDistributionPanel.vue'
+import EvaluationActionCards from '@/components/dashboard/EvaluationActionCards.vue'
 import EnergyHomeMoreInfoDialog from '@/components/home/EnergyHomeMoreInfoDialog.vue'
 import HaEnergyPeriodSelector from '@/components/home/HaEnergyPeriodSelector.vue'
 import KpiAnalysisPanel from '@/components/dashboard/KpiAnalysisPanel.vue'
 import ChescaTracePanel from '@/components/dashboard/ChescaTracePanel.vue'
-import TaskConfigSidebar from '@/components/dashboard/TaskConfigSidebar.vue'
+import TaskConfigDialog from '@/components/dashboard/TaskConfigDialog.vue'
 import {
   buildEnergyFlowSeriesPoints,
   listEnergyFlowMeta,
@@ -168,23 +199,32 @@ import { buildResmarlSummaryFromConfig, formatResmarlLabel, parseAgentConfigJson
 
 export default {
   name: 'RecDashboard',
+  inject: ['hasPermission'],
   components: {
     SelectCompareModelModal,
     SimulationDataTree,
     SimulationChartCard,
     EnergyDistributionPanel,
+    EvaluationActionCards,
     EnergyHomeMoreInfoDialog,
     HaEnergyPeriodSelector,
     KpiAnalysisPanel,
     ChescaTracePanel,
-    TaskConfigSidebar
+    TaskConfigDialog
   },
   data() {
     return {
       loadingList: false,
+      homeSourceVisible: false,
+      homeSourceLoading: false,
+      homeSourceSaving: false,
+      homeSourceTaskId: '',
+      homeSourceOptions: [],
+      artifactWarnings: {},
       loadingDetail: false,
       showSelect: false,
       simulationFolders: [],
+      simulationRecords: [],
       /** groupName -> { taskId, pyId } */
       simulationMeta: {},
       selectedSimulations: [],
@@ -192,9 +232,16 @@ export default {
       parsedKpis: {},
       parsedTrace: {},
       decisionTraceBySim: {},
+      tracePageBySim: {},
+      traceLoadingBySim: {},
+      traceRequestBySim: {},
+      traceDesiredBySim: {},
+      detailRequestVersion: 0,
       resmarlBySim: {},
       agentConfigBySim: {},
-      configSidebarCollapsed: true,
+      analysisBySim: {},
+      currencyBySim: {},
+      taskConfigVisible: false,
       episodesBySim: {},
       episodeBySim: {},
       activeTab: '',
@@ -292,10 +339,6 @@ export default {
     this.loadShowSimulations()
   },
   methods: {
-    goHome() {
-      this.$emit('navigate-home')
-    },
-
     syncEnergySelection(days) {
       const list = days || this.energyDays || []
       if (!list.length) {
@@ -343,10 +386,6 @@ export default {
       this.$nextTick(() => this.syncEnergyPeriod())
     },
 
-    isApiSuccess(response) {
-      return response && response.data && Number(response.data.code) === 0
-    },
-
     storeAgentConfig(sim, detail) {
       const cfg = parseAgentConfigJson(detail && detail.agentConfigJson)
       this.$set(this.agentConfigBySim, sim, cfg)
@@ -355,15 +394,18 @@ export default {
       this.$set(this.resmarlBySim, sim, resmarl)
     },
 
-    async loadShowSimulations() {
+    async loadShowSimulations(openSelector = true) {
+      this.detailRequestVersion += 1
+      this.loadingDetail = false
       this.loadingList = true
+      this.showSelect = openSelector
       try {
-        const response = await axios.get('/api/web/basedata/getDashboardSimulations')
-        if (!this.isApiSuccess(response)) {
-          this.$message.error(response.data.message || '加载展示模型失败')
+        const response = await listDashboardSimulations({ failMessage: '加载展示模型失败' })
+        if (!response.ok) {
           return
         }
-        const list = response.data.data || []
+        const list = response.data || []
+        this.simulationRecords = list
         this.simulationMeta = {}
         this.simulationFolders = list.map((item) => {
           this.simulationMeta[item.groupName] = {
@@ -376,11 +418,20 @@ export default {
         this.parsedKpis = {}
         this.parsedTrace = {}
         this.decisionTraceBySim = {}
+        this.tracePageBySim = {}
+        this.traceLoadingBySim = {}
+        // Keep counters monotonic so a request started before refresh cannot
+        // overwrite a newly selected record with the same display name.
+        Object.keys(this.traceRequestBySim).forEach(key => { this.traceRequestBySim[key] += 1 })
+        this.analysisBySim = {}
+        this.currencyBySim = {}
+        this.artifactWarnings = {}
         this.resmarlBySim = {}
         this.agentConfigBySim = {}
         this.episodesBySim = {}
         this.episodeBySim = {}
         this.selectedSimulations = []
+        this.taskConfigVisible = false
         this.graphBySim = {}
         this.equipmentBySim = {}
         this.activeTab = ''
@@ -388,8 +439,7 @@ export default {
         if (!this.simulationFolders.length) {
           this.$message.warning('暂无展示数据：请先在代码编辑器「记录」页将执行完成的记录设为【展示】')
         } else {
-          this.$message.success(`已加载 ${this.simulationFolders.length} 个展示模型`)
-          this.showSelect = true
+          if (openSelector) this.$message.success(`已加载 ${this.simulationFolders.length} 个展示模型`)
         }
       } catch (error) {
         console.error('加载展示模型失败:', error)
@@ -397,6 +447,25 @@ export default {
       } finally {
         this.loadingList = false
       }
+    },
+
+    async openHomeSource() {
+      this.homeSourceVisible = true
+      this.homeSourceLoading = true
+      try {
+        const options = await listHomeEvaluations()
+        const source = await getHomeEvaluationSource()
+        if (options.ok) this.homeSourceOptions = options.data || []
+        if (source.ok) this.homeSourceTaskId = source.data.taskId || ''
+      } finally { this.homeSourceLoading = false }
+    },
+
+    async saveHomeSource() {
+      this.homeSourceSaving = true
+      try {
+        const result = await setHomeEvaluation(this.homeSourceTaskId || null)
+        if (result.ok) { this.homeSourceVisible = false; this.$message.success('首页显示数据已设置') }
+      } finally { this.homeSourceSaving = false }
     },
 
     parseCsvText(text) {
@@ -424,38 +493,91 @@ export default {
       }
     },
 
-    async loadKpiRowsFromDb(pyId) {
-      try {
-        const response = await axios.get('/api/web/basedata/getPyFileKpiRows', {
-          params: { pyId }
-        })
-        if (!this.isApiSuccess(response)) {
-          return []
-        }
-        return normalizeKpiRows(response.data.data)
-      } catch (error) {
-        console.error('从数据库加载 KPI 失败:', error)
-        return []
-      }
-    },
-
     async loadSimulationDetail(groupName) {
       const meta = this.simulationMeta[groupName]
       if (!meta || !meta.taskId) {
         return
       }
-      const response = await axios.get('/api/web/basedata/getDashboardSimulationDetail', {
-        params: { taskId: meta.taskId }
+      const response = await getDashboardSimulationDetail(meta.taskId, {
+        params: { pagedTrace: true },
+        silent: true,
+        failMessage: '加载仿真详情失败'
       })
-      if (!this.isApiSuccess(response) || !response.data.data) {
-        throw new Error(response.data.message || '加载仿真详情失败')
+      if (!response.ok || !response.data) {
+        throw new Error(response.message || '加载仿真详情失败')
       }
-      return response.data.data
+      return response.data
+    },
+
+    applyTracePage(sim, detail) {
+      const page = detail.tracePage || {}
+      const incoming = resolveDecisionTrace({
+        decisionTraceJson: detail.decisionTraceJson, chescaTraceCsv: detail.chescaTraceCsv
+      })
+      const previous = this.decisionTraceBySim[sim]
+      const rows = parseChescaTraceCsv(detail.chescaTraceCsv)
+      const oldRows = page.offset ? this.parsedTrace[sim] || [] : []
+      const rowMap = new Map(oldRows.concat(rows).map(row => [`${row.episode}:${row.step}:${row.building}`, row]))
+      this.$set(this.parsedTrace, sim, [...rowMap.values()])
+      if (incoming) {
+        const recorded = new Map((page.offset && previous ? previous.steps : []).concat(incoming.steps)
+          .filter(step => !step.pending).map(step => [`${step.episode}:${step.step}`, step]))
+        incoming.steps = page.stepIndex && page.stepIndex.length
+          ? page.stepIndex.map(item => recorded.get(`${item.episode}:${item.step}`) || { ...item, pending: true, buildings: [] })
+          : [...recorded.values()]
+        this.$set(this.decisionTraceBySim, sim, incoming)
+      }
+      this.$set(this.tracePageBySim, sim, page)
+    },
+
+    loadTraceStep({ sim, step, episode }) {
+      const trace = this.decisionTraceBySim[sim]
+      if (!trace) return
+      if (this.traceLoadingBySim[sim]) {
+        this.$set(this.traceDesiredBySim, sim, { sim, step, episode })
+        return
+      }
+      const index = trace.steps.findIndex(item => item.step === step && (episode == null || item.episode === episode))
+      if (index < 0 || !trace.steps[index].pending) return
+      const page = this.tracePageBySim[sim]
+      this.loadTracePage(sim, Math.floor(index / page.limit) + 1)
+    },
+    async loadTracePage(sim, pageNumber) {
+      const meta = this.simulationMeta[sim]
+      const previous = this.tracePageBySim[sim]
+      if (!meta || !previous || !previous.limit || !Number.isInteger(pageNumber) || pageNumber < 1) return
+      const taskId = meta.taskId
+      const selectionVersion = this.detailRequestVersion
+      const request = (this.traceRequestBySim[sim] || 0) + 1
+      this.$set(this.traceRequestBySim, sim, request)
+      this.$set(this.traceLoadingBySim, sim, true)
+      const current = () => this.traceRequestBySim[sim] === request &&
+        this.detailRequestVersion === selectionVersion &&
+        this.simulationMeta[sim] && this.simulationMeta[sim].taskId === taskId &&
+        this.selectedSimulations.includes(sim)
+      try {
+        const response = await getDashboardTracePage({
+          taskId, offset: (pageNumber - 1) * previous.limit, limit: previous.limit
+        }, { silent: true })
+        if (!current()) return
+        if (!response.ok || !response.data) throw new Error(response.message || '加载决策日志失败')
+        this.applyTracePage(sim, response.data)
+      } catch (error) {
+        if (current()) this.$message.error(error.message || '加载决策日志失败')
+      } finally {
+        if (this.traceRequestBySim[sim] === request) {
+          this.$set(this.traceLoadingBySim, sim, false)
+          const desired = this.traceDesiredBySim[sim]
+          this.$delete(this.traceDesiredBySim, sim)
+          if (desired && this.selectedSimulations.includes(sim)) this.loadTraceStep(desired)
+        }
+      }
     },
 
     async onSimulationsSelected(list) {
+      const request = ++this.detailRequestVersion
       this.selectedSimulations = list
-      this.activeTab = [...list].sort()[0]
+      this.activeTab = [...list].sort()[0] || ''
       this.loadingDetail = true
       const loading = this.$loading({
         lock: true,
@@ -464,9 +586,20 @@ export default {
       })
       try {
         for (const sim of list) {
-          const meta = this.simulationMeta[sim]
+          let detailPromise
+          const loadDetail = () => {
+            if (!detailPromise) detailPromise = this.loadSimulationDetail(sim).then(detail => {
+              if (request !== this.detailRequestVersion) throw new Error('obsolete_detail_request')
+              this.$set(this.analysisBySim, sim, detail.evaluationAnalysis || {})
+              this.$set(this.currencyBySim, sim, detail.currency || '')
+              this.applyTracePage(sim, detail)
+              return detail
+            })
+            return detailPromise
+          }
           if (!this.parsedSimulations[sim]) {
-            const detail = await this.loadSimulationDetail(sim)
+            const detail = await loadDetail()
+            this.$set(this.artifactWarnings, sim, detail.artifactWarnings || [])
             const { parsed, episodes } = this.parseSimulationDataFromFiles(detail.dataFiles)
             this.$set(this.parsedSimulations, sim, parsed)
             this.$set(this.episodesBySim, sim, episodes.length ? episodes : ['ep0'])
@@ -479,38 +612,18 @@ export default {
                 kpiRows = fromCsv
               }
             }
-            if (kpiRows.length < 2 && meta && meta.pyId) {
-              const dbRows = await this.loadKpiRowsFromDb(meta.pyId)
-              if (dbRows.length > kpiRows.length) {
-                kpiRows = dbRows
-              }
-            }
             if (kpiRows.length) {
               this.$set(this.parsedKpis, sim, kpiRows.slice())
             } else {
               this.$message.warning(`${sim}：未解析到 KPI 数据`)
             }
 
-            const traceRows = parseChescaTraceCsv(detail.chescaTraceCsv)
-            if (traceRows.length) {
-              this.$set(this.parsedTrace, sim, traceRows)
-            }
-            const decisionTrace = resolveDecisionTrace({
-              decisionTraceJson: detail.decisionTraceJson,
-              chescaTraceCsv: detail.chescaTraceCsv
-            })
-            if (decisionTrace) {
-              this.$set(this.decisionTraceBySim, sim, decisionTrace)
-            }
             this.storeAgentConfig(sim, detail)
           } else if (!this.parsedKpis[sim] || this.parsedKpis[sim].length < 2) {
-            const detail = await this.loadSimulationDetail(sim)
+            const detail = await loadDetail()
             let kpiRows = normalizeKpiRows(detail.kpiRows)
             if (kpiRows.length < 2 && detail.kpisCsv) {
               kpiRows = parseKpiCsvText(detail.kpisCsv)
-            }
-            if (kpiRows.length < 2 && meta && meta.pyId) {
-              kpiRows = await this.loadKpiRowsFromDb(meta.pyId)
             }
             if (kpiRows.length) {
               this.$set(this.parsedKpis, sim, kpiRows.slice())
@@ -525,7 +638,7 @@ export default {
             !this.resmarlBySim[sim] ||
             !this.agentConfigBySim[sim]
           ) {
-            const detail = await this.loadSimulationDetail(sim)
+            const detail = await loadDetail()
             if (!this.parsedTrace[sim]) {
               const traceRows = parseChescaTraceCsv(detail.chescaTraceCsv)
               if (traceRows.length) {
@@ -547,11 +660,13 @@ export default {
           }
         }
       } catch (error) {
-        console.error('加载仿真详情失败:', error)
-        this.$message.error(error.message || '加载仿真详情失败')
+        if (request === this.detailRequestVersion) {
+          console.error('加载仿真详情失败:', error)
+          this.$message.error(error.message || '加载仿真详情失败')
+        }
       } finally {
         loading.close()
-        this.loadingDetail = false
+        if (request === this.detailRequestVersion) this.loadingDetail = false
       }
     },
 
@@ -563,7 +678,7 @@ export default {
       const ep = this.episodeBySim[sim] || this.episodesBySim[sim]?.[0] || 'ep0'
       const out = {}
       Object.entries(all).forEach(([k, v]) => {
-        if (k.includes(ep)) {
+        if (k.includes(ep) || !/_ep\d+/i.test(k)) {
           out[k] = v
         }
       })
@@ -655,11 +770,6 @@ export default {
 .dashboard-body {
   display: block;
 }
-.dashboard-body.with-sidebar {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-}
 .dashboard-main {
   flex: 1;
   min-width: 0;
@@ -672,5 +782,9 @@ export default {
 .energy-dist-above + .el-card,
 .energy-dist-above + .el-empty {
   margin-top: var(--space-3);
+}
+@media (max-width: 780px) {
+  .dashboard-main { width: 100%; }
+  .toolbar { width: 100%; }
 }
 </style>

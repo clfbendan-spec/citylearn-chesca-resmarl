@@ -540,6 +540,8 @@
 </template>
 
 <script>
+import { themeColor } from '@/utils/theme'
+
 import axios from 'axios'
 import * as echarts from 'echarts'
 
@@ -1543,6 +1545,13 @@ export default {
       if (row.locked) {
         return false
       }
+      // District interprets these empty values as "preserve schema" and
+      // "inherit checkpoint". Other parameters keep their required validation.
+      const fileName = this.pyFile && this.pyFile.fileName
+      if (['District_MARL_train.py', 'District_MARL_eval.py'].includes(fileName)
+        && ['power-outage-seed', 'cooling-reference-mode'].includes(row.baseParamName)) {
+        return false
+      }
       // 开关只有开/关两态，不存在"没填"（false 也是有效值，不能被当成空）
       if (row.valueType === 'bool') {
         return false
@@ -2457,7 +2466,7 @@ export default {
           barMaxWidth: 28,
           data: this.mapDraft.map((item, index) => ({
             value: this.toFiniteNumber(item.value),
-            itemStyle: { color: index === selected ? '#409eff' : '#a0cfff' }
+            itemStyle: { color: index === selected ? themeColor('primary-color') : themeColor('light-primary-color') }
           }))
         }]
       }, true)
@@ -2579,13 +2588,13 @@ export default {
   margin-bottom: 14px;
   border: 1px solid var(--divider-color, #e4e7ed);
   border-radius: 6px;
-  background: #fff;
+  background: var(--card-background-color);
   overflow: hidden;
 }
 
 .section-card-set {
-  border-color: rgba(64, 158, 255, 0.35);
-  background: linear-gradient(180deg, rgba(64, 158, 255, 0.04) 0%, #fff 50%);
+  border-color: rgba(var(--rgb-primary-color), 0.35);
+  background: var(--card-background-color);
 }
 
 .section-head {
@@ -2593,12 +2602,12 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: #f5f7fa;
+  background: var(--input-fill-color);
   border-bottom: 1px solid var(--divider-color, #e4e7ed);
 }
 
 .section-card-set .section-head {
-  background: rgba(64, 158, 255, 0.08);
+  background: rgba(var(--rgb-primary-color), 0.08);
 }
 
 .section-head-left {
@@ -2620,7 +2629,7 @@ export default {
 }
 
 .section-card-set .section-head-icon {
-  color: #409eff;
+  color: var(--el-color-primary-legacy);
 }
 
 .section-title {
@@ -2641,7 +2650,7 @@ export default {
 .set-meta-inline {
   margin-left: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 /* ---------- 配置组标题：可点击打开成员管理弹窗 ---------- */
@@ -2651,8 +2660,8 @@ export default {
   transition: border-color 120ms;
 }
 .section-title-clickable:hover {
-  border-bottom-color: #409eff;
-  color: #409eff;
+  border-bottom-color: var(--el-color-primary-legacy);
+  color: var(--el-color-primary-legacy);
 }
 
 /* ---------- 折叠按钮 ---------- */
@@ -2668,7 +2677,7 @@ export default {
   font-size: 12px;
 }
 .collapse-btn:hover {
-  color: #409eff;
+  color: var(--el-color-primary-legacy);
 }
 
 /* ---------- 折叠态：去掉表头与主体之间的分隔线，让卡片"收紧" ---------- */
@@ -2678,9 +2687,9 @@ export default {
 
 /* ---------- 拖动：目标高亮 ---------- */
 .section-card-drag-over {
-  border-color: #409eff;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2) inset;
-  background-color: rgba(64, 158, 255, 0.04);
+  border-color: var(--el-color-primary-legacy);
+  box-shadow: 0 0 0 2px rgba(var(--rgb-primary-color), 0.2) inset;
+  background-color: rgba(var(--rgb-primary-color), 0.04);
 }
 
 /* ---------- 拖动：行源样式 ---------- */
@@ -2723,7 +2732,7 @@ export default {
   border-bottom: none;
 }
 .member-item:hover {
-  background-color: rgba(64, 158, 255, 0.04);
+  background-color: rgba(var(--rgb-primary-color), 0.04);
 }
 .member-name {
   flex: 0 0 auto;
@@ -2738,7 +2747,7 @@ export default {
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: 3px;
-  font-family: Consolas, Monaco, monospace;
+  font-family: var(--ha-font-family-mono);
   font-size: 12px;
   color: var(--primary-text-color);
   background: rgba(144, 147, 153, 0.15);
@@ -2779,7 +2788,7 @@ export default {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f5f7fa;
+  background: var(--input-fill-color);
   font-size: 13px;
   font-weight: 500;
   color: var(--primary-text-color);
@@ -2790,7 +2799,7 @@ export default {
 }
 
 .cfg-row:hover {
-  background: rgba(64, 158, 255, 0.04);
+  background: rgba(var(--rgb-primary-color), 0.04);
 }
 
 .col-name {
@@ -2852,12 +2861,12 @@ export default {
   flex: 0 0 auto;
   font-size: 14px;
   line-height: 1;
-  color: #c0c4cc;
+  color: var(--secondary-text-color);
   cursor: help;
 }
 
 .desc-icon:hover {
-  color: #409eff;
+  color: var(--el-color-primary-legacy);
 }
 
 /* 配置组标题旁的叹号：略小一点、和标题基线对齐 */
@@ -2874,7 +2883,7 @@ export default {
 }
 
 .desc-pop-empty {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 /* 第二列：左边是数据库里的原始参数名，右边是别名输入框 */
@@ -2886,7 +2895,7 @@ export default {
   white-space: nowrap;
   padding: 1px 6px;
   border-radius: 3px;
-  font-family: Consolas, Monaco, monospace;
+  font-family: var(--ha-font-family-mono);
   font-size: 12px;
   color: var(--primary-text-color);
   background: rgba(144, 147, 153, 0.15);
@@ -2901,7 +2910,7 @@ export default {
 
 /* 自定义参数行：左侧加一条色带，和目录参数区分开 */
 .cfg-row-custom {
-  border-left: 3px solid #e6a23c;
+  border-left: 3px solid var(--el-color-warning);
   background: rgba(230, 162, 60, 0.04);
 }
 
@@ -2916,14 +2925,14 @@ export default {
   font-size: 11px;
   font-style: normal;
   line-height: 16px;
-  color: #409eff;
-  background: rgba(64, 158, 255, 0.12);
+  color: var(--el-color-primary-legacy);
+  background: rgba(var(--rgb-primary-color), 0.12);
 }
 
 .sys-flag {
   margin-left: 6px;
   font-size: 11px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .empty-tip {
@@ -2934,11 +2943,11 @@ export default {
 }
 
 .danger-text-btn {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 
 .danger-text-btn:hover {
-  color: #f78989;
+  color: var(--error-color);
 }
 
 /* ---------- 固定参数「训练模型」：值列里的两级选择器（列窄 ⇒ 竖排） ---------- */
@@ -2960,7 +2969,7 @@ export default {
 }
 
 .map-value-empty {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .map-tip {
@@ -3000,8 +3009,8 @@ export default {
 }
 
 .map-row-active .map-input >>> .el-input__inner {
-  border-color: #409eff;
-  background: rgba(64, 158, 255, 0.06);
+  border-color: var(--el-color-primary-legacy);
+  background: rgba(var(--rgb-primary-color), 0.06);
 }
 
 /* 固定参数行（任务编排注入）：与普通默认参数同处一张表格，只读、不可移动 */
@@ -3017,13 +3026,13 @@ export default {
 
 /* 名称右侧的「固定」标记：与「系统」同位置，用主色区分 */
 .locked-tag {
-  background: #409eff;
-  color: #ffffff;
+  background: var(--el-color-primary-legacy);
+  color: var(--text-primary-color);
 }
 
 .locked-param-tag {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 

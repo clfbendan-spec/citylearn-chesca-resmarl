@@ -20,6 +20,11 @@ public class DashboardSimulationVO implements Serializable {
     /** 分组名称（代码名 + 记录时间） */
     private String groupName;
 
+    /** Selection-list label without generated time or uniqueness suffixes. */
+    private String recordName;
+
+    private String evaluationDataset;
+
     private String pyId;
 
     private String taskId;
@@ -27,4 +32,8 @@ public class DashboardSimulationVO implements Serializable {
     private String fileName;
 
     private Date taskCreateTime;
+
+    private Double discomfortProportion;
+
+    private Double costTotal;
 }

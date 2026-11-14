@@ -190,9 +190,10 @@
 </template>
 
 <script>
-import axios from 'axios'
 import BatteryMinSocConfig from './BatteryMinSocConfig.vue'
 import { PERMS } from '../utils/permissions'
+import { getResMarlConfig, saveResMarlConfig, resetResMarlConfig } from '../api/modelConfig'
+import { getDatasetList } from '../api/dataset'
 
 export default {
   name: 'ResMarlConfig',
@@ -238,18 +239,14 @@ export default {
       return true
     },
     async loadDatasetOptions() {
-      try {
-        const response = await axios.get('/api/web/basedata/getDatasetList')
-        if (response.data && response.data.code === 0 && Array.isArray(response.data.data)) {
-          this.schemaOptions = response.data.data.map((d) => ({
-            value: d.schemaKey,
-            label: d.displayName,
-            chescaCompatible: d.chescaCompatible
-          }))
-        }
-      } catch (e) {
-        // 保留空列表；保存时仍可用 allow-create 手填
-        console.error('加载数据集列表失败', e)
+      // 保留空列表；保存时仍可用 allow-create 手填，所以失败不提示
+      const response = await getDatasetList({ silent: true })
+      if (response.ok && Array.isArray(response.data)) {
+        this.schemaOptions = response.data.map((d) => ({
+          value: d.schemaKey,
+          label: d.displayName,
+          chescaCompatible: d.chescaCompatible
+        }))
       }
     },
     buildMaskPayload() {
@@ -277,14 +274,15 @@ export default {
     async loadConfig() {
       this.loading = true
       try {
-        const response = await axios.get('/api/web/basedata/getResMarlConfig')
-        if (response.data && response.data.code === 0) {
-          this.applyConfig(response.data.data)
+        const response = await getResMarlConfig({ silent: true, failMessage: '加载配置失败' })
+        if (response.ok) {
+          this.applyConfig(response.data)
+        } else if (response.code === null) {
+          // 网络层失败才提建表，业务错误可能是别的原因，不要把排查方向带偏
+          this.$message.error('加载配置失败，请确认已执行 algorithm_config.sql 并重启 Java 服务')
         } else {
-          this.$message.error((response.data && response.data.message) || '加载配置失败')
+          this.$message.error(response.message || '加载配置失败')
         }
-      } catch (e) {
-        this.$message.error('加载配置失败，请确认已执行 algorithm_config.sql 并重启 Java 服务')
       } finally {
         this.loading = false
       }
@@ -337,7 +335,7 @@ export default {
           return
         }
 
-        const response = await axios.post('/api/web/basedata/saveResMarlConfig', {
+        const response = await saveResMarlConfig({
           // 是否跑残差由入口脚本决定；此处固定写入 ResMARL 参数侧标记
           resmarlEnabled: true,
           marlMode: 'multi_agent',
@@ -350,15 +348,13 @@ export default {
           trainSchema,
           multiAgentEvalSchema,
           evalSchema
-        })
-        if (response.data && response.data.code === 0) {
+        }, { silent: true, failMessage: '残差配置保存失败' })
+        if (response.ok) {
           this.$message.success('配置已保存')
           await this.loadConfig()
         } else {
-          this.$message.error((response.data && response.data.message) || '残差配置保存失败')
+          this.$message.error(response.message || '残差配置保存失败')
         }
-      } catch (e) {
-        this.$message.error((e.response && e.response.data && e.response.data.message) || '保存失败')
       } finally {
         this.saving = false
       }
@@ -367,7 +363,7 @@ export default {
       if (!this.ensureOperate()) return
       try {
         await this.$confirm(
-          '将同时恢复 CHESCA、残差与 Multi-agent 数据集为默认值。是否继续？',
+          '将恢复残差与 Multi-agent 数据集为默认值。是否继续？',
           '恢复默认',
           { type: 'warning' }
         )
@@ -376,24 +372,13 @@ export default {
       }
       this.loading = true
       try {
-        const chesca = this.$refs.chescaConfig
-        const chescaOk = chesca
-          ? await chesca.resetConfig({ silent: true, skipConfirm: true })
-          : true
-        if (!chescaOk) {
-          this.$message.error('CHESCA 配置恢复失败')
-          return
-        }
-
-        const response = await axios.post('/api/web/basedata/resetResMarlConfig')
-        if (response.data && response.data.code === 0) {
-          this.applyConfig(response.data.data)
+        const response = await resetResMarlConfig({ silent: true, failMessage: '残差配置恢复失败' })
+        if (response.ok) {
+          this.applyConfig(response.data)
           this.$message.success('已恢复全页默认配置')
         } else {
-          this.$message.error((response.data && response.data.message) || '残差配置恢复失败')
+          this.$message.error(response.message || '残差配置恢复失败')
         }
-      } catch (e) {
-        this.$message.error('恢复失败')
       } finally {
         this.loading = false
       }
@@ -549,7 +534,7 @@ export default {
   border-radius: 4px;
   font-size: 11px;
   color: var(--secondary-text-color);
-  font-family: "Roboto Mono", "SF Mono", Consolas, monospace;
+  font-family: var(--ha-font-family-mono);
 }
 
 .formula-banner {
@@ -575,7 +560,7 @@ export default {
   font-weight: 500;
   line-height: 1.35;
   color: var(--primary-text-color);
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .formula-term {

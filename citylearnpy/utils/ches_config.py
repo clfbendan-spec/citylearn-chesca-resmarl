@@ -21,6 +21,7 @@
 """
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -54,6 +55,13 @@ DEFAULTS = {
     'max_soc_reduction_in_outage':             0.7,
     'min_cool_per_c_outdoor_gap':              0.03,
     'min_cool_per_c_overheat':                 0.12,
+    # 冷机 PID 控制器参数。原先写死在 CoolingDeviceController 内；
+    # 现在纳入任务配置，便于复现实验和针对单栋舒适瓶颈做消融。
+    'pid_kp':                                  -0.288074675781558,
+    'pid_ki':                                  -2.489908316536426,
+    'pid_kd':                                  0.009479951268930725,
+    'pid_out_temp_scaler':                     0.09629375171771082,
+    'pid_kp_outage':                           -0.27351617926369537,
     'min_soc_per_hour':                        {'0': 0.6, '1': 0.65, '2': 0.72, '3': 0.78, '4': 0.8, '5': 0.85, '6': 0.8, '7': 0.75, '8': 0.7, '9': 0.6, '10': 0.5, '11': 0.6, '12': 0.65, '13': 0.65, '14': 0.7, '15': 0.7, '16': 0.7, '17': 0.65, '18': 0.7, '19': 0.6, '20': 0.6, '21': 0.6, '22': 0.6, '23': 0.55},
     'multi_agent_checkpoint':                  '',
     'multi_agent_explore':                     False,
@@ -177,6 +185,13 @@ def _parse_threshold(value, name):
     if threshold <= 0 or threshold > 20:
         raise ValueError(f'{name} 须在0~20之间，当前: {threshold}')
     return threshold
+
+
+def _parse_finite_float(value, name):
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f'{name} must be a finite number, got {value}')
+    return number
 
 
 def _parse_nonneg_float(value, name, max_value=None):
@@ -370,6 +385,15 @@ def load_agent_config(config_path, cli_overrides=None):
         min_cool_per_c_overheat = _parse_nonneg_float(
             raw.get('min_cool_per_c_overheat', 0.12), 'min_cool_per_c_overheat', max_value=2.0
         )
+        pid_kp = _parse_finite_float(raw.get('pid_kp', DEFAULTS['pid_kp']), 'pid_kp')
+        pid_ki = _parse_finite_float(raw.get('pid_ki', DEFAULTS['pid_ki']), 'pid_ki')
+        pid_kd = _parse_finite_float(raw.get('pid_kd', DEFAULTS['pid_kd']), 'pid_kd')
+        pid_out_temp_scaler = _parse_nonneg_float(
+            _parse_finite_float(raw.get('pid_out_temp_scaler', DEFAULTS['pid_out_temp_scaler']),
+                                'pid_out_temp_scaler'),
+            'pid_out_temp_scaler', max_value=10.0)
+        pid_kp_outage = _parse_finite_float(
+            raw.get('pid_kp_outage', DEFAULTS['pid_kp_outage']), 'pid_kp_outage')
         min_cool_per_c_outdoor_gap = _parse_nonneg_float(
             raw.get('min_cool_per_c_outdoor_gap', 0.03), 'min_cool_per_c_outdoor_gap', max_value=1.0
         )
@@ -509,6 +533,11 @@ def load_agent_config(config_path, cli_overrides=None):
         b_high = 1.0
         tmp_max_reduction = 0.0
         min_cool_per_c_overheat = 0.12
+        pid_kp = DEFAULTS['pid_kp']
+        pid_ki = DEFAULTS['pid_ki']
+        pid_kd = DEFAULTS['pid_kd']
+        pid_out_temp_scaler = DEFAULTS['pid_out_temp_scaler']
+        pid_kp_outage = DEFAULTS['pid_kp_outage']
         min_cool_per_c_outdoor_gap = 0.03
         outdoor_gap_deadband_c = 5.0
         outdoor_floor_max_overheat_c = 0.5
@@ -579,6 +608,11 @@ def load_agent_config(config_path, cli_overrides=None):
         'peak_cut_graded_m_lo': peak_cut_graded_m_lo,
         'peak_cut_graded_m_hi': peak_cut_graded_m_hi,
         'min_cool_per_c_overheat': min_cool_per_c_overheat,
+        'pid_kp': pid_kp,
+        'pid_ki': pid_ki,
+        'pid_kd': pid_kd,
+        'pid_out_temp_scaler': pid_out_temp_scaler,
+        'pid_kp_outage': pid_kp_outage,
         'min_cool_per_c_outdoor_gap': min_cool_per_c_outdoor_gap,
         'outdoor_gap_deadband_c': outdoor_gap_deadband_c,
         'outdoor_floor_max_overheat_c': outdoor_floor_max_overheat_c,
@@ -704,6 +738,11 @@ AGENT_PARAM_KEYS = (
     'peak_cut_graded_m_lo',
     'peak_cut_graded_m_hi',
     'min_cool_per_c_overheat',
+    'pid_kp',
+    'pid_ki',
+    'pid_kd',
+    'pid_out_temp_scaler',
+    'pid_kp_outage',
     'min_cool_per_c_outdoor_gap',
     'outdoor_gap_deadband_c',
     'outdoor_floor_max_overheat_c',

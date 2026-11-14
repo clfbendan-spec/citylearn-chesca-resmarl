@@ -9,24 +9,18 @@
           :min="stepMin"
           :max="stepMax"
           :format-tooltip="formatStepTooltip"
+          @mousemove.native="previewHoverStep"
+          @mouseleave.native="hoverStep = null"
           @change="onStepChange"
         />
         <el-button size="mini" icon="el-icon-arrow-right" :disabled="!canNext" @click="nextStep" />
       </div>
       <span class="step-label">Step {{ currentStep }} · Hour {{ currentHour }}</span>
-      <el-input
-        v-model="searchText"
-        size="small"
-        clearable
-        placeholder="搜索推演内容…"
-        prefix-icon="el-icon-search"
-        class="search-input"
-      />
+      <span v-if="hoverStep" class="step-hover-label" :style="{ left: hoverStep.x + 'px', top: hoverStep.y + 'px' }">Step {{ hoverStep.value }}</span>
     </div>
 
     <div v-if="currentNarratives.length" class="narrative-panel">
-      <h5 class="sub-title">推演剧本（分层解释）</h5>
-      <p class="narrative-hint">悬停任意一行可查看对应 Python 源码 / REWARD_KWARGS（Multi-agent）</p>
+      <h5 class="sub-title">推演剧本</h5>
       <div
         v-for="item in currentNarratives"
         :key="item.building"
@@ -197,6 +191,7 @@ export default {
   data() {
     return {
       currentStep: 0,
+      hoverStep: null,
       searchText: '',
       logPage: 1,
       pageSize: 50
@@ -254,7 +249,7 @@ export default {
         return []
       }
       return this.filteredBuildings.map((b) => {
-        const entries = resolveNarrativeEntries(b, this.decisionTrace)
+        const entries = resolveNarrativeEntries(b, this.decisionTrace, this.currentStepData)
         const text = entries.length
           ? entries.map((e) => e.text).join('\n')
           : (b.decision_summary || '暂无详细推演文案（请重新运行仿真以生成新版 trace）')
@@ -317,7 +312,8 @@ export default {
     decisionTrace: {
       immediate: true,
       handler() {
-        this.resetStep()
+        if (this.currentStep < this.stepMin || this.currentStep > this.stepMax) this.resetStep()
+        this.requestCurrentStep()
       }
     },
     selectedEpisode() {
@@ -336,9 +332,23 @@ export default {
     },
     searchText() {
       this.logPage = 1
+    },
+    currentStep() {
+      this.requestCurrentStep()
     }
   },
   methods: {
+    previewHoverStep(event) {
+      const runway = event.currentTarget.querySelector('.el-slider__runway')
+      if (!runway) return
+      const bounds = runway.getBoundingClientRect()
+      const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width))
+      this.hoverStep = { value: Math.round(this.stepMin + ratio * (this.stepMax - this.stepMin)), x: event.clientX, y: bounds.top - 28 }
+    },
+    requestCurrentStep() {
+      const item = this.currentStepData
+      if (item && item.pending) this.$emit('step-needed', { step: item.step, episode: item.episode })
+    },
     buildingLabel,
     resetStep() {
       this.currentStep = this.stepMin
@@ -393,6 +403,19 @@ export default {
 </script>
 
 <style scoped>
+.step-hover-label {
+  position: fixed;
+  z-index: 4000;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border: 1px solid var(--divider-color);
+  border-radius: 4px;
+  background: var(--card-background-color);
+  color: var(--primary-text-color);
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
 .decision-trace-log {
   padding: 4px 0 12px;
 }
@@ -416,7 +439,7 @@ export default {
 }
 .step-label {
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
 }
 .search-input {
@@ -426,12 +449,12 @@ export default {
   margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .phase-panel,
 .building-panel {
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: var(--card-background-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   padding: 12px;
   min-height: 420px;
@@ -440,18 +463,18 @@ export default {
   margin: 0 0 4px;
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .phase-summary {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 .full-log-wrap {
   margin-top: 16px;
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: var(--card-background-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   padding: 12px;
 }
@@ -461,46 +484,46 @@ export default {
 }
 .narrative-panel {
   margin-bottom: 16px;
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: var(--input-fill-color);
+  border: 1px solid var(--input-fill-color);
   border-radius: 4px;
   padding: 12px 16px;
 }
 .narrative-panel .sub-title {
-  color: #e0e0e0;
+  color: var(--primary-text-color);
   margin-bottom: 6px;
 }
 .narrative-hint {
   margin: 0 0 10px;
   font-size: 11px;
-  color: #888;
+  color: var(--secondary-text-color);
 }
 .narrative-building-label {
   font-size: 12px;
   font-weight: 600;
-  color: #9cdcfe;
+  color: var(--primary-color);
   margin-bottom: 6px;
 }
 .narrative-lines {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--ha-font-family-mono);
   font-size: 12px;
   line-height: 1.65;
 }
 .narrative-line {
-  color: #d4d4d4;
+  color: var(--primary-text-color);
   padding: 1px 4px;
   border-radius: 2px;
   cursor: help;
   word-break: break-word;
 }
 .narrative-line:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--ha-hover-background);
+  color: var(--primary-text-color);
 }
 .narrative-block + .narrative-block {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--input-fill-color);
 }
 </style>
 
@@ -508,35 +531,35 @@ export default {
 .narrative-code-tooltip {
   max-width: 620px !important;
   padding: 0 !important;
-  border: 1px solid #444 !important;
-  background: #1e1e1e !important;
+  border: 1px solid var(--divider-color) !important;
+  background: var(--input-fill-color) !important;
 }
 .narrative-code-tooltip .code-tooltip-inner {
   padding: 10px 12px;
 }
 .narrative-code-tooltip .code-tooltip-header {
   font-size: 11px;
-  color: #9cdcfe;
+  color: var(--primary-color);
   margin-bottom: 4px;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--ha-font-family-mono);
 }
 .narrative-code-tooltip .code-tooltip-label {
   font-size: 12px;
-  color: #ce9178;
+  color: var(--secondary-text-color);
   margin-bottom: 8px;
 }
 .narrative-code-tooltip .code-tooltip-pre {
   margin: 0;
   padding: 8px 10px;
-  background: #252526;
+  background: var(--card-background-color);
   border-radius: 4px;
   font-size: 11px;
   line-height: 1.45;
-  color: #d4d4d4;
+  color: var(--primary-text-color);
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 320px;
   overflow: auto;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--ha-font-family-mono);
 }
 </style>

@@ -164,7 +164,7 @@ def building_step_snapshot(
         'occupant_count': series_value(
             getattr_path(building, 'energy_simulation', 'occupant_count'), time_step
         ),
-        'power_outage': series_value(getattr_path(building, 'power_outage'), time_step),
+        'power_outage': series_value(getattr_path(building, 'power_outage_signal'), time_step),
         'electricity_pricing': series_value(
             getattr_path(building, 'pricing', 'electricity_pricing'), time_step
         ),

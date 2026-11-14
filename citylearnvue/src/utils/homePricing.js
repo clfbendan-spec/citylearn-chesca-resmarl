@@ -1,3 +1,5 @@
+
+import { themeColor } from './theme'
 /**
  * 首页 / 模型优选电价曲线：实际电价 + 6/12/24h 预测。
  * 优先仿真导出 pricing，否则回退数据集 pricing.csv（经 weather2026 缓存）。
@@ -166,8 +168,8 @@ export async function buildPricingSeriesPoints(folderData, periodDays, mode = 'd
 }
 
 export const PRICING_CHART_SERIES = [
-  { field: 'electricity_pricing', name: '电价', color: '#43A047' },
-  { field: 'electricity_pricing_predicted_1', name: '6小时预测', color: '#81C784' },
-  { field: 'electricity_pricing_predicted_2', name: '12小时预测', color: '#FFB74D' },
-  { field: 'electricity_pricing_predicted_3', name: '24小时预测', color: '#64B5F6' }
+  { field: 'electricity_pricing', name: '电价', color: themeColor('success-color') },
+  { field: 'electricity_pricing_predicted_1', name: '6小时预测', color: themeColor('energy-battery-in-color') },
+  { field: 'electricity_pricing_predicted_2', name: '12小时预测', color: themeColor('accent-color') },
+  { field: 'electricity_pricing_predicted_3', name: '24小时预测', color: themeColor('light-primary-color') }
 ]

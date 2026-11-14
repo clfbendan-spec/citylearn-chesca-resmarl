@@ -431,6 +431,11 @@ export function classifyNarrativeLine(text) {
 }
 
 export function buildCodeRefForLine(text, options = {}) {
+  if (['policy', 'no_control', 'common_baseline_warmup', 'aacmadrl'].includes(options.control_mode)) {
+    return { code_tag: 'recorded_transition', source_file: 'assessment_trace.py',
+      source_line_start: '—', source_line_end: '—', source_label: '实际环境转移记录',
+      code_snippet: 'observations → 执行动作 → next_observations、reward、info\n仅展示该算法实际记录的字段。' }
+  }
   const tag = classifyNarrativeLine(text)
   const meta = { ...(CODE_REF_META[tag] || CODE_REF_META.step_start) }
   // Multi-agent：[观测动作] 悬停展示本任务实际 REWARD_KWARGS

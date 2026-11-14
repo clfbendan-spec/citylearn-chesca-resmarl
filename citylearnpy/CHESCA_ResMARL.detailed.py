@@ -140,6 +140,11 @@ def parse_args():
                         help='分级带宽上沿：r ≥ m_hi 满削（电池同此门槛满放）')
     parser.add_argument('--min_cool_per_c_overheat', type=float, default=DEFAULTS.get('min_cool_per_c_overheat'),
                         help='每超设定点 1°C 至少开多少制冷（冷机开环保底）')
+    parser.add_argument('--pid_kp', type=float, default=DEFAULTS.get('pid_kp'), help='冷机 PID 比例系数')
+    parser.add_argument('--pid_ki', type=float, default=DEFAULTS.get('pid_ki'), help='冷机 PID 积分系数')
+    parser.add_argument('--pid_kd', type=float, default=DEFAULTS.get('pid_kd'), help='冷机 PID 微分系数')
+    parser.add_argument('--pid_out_temp_scaler', type=float, default=DEFAULTS.get('pid_out_temp_scaler'), help='室外温度影响系数')
+    parser.add_argument('--pid_kp_outage', type=float, default=DEFAULTS.get('pid_kp_outage'), help='停电时冷机 PID 比例系数')
     parser.add_argument('--min_cool_per_c_outdoor_gap', type=float, default=DEFAULTS.get('min_cool_per_c_outdoor_gap'),
                         help='室外温度高于设定点时每 1°C 至少开多少制冷')
     parser.add_argument('--outdoor_gap_deadband_c', type=float, default=DEFAULTS.get('outdoor_gap_deadband_c'),

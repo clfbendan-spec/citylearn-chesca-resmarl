@@ -83,14 +83,15 @@ import dayjs from 'dayjs'
 import HaMdiIcon from '@/components/home/HaMdiIcon.vue'
 import { fetchHomeEnergyHourly } from '@/utils/homeEnergyFlow'
 import { PRICING_CHART_SERIES } from '@/utils/homePricing'
+import { themeColor } from '@/utils/theme'
 
 const FOCUS_META = {
   home: {
     name: '家庭用电',
     entity: 'home_energy',
     icon: 'homeOutline',
-    color: '#44739E',
-    bg: 'rgba(68,115,158,0.12)',
+    color: 'var(--energy-grid-consumption-color)',
+    bg: 'var(--input-fill-color)',
     historyTitle: '耗电曲线',
     hint: '逐小时家庭用电构成（kWh）',
     hintDay: '按日家庭用电构成（kWh）',
@@ -100,8 +101,8 @@ const FOCUS_META = {
     name: '太阳能',
     entity: 'solar_energy',
     icon: 'solarPower',
-    color: '#FDD835',
-    bg: 'rgba(253,216,53,0.16)',
+    color: 'var(--energy-solar-color)',
+    bg: 'var(--input-fill-color)',
     historyTitle: '发电去向',
     hint: '逐小时光伏分配：家庭 / 电网 / 电池（kWh）',
     hintDay: '按日光伏分配：家庭 / 电网 / 电池（kWh）',
@@ -111,8 +112,8 @@ const FOCUS_META = {
     name: '电网',
     entity: 'grid_energy',
     icon: 'flash',
-    color: '#44739E',
-    bg: 'rgba(68,115,158,0.12)',
+    color: 'var(--energy-grid-consumption-color)',
+    bg: 'var(--input-fill-color)',
     historyTitle: '购售电',
     hint: '逐小时电网购入与外送（kWh）',
     hintDay: '按日电网购入与外送（kWh）',
@@ -122,8 +123,8 @@ const FOCUS_META = {
     name: '电池',
     entity: 'battery_energy',
     icon: 'battery',
-    color: '#43A047',
-    bg: 'rgba(67,160,71,0.12)',
+    color: 'var(--energy-battery-out-color)',
+    bg: 'var(--input-fill-color)',
     historyTitle: '充放电',
     hint: '逐小时电池充电与放电（kWh）',
     hintDay: '按日电池充电与放电（kWh）',
@@ -133,8 +134,8 @@ const FOCUS_META = {
     name: '不可调负荷',
     entity: 'non_shiftable_load',
     icon: 'flash',
-    color: '#5C6BC0',
-    bg: 'rgba(92,107,192,0.12)',
+    color: 'var(--secondary-text-color)',
+    bg: 'var(--input-fill-color)',
     historyTitle: '负荷与净用电',
     hint: '逐小时不可调负荷与净用电量（kWh）',
     hintDay: '按日不可调负荷与净用电量（kWh）',
@@ -415,62 +416,68 @@ export default {
     },
     seriesConfig() {
       const n = (key) => this.points.map((p) => Number(p[key]) || 0)
+      const solar = themeColor('energy-solar-color')
+      const grid = themeColor('energy-grid-consumption-color')
+      const gridReturn = themeColor('energy-grid-return-color')
+      const batteryOut = themeColor('energy-battery-out-color')
+      const batteryIn = themeColor('energy-battery-in-color')
+      const load = themeColor('secondary-text-color')
       if (this.activeFocus === 'solar') {
         return {
           legend: ['→ 家庭', '→ 电网', '→ 电池'],
-          colors: ['#FDD835', '#A0CADB', '#43A047'],
+          colors: [solar, gridReturn, batteryIn],
           series: [
-            { name: '→ 家庭', stack: 'solar', data: n('solarToHome'), color: '#FDD835' },
-            { name: '→ 电网', stack: 'solar', data: n('solarToGrid'), color: '#A0CADB' },
-            { name: '→ 电池', stack: 'solar', data: n('solarToBattery'), color: '#43A047' }
+            { name: '→ 家庭', stack: 'solar', data: n('solarToHome'), color: solar },
+            { name: '→ 电网', stack: 'solar', data: n('solarToGrid'), color: gridReturn },
+            { name: '→ 电池', stack: 'solar', data: n('solarToBattery'), color: batteryIn }
           ]
         }
       }
       if (this.activeFocus === 'grid') {
         return {
           legend: ['购入', '外送'],
-          colors: ['#44739E', '#A0CADB'],
+          colors: [grid, gridReturn],
           series: [
-            { name: '购入', data: n('gridIn'), color: '#44739E' },
-            { name: '外送', data: n('gridOut'), color: '#A0CADB' }
+            { name: '购入', data: n('gridIn'), color: grid },
+            { name: '外送', data: n('gridOut'), color: gridReturn }
           ]
         }
       }
       if (this.activeFocus === 'battery') {
         return {
           legend: ['放电', '充电'],
-          colors: ['#43A047', '#81C784'],
+          colors: [batteryOut, batteryIn],
           series: [
-            { name: '放电', data: n('batOut'), color: '#43A047' },
-            { name: '充电', data: n('batIn'), color: '#81C784' }
+            { name: '放电', data: n('batOut'), color: batteryOut },
+            { name: '充电', data: n('batIn'), color: batteryIn }
           ]
         }
       }
       if (this.activeFocus === 'load') {
         return {
           legend: ['不可调负荷', '净用电量'],
-          colors: ['#5C6BC0', '#44739E'],
+          colors: [load, grid],
           series: [
             {
               name: '不可调负荷',
               data: n('nonShiftable'),
-              color: '#5C6BC0'
+              color: load
             },
             {
               name: '净用电量',
               data: n('net'),
-              color: '#44739E'
+              color: grid
             }
           ]
         }
       }
       return {
         legend: ['光伏', '电网', '电池'],
-        colors: ['#FDD835', '#44739E', '#43A047'],
+        colors: [solar, grid, batteryOut],
         series: [
-          { name: '光伏', stack: 'home', data: n('solarToHome'), color: '#FDD835' },
-          { name: '电网', stack: 'home', data: n('gridToHome'), color: '#44739E' },
-          { name: '电池', stack: 'home', data: n('batteryToHome'), color: '#43A047' }
+          { name: '光伏', stack: 'home', data: n('solarToHome'), color: solar },
+          { name: '电网', stack: 'home', data: n('gridToHome'), color: grid },
+          { name: '电池', stack: 'home', data: n('batteryToHome'), color: batteryOut }
         ]
       }
     },
@@ -542,10 +549,10 @@ export default {
           color: cfg.colors,
           tooltip: {
             trigger: 'axis',
-            backgroundColor: '#fff',
+            backgroundColor: themeColor('card-background-color'),
             borderColor: 'rgba(0,0,0,0.12)',
             borderWidth: 1,
-            textStyle: { color: '#212121', fontSize: 12 },
+            textStyle: { color: themeColor('primary-text-color'), fontSize: 12 },
             formatter: (params) => {
               if (!params || !params.length) return ''
               const head = params[0].axisValue
@@ -559,24 +566,24 @@ export default {
           legend: {
             data: cfg.legend,
             bottom: 0,
-            textStyle: { color: '#727272', fontSize: 11 }
+            textStyle: { color: themeColor('secondary-text-color'), fontSize: 11 }
           },
           grid: { left: 52, right: 16, top: 24, bottom: 48 },
           xAxis: {
             type: 'category',
             data: times,
             axisLine: { lineStyle: { color: 'rgba(0,0,0,0.12)' } },
-            axisLabel: { color: '#727272', fontSize: 11, hideOverlap: true },
+            axisLabel: { color: themeColor('secondary-text-color'), fontSize: 11, hideOverlap: true },
             axisTick: { show: false }
           },
           yAxis: {
             type: 'value',
             name: 'kWh',
-            nameTextStyle: { color: '#727272', fontSize: 11 },
+            nameTextStyle: { color: themeColor('secondary-text-color'), fontSize: 11 },
             min: yExtent.min,
             max: yExtent.max,
             scale: false,
-            axisLabel: { color: '#727272', fontSize: 11 },
+            axisLabel: { color: themeColor('secondary-text-color'), fontSize: 11 },
             splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
             axisLine: { show: false }
           },
@@ -623,10 +630,10 @@ export default {
           color: PRICING_CHART_SERIES.map((s) => s.color),
           tooltip: {
             trigger: 'axis',
-            backgroundColor: '#fff',
+            backgroundColor: themeColor('card-background-color'),
             borderColor: 'rgba(0,0,0,0.12)',
             borderWidth: 1,
-            textStyle: { color: '#212121', fontSize: 12 },
+            textStyle: { color: themeColor('primary-text-color'), fontSize: 12 },
             formatter: (params) => {
               if (!params || !params.length) return ''
               const head = params[0].axisValue
@@ -640,7 +647,7 @@ export default {
           legend: {
             data: PRICING_CHART_SERIES.map((s) => s.name),
             bottom: 0,
-            textStyle: { color: '#727272', fontSize: 11 }
+            textStyle: { color: themeColor('secondary-text-color'), fontSize: 11 }
           },
           grid: { left: 52, right: 16, top: 24, bottom: 48 },
           xAxis: {
@@ -648,15 +655,15 @@ export default {
             data: times,
             boundaryGap: false,
             axisLine: { lineStyle: { color: 'rgba(0,0,0,0.12)' } },
-            axisLabel: { color: '#727272', fontSize: 11, hideOverlap: true },
+            axisLabel: { color: themeColor('secondary-text-color'), fontSize: 11, hideOverlap: true },
             axisTick: { show: false }
           },
           yAxis: {
             type: 'value',
             name: '$/kWh',
-            nameTextStyle: { color: '#727272', fontSize: 11 },
+            nameTextStyle: { color: themeColor('secondary-text-color'), fontSize: 11 },
             scale: true,
-            axisLabel: { color: '#727272', fontSize: 11 },
+            axisLabel: { color: themeColor('secondary-text-color'), fontSize: 11 },
             splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
             axisLine: { show: false }
           },
@@ -740,7 +747,7 @@ export default {
 .mi-state-value {
   font-size: 36px;
   font-weight: 400;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--primary-text-color);
   font-variant-numeric: tabular-nums;
 }

@@ -1,0 +1,23 @@
+import { get, post } from './http'
+
+const base = '/web/buildings'
+export const listBuildings = () => get(base)
+export const getFields = () => get(base + '/fields')
+export const getEquipmentTemplate = () => get(base + '/equipment-template')
+export const saveBuilding = (id, data) => post(base + (id ? '/' + id : ''), { data })
+export const deleteBuilding = id => post(`${base}/${id}/delete`)
+export const getBuilding = (id, params) => get(`${base}/${id}`, { params })
+export const getBuildingMeasurements = (id, params) => get(`${base}/${id}/measurements`, { params })
+export const ingestHistory = (id, data) => post(`${base}/${id}/ingest`, { data })
+export const rotateToken = id => post(`${base}/${id}/token`)
+export const publishVersion = (id, data) => post(`${base}/${id}/versions`, { data })
+export const previewVersion = (id, data) => post(`${base}/${id}/versions/preview`, { data })
+export const deleteVersion = (id, version) => post(`${base}/${id}/versions/${version}/delete`)
+export const communitySources = () => get(`${base}/community-datasets/sources`)
+export const communityDatasets = () => get(`${base}/community-datasets`)
+export const publishCommunity = data => post(`${base}/community-datasets`, { data })
+export const previewCommunity = data => post(`${base}/community-datasets/preview`, { data })
+export const deleteCommunity = id => post(`${base}/community-datasets/${id}/delete`)
+export const listExperiments = id => get(`${base}/${id}/experiments`, { silent: true })
+export const startExperiment = (id, data) => post(`${base}/${id}/experiments`, { data })
+export const cancelExperiment = (id, run) => post(`${base}/${id}/experiments/${run}/cancel`)

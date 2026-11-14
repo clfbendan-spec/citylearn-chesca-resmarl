@@ -21,6 +21,12 @@ BatteryController — CHESCA 阶段4：电池充放电树搜索
 
 【适应度 balance_type='C'】
   惩罚净负荷偏离目标均值的程度，从而平滑负荷曲线、降低 ramping KPI。
+
+【近似预测与真实执行】
+  transition_model用“下一SOC=当前SOC+候选动作”和“净负荷增加=动作×容量”
+  搜索方案，未完整模拟效率、退化和功率限制。它不是CityLearn的物理状态转移。
+  当前cl2环境收到最终电池命令后按额定功率/步长执行；实际SOC和费用须读环境结果。
+  本文描述已有算法假设，不因补注释修改搜索或执行映射。
 """
 import numpy as np
 import heapq
@@ -64,6 +70,8 @@ class BatteryController:
         self.obj_balance = None
 
     def fit(self, state):
+        # 每次决策丢弃上一棵搜索树，但保留控制器参数。
+        # state[0]是历史净负荷均值，state[1]是当前SOC，state[2:]是负荷预测。
         self.root = None
         self.nodes_expanded = 0
         self.best_final_cost = float('inf')
@@ -95,6 +103,9 @@ class BatteryController:
         node_state: [soc at t, soc at t+1 ... soc at t+tau, t balance, t+1 balance, t+2 balance, ..., t+tau balance]
                         0           1               tau        tau+1     tau+2      tau+2            2*tau + 1
         action: action to take at time t+level
+
+        这是搜索树中的假想分支，不调用env.step，也不会修改真实电池。
+        SOC是0到1的比例；balance按小时负荷能量口径近似，不能当作真实结算电表。
         """
         new_state = node_state.copy()
 

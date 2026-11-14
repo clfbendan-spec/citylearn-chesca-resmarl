@@ -9,12 +9,6 @@
     :close-on-click-modal="false"
     @closed="onClosed"
   >
-    <p class="dialog-hint">
-      {{ isEdit
-        ? '修改任务名称与两张卡片的配置。只有「待执行」的任务可以编辑。'
-        : '按「训练 → 评估」两步编排一个任务。创建后只在任务列表中生成一条记录（类型为 训练+评估），暂不执行脚本。' }}
-    </p>
-
     <div v-loading="loading" class="pipeline-task-body">
       <!-- 任务名称：type=0 的名称存在 py_task.task_name，任务管理页「任务名称」列读它 -->
       <div class="name-field">
@@ -30,7 +24,7 @@
 
       <div class="pipeline-flow">
         <!-- ============ 第一张卡：训练 ============ -->
-        <div class="flow-card">
+        <div v-if="!isDirectEvaluation" class="flow-card">
           <div class="card-head">
             <span class="card-index">1</span>
             <div class="card-head-text">
@@ -82,7 +76,7 @@
         </div>
 
         <!-- ============ 中间箭头：表示训练完成后流向评估 ============ -->
-        <div class="flow-arrow" aria-hidden="true">
+        <div v-if="!isDirectEvaluation" class="flow-arrow" aria-hidden="true">
           <span class="arrow-line" />
           <i class="el-icon-caret-right arrow-head" />
         </div>
@@ -90,7 +84,7 @@
         <!-- ============ 第二张卡：评估 ============ -->
         <div class="flow-card">
           <div class="card-head">
-            <span class="card-index">2</span>
+            <span class="card-index">{{ isDirectEvaluation ? 1 : 2 }}</span>
             <div class="card-head-text">
               <span class="card-title">评估</span>
               <span class="card-sub">评估脚本 · 评估配置</span>
@@ -163,8 +157,14 @@
 </template>
 
 <script>
-import axios from 'axios'
 import AlgorithmConfigDialog from './AlgorithmConfigDialog.vue'
+import {
+  listPyFiles,
+  listTrainModelTasks,
+  fetchTaskDetail,
+  createPipelineTask,
+  updatePipelineTask
+} from '../api/task'
 
 /**
  * 「新建 / 编辑任务」弹窗：固定两张卡片（训练卡 → 评估卡），中间用右箭头连接。
@@ -290,7 +290,7 @@ export default {
      * 执行评估子任务时它会变成 {@code --train-task-id <父任务id>} 传给评估脚本。
      */
     configDialogLockedParams() {
-      if (this.configStep !== 'eval') {
+      if (this.configStep !== 'eval' || this.isDirectEvaluation) {
         return []
       }
       return [{
@@ -332,6 +332,7 @@ export default {
     },
     /** 本次任务是否「复用历史成功训练任务」（= 执行时只跑评估子任务、不训练）。 */
     isReuseTrainModel() {
+      if (this.isDirectEvaluation) return false
       const value = this.evalTrainTaskId
       if (!value) {
         return false
@@ -342,6 +343,20 @@ export default {
         return true
       }
       return value !== parent && value !== `${parent}-train`
+    },
+    isDirectEvaluation() {
+      const script = this.evalScripts.find(file => file.id === this.form.evalPyId)
+      if (!script) return false
+      const name = String(script.fileName).toLowerCase()
+      if (['chesca.py', 'nocontrol.py'].includes(name)) return true
+      if (name !== 'aacmadrl_eval.py') return false
+      try {
+        const sections = JSON.parse(this.form.evalConfig || '[]')
+        return Array.isArray(sections) && sections.some(section => ((section && section.params) || [])
+          .some(param => param && param.param_name === 'frozen-anchor' && String(param.value).trim() === 'on'))
+      } catch (error) {
+        return false
+      }
     },
     /** 复用的历史训练任务 id（非复用时空串） */
     reuseTrainTaskId() {
@@ -418,15 +433,16 @@ export default {
         // 「复用历史成功训练任务」候选不在此时拉 —— 它要按所选训练脚本过滤，
         // 放到 loadTrainModelOptions（脚本选定 / 变更时再拉）。
         const [trainRes, evalRes] = await Promise.all([
-          axios.get('/api/web/basedata/getPyFileList', { params: { scriptType: 'train' } }),
-          axios.get('/api/web/basedata/getPyFileList', { params: { scriptType: 'eval' } })
+          listPyFiles('train', { silent: true }),
+          listPyFiles(null, { silent: true })
         ])
-        this.trainScripts = (trainRes.data && trainRes.data.data) || []
-        this.evalScripts = (evalRes.data && evalRes.data.data) || []
+        this.trainScripts = (trainRes.ok && trainRes.data) || []
+        this.evalScripts = ((evalRes.ok && evalRes.data) || []).filter(file =>
+          file.scriptType === 'eval' || String(file.fileName).toLowerCase() === 'nocontrol.py')
         this.optionsLoaded = true
-      } catch (error) {
-        console.error('加载脚本选项失败:', error)
-        this.$message.error('加载脚本选项失败，请检查后端服务')
+        if (!trainRes.ok || !evalRes.ok) {
+          this.$message.error('加载脚本选项失败，请检查后端服务')
+        }
       } finally {
         this.loading = false
       }
@@ -447,15 +463,13 @@ export default {
         return
       }
       this.trainModelOptionsPyId = pyId   // 先占位：并发调用不重复请求
-      try {
-        const res = await axios.get('/api/web/basedata/getTrainModelTaskList', {
-          params: pyId ? { pyFileId: pyId } : {}
-        })
-        this.trainTaskOptions = (res.data && res.data.data) || []
-      } catch (error) {
+      // 失败不打扰用户：候选为空时下拉就是没选项，用户仍可手工填
+      const res = await listTrainModelTasks(pyId, { silent: true })
+      if (res.ok) {
+        this.trainTaskOptions = res.data || []
+      } else {
         this.trainModelOptionsPyId = null   // 失败允许下次重试
         this.trainTaskOptions = []
-        console.error('加载历史训练任务失败:', error)
       }
     },
 
@@ -466,12 +480,11 @@ export default {
     async loadDetail() {
       this.loading = true
       try {
-        const response = await axios.get('/api/web/basedata/getPyTaskDetail', {
-          params: { taskId: this.taskId }
-        })
-        const detail = response.data && response.data.data
-        if (!response.data || response.data.code !== 0 || !detail) {
-          this.$message.error((response.data && response.data.message) || '加载任务配置失败')
+        const response = await fetchTaskDetail(this.taskId, { failMessage: '加载任务配置失败' })
+        const detail = response.ok ? response.data : null
+        if (!detail) {
+          // 失败时请求层已经弹过提示；成功但 data 为空是后端异常，这里补一句
+          if (response.ok) this.$message.error('加载任务配置失败')
           this.visibleProxy = false
           return
         }
@@ -572,7 +585,7 @@ export default {
       }
       // 评估卡要选「复用历史成功训练任务」：开弹窗前按当前训练脚本刷新一次候选
       // （期间可能有新的训练任务跑完；override 掉缓存）
-      if (step === 'eval') {
+      if (step === 'eval' && !this.isDirectEvaluation) {
         this.loadTrainModelOptions(true)
       }
       this.configStep = step
@@ -625,8 +638,11 @@ export default {
       if (!this.form.taskName || !this.form.taskName.trim()) {
         return '请填写任务名称'
       }
+      if (this.isDirectEvaluation && this.evalTrainTaskId) {
+        return '直接评估不能同时选择训练任务，请清空训练模型'
+      }
       // 复用历史训练模型时不产生训练子任务 ⇒ 训练卡不必填（后端也跳过训练卡校验）
-      if (!this.isReuseTrainModel) {
+      if (!this.isDirectEvaluation && !this.isReuseTrainModel) {
         if (!this.form.trainPyId) {
           return '请选择训练脚本'
         }
@@ -690,28 +706,21 @@ export default {
       try {
         const payload = {
           taskName: this.form.taskName.trim(),
-          trainConfig: this.buildTrainConfig(),
+          trainConfig: this.isDirectEvaluation ? null : this.buildTrainConfig(),
           evalConfig: this.buildEvalConfig()
         }
-        let response
-        if (this.isEdit) {
-          response = await axios.post('/api/web/basedata/updatePipelineTask', {
-            ...payload,
-            taskId: this.taskId
-          })
-        } else {
-          response = await axios.post('/api/web/basedata/createPipelineTask', payload)
-        }
-        if (response.data && response.data.code === 0) {
+        const failMessage = this.isEdit ? '保存失败' : '创建失败'
+        const response = this.isEdit
+          ? await updatePipelineTask({ ...payload, taskId: this.taskId }, { failMessage })
+          : await createPipelineTask(payload, { failMessage })
+        if (response.ok) {
           this.$message.success(this.isEdit ? '任务已保存' : '任务创建成功')
-          this.$emit('saved', response.data.data)
+          this.$emit('saved', response.data)
           this.visibleProxy = false
-        } else {
-          this.$message.error((response.data && response.data.message) || (this.isEdit ? '保存失败' : '创建失败'))
         }
-      } catch (error) {
-        console.error('保存任务失败:', error)
-        this.$message.error('保存失败：' + (error.message || '网络错误'))
+      } catch (e) {
+        // 请求层不抛异常，能到这里的只有组装 payload 时的意外错误
+        this.$message.error('保存失败：' + (e.message || '未知错误'))
       } finally {
         this.submitting = false
       }
@@ -751,14 +760,6 @@ export default {
 .config-status.is-set {
   color: var(--primary-color, #409eff);
 }
-
-.dialog-hint {
-  margin: 0 0 16px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--secondary-text-color);
-}
-
 .pipeline-task-body {
   min-height: 280px;
 }
@@ -780,9 +781,9 @@ export default {
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--divider-color, #e4e7ed);
-  border-radius: 10px;
+  border-radius: var(--ha-card-border-radius);
   overflow: hidden;
-  background: #ffffff;
+  background: var(--card-background-color);
 }
 
 .card-head {
@@ -790,7 +791,7 @@ export default {
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: linear-gradient(90deg, rgba(64, 158, 255, 0.12), rgba(64, 158, 255, 0.02));
+  background: var(--input-fill-color);
   border-bottom: 1px solid var(--divider-color, #e4e7ed);
 }
 
@@ -800,7 +801,7 @@ export default {
   height: 22px;
   border-radius: 50%;
   background: var(--primary-color, #409eff);
-  color: #ffffff;
+  color: var(--text-primary-color);
   font-size: 12px;
   line-height: 22px;
   text-align: center;
@@ -881,7 +882,7 @@ export default {
 .arrow-line {
   flex: 1 1 auto;
   height: 2px;
-  background: linear-gradient(90deg, rgba(64, 158, 255, 0.2), var(--primary-color, #409eff));
+  background: var(--primary-color);
 }
 
 .arrow-head {
@@ -890,4 +891,13 @@ export default {
   font-size: 20px;
   line-height: 1;
 }
+@media (max-width: 640px) {
+  .pipeline-flow { flex-direction: column; gap: 12px; }
+  .flow-arrow { display: none; }
+  .field-row { flex-direction: column; gap: 0; }
+}
+</style>
+<style>
+.pipeline-task-dialog { max-width: calc(100% - 24px); }
+.pipeline-task-dialog .el-dialog__footer { white-space: normal; }
 </style>

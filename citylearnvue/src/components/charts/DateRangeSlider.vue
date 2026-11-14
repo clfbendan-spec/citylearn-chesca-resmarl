@@ -54,6 +54,6 @@ export default {
   justify-content: space-between;
   margin-bottom: 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 </style>

@@ -40,7 +40,7 @@ from typing import Optional
 from citylearn.citylearn import CityLearnEnv # CityLearn 仿真环境
 
 # 脚本会被复制到任务目录运行，所以用绝对路径定位代码目录
-CITYLEARNPY_DIR = Path(r'D:\citylearn-demo\citylearnpy')
+CITYLEARNPY_DIR = Path(os.environ.get('CITYLEARN_PYTHON_PATH', Path(__file__).resolve().parent)).resolve()
 CHESCA_ROOT = (CITYLEARNPY_DIR / 'CHESCA-copy').resolve()
 
 if not CHESCA_ROOT.is_dir():
@@ -83,6 +83,8 @@ from utils.ches_config import (
 
 from agents.user_agent import SubmissionAgent
 from rewards.user_reward import SubmissionReward
+from assessment_trace import AssessmentTrace
+from evaluation_contract import capture_context, finalize_evaluation, file_sha256, protocol_id
 # 决策过程记录工具
 from utils.ches_trace import (
     ChescaTraceWriter,
@@ -147,6 +149,11 @@ def parse_args():
                         help='分级带宽上沿：r ≥ m_hi 满削（电池同此门槛满放）')
     parser.add_argument('--min_cool_per_c_overheat', type=float, default=DEFAULTS.get('min_cool_per_c_overheat'),
                         help='每超设定点 1°C 至少开多少制冷（冷机开环保底 ✓）')
+    parser.add_argument('--pid_kp', type=float, default=DEFAULTS.get('pid_kp'), help='冷机 PID 比例系数')
+    parser.add_argument('--pid_ki', type=float, default=DEFAULTS.get('pid_ki'), help='冷机 PID 积分系数')
+    parser.add_argument('--pid_kd', type=float, default=DEFAULTS.get('pid_kd'), help='冷机 PID 微分系数')
+    parser.add_argument('--pid_out_temp_scaler', type=float, default=DEFAULTS.get('pid_out_temp_scaler'), help='室外温度影响系数')
+    parser.add_argument('--pid_kp_outage', type=float, default=DEFAULTS.get('pid_kp_outage'), help='停电时冷机 PID 比例系数')
     parser.add_argument('--min_cool_per_c_outdoor_gap', type=float, default=DEFAULTS.get('min_cool_per_c_outdoor_gap'),
                         help='室外温度高于设定点时每 1°C 至少开多少制冷 ✓')
     parser.add_argument('--outdoor_gap_deadband_c', type=float, default=DEFAULTS.get('outdoor_gap_deadband_c'),
@@ -463,6 +470,13 @@ def evaluate_chesca(config, residual=None):
     # 重置环境并计算第一个动作
     observations, _ = env.reset()
     residual.reset()          # 残差环境也重置
+    # 在执行第一个动作前固定本轮环境协议。规则可使用已声明的预测列，
+    # 所以信息权限写明预测来源类别，不将它冒充只用当前观测的策略。
+    evaluation_context = capture_context(
+        env, information_access='current_observations_and_declared_forecasts')
+    dashboard_trace = AssessmentTrace(
+        env, {'simulation_start_time_step': env.episode_tracker.episode_start_time_step,
+              'seconds_per_time_step': env.seconds_per_time_step}, {'label': 'CHESCA'})
 
     agent_time_elapsed = 0
     total_steps = schema_plan['eval_episode_steps']
@@ -491,7 +505,12 @@ def evaluate_chesca(config, residual=None):
         # [详注-END]
         while True:
             # 主环境执行动作，KPI 来自这里
-            observations, _, terminated, truncated, _ = env.step(actions)
+            # 保存动作执行前的状态，再保存环境实际返回的下一状态、奖励和
+            # info。这样界面能还原一次完整转移，而不只是展示规则解释。
+            before = dashboard_trace.before()
+            transition = env.step(actions)
+            observations, _, terminated, truncated, _ = transition
+            dashboard_trace.record(before, actions, transition, 'policy')
             done = terminated or truncated
 
             # 残差环境同步，不影响 KPI
@@ -520,6 +539,17 @@ def evaluate_chesca(config, residual=None):
 
                 save_episode_kpis(env, fallback_dir=Path(output_dir))
                 trace_writer.save(env=env)
+                # 先取出 CHESCA 规则解释，再合并到统一转移日志。最终清单
+                # 记录产物哈希、实际参数和协议；文件缺失不会自动算作完整。
+                detail_path = Path(output_dir) / 'decision_trace.json'
+                detailed_steps = json.loads(detail_path.read_text(encoding='utf-8')).get('steps', []) if detail_path.is_file() else []
+                dashboard_trace.save(output_dir, detailed_steps)
+                finalize_evaluation(
+                    env, evaluation_context, output_dir,
+                    'CHESCA' if residual.marl_mode == 'none' else 'CHESCA_ResMARL',
+                    resolved_parameters=agent_config,
+                    policy_id=protocol_id({'parameters': agent_config, 'entry_sha256': file_sha256(__file__)}),
+                    registry_root=os.environ.get('CITYLEARN_ANCHOR_REGISTRY'))
 
                 if episodes_completed >= config.num_episodes:
                     break
@@ -528,6 +558,11 @@ def evaluate_chesca(config, residual=None):
                 env = update_power_outage_random_seed(env, 90000)
                 observations, _ = env.reset()
                 residual.reset()
+                evaluation_context = capture_context(
+                    env, information_access='current_observations_and_declared_forecasts')
+                dashboard_trace = AssessmentTrace(
+                    env, {'simulation_start_time_step': env.episode_tracker.episode_start_time_step,
+                          'seconds_per_time_step': env.seconds_per_time_step}, {'label': 'CHESCA'})
 
                 trace_recorder.begin_episode()
                 residual.bind()

@@ -717,6 +717,7 @@ class ChescaResidualEnv(_AGENT_ENV_CLS):
                 action_low=self._act_low, action_high=self._act_high,
             )
         final = np.clip(final, self._act_low, self._act_high)
+        final = self._finalize_composed_action(final, base)
         self._last_diag = {
             'alpha': float(self._r_cfg.alpha),
             'gate_reason': summarize_gate_reasons(list(reasons)),
@@ -757,6 +758,10 @@ class ChescaResidualEnv(_AGENT_ENV_CLS):
         return obs, rew, term, trunc, info
 
     # ---- 形态转换 ----------------------------------------------------
+    def _finalize_composed_action(self, final: np.ndarray, base: np.ndarray) -> np.ndarray:
+        """Optional subclass execution guard; applied to BOTH main and mirror actions."""
+        return final
+
     @staticmethod
     def _flat(actions: Any) -> np.ndarray:
         """CHESCA/np 的嵌套动作 → (3n,) 一维。"""

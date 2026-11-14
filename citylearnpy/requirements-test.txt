@@ -1,0 +1,2 @@
+# Install separately from the simulator/ML environment; see tools/run_python_tests.py.
+pytest==8.4.2
