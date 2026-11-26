@@ -1,79 +1,79 @@
 \chapter{平台需求分析与总体设计}
-多建筑仿真里，社区共享数据、单楼设备参数和不同控制器跑出来的文件往往分散存放，靠手工整理很容易弄混数据版本、模型权重和动作轨迹。为此，本研究搭建的平台用任务编号把这些记录串了起来。
+在多栋建筑的仿真评估任务中，需要配置的数据有很多，像社区共享数据、单楼设备参数和不同控制器生成的日志文件往往存放在不同位置，如果只采用人工整理，容易出现混淆数据版本，模型权重和动作轨迹的问题。为了解决这件问题，本平台设计了任务系统并通过统一的调度和配置的流程把这些记录关联起来。
 
 \section{系统需求分析}
-顺着一次控制实验的实际过程，平台拆成4块核心业务。系统管理管账号登录、权限校验以及任务跑完后的站内提醒。数据准备分社区和单楼两层存运行数据，发布版本时自动做时间对齐、单位换算和室温模型训练，也支持直接发起无控制基准评估。算法执行用来登记Python控制脚本和参数定义，按父子任务顺序安排训练与评估。分析模块则直接读取任务目录里的结果文件，把社区能源流向、多任务指标对比和逐时段设备动作展示出来。
+平台按功能分为了四个核心模块。系统管理用来处理账号登录、权限校验以及任务结束后的站内提醒。数据准备用来按社区和单楼两层保存建筑的能源使用相关数据及指标的接入及查看，并可以发布为可用版，发布时完成时间对齐、单位换算和室温模型训练，也支持发起无控制基准评估用于衡量后续的优化空间。算法执行用于登记Python控制脚本和参数定义，按顺序执行训练算法和评估算法。分析模块会读取任务执行里的结果文件，展示社区能源流向、多任务指标对比和逐时段设备动作。
 
 实验室成员可以共用已经登记的控制器，但不同操作会影响不同范围的数据。研究人员调整本次训练轮数，影响的是一条任务记录。脚本维护者修改参数定义，则会改变后续用户看到的表单。平台据此把菜单查看权与写操作授权分开。表\ref{tab:role-perm-ch3}给出两类使用者的授权边界。表中的系统管理员指超级管理员，普通研究人员指按实验分工取得权限的账号。普通账号可获得部分维护权限，具体以管理员为该账号勾选的权限条目为准。
 
 \begin{table}[!htbp]
-\centering\small
-\bicaption{实验角色与主要操作的授权关系}{Authorization of experimental roles for common operations}
-\label{tab:role-perm-ch3}
-\begin{tabular}{@{}P{5.5em}P{4em}P{6em}P{13.5em}@{}}
-\toprule
-操作 & 系统管理员 & 普通研究人员 & 对应权限码或角色 \\ \midrule
-账号与权限管理 & 可管理 & 无权管理 & 超级管理员（\texttt{SUPER\_ADMIN}）角色检查 \\
-脚本编辑与注册 & 可保存 & 授权后可保存 & \texttt{codeEditor:save} \\
-参数模板维护 & 可维护 & 按操作授权 & \texttt{algorithmParam:itemEdit}、\texttt{algorithmParam:setEdit}等 \\
-历史数据导入与发布 & 可写入 & 授权后可写入 & \texttt{building:write} \\
-任务创建、执行与取消 & 可操作 & 创建与运行分别授权 & \texttt{taskList:create}、\texttt{taskList:run}；取消也接受\texttt{codeEditor:run} \\
-指标对比与轨迹回放 & 可查看 & 授权后可查看 & \texttt{menu:recDashboard} \\
-\bottomrule
-\end{tabular}
+    \centering\small
+    \bicaption{实验角色与主要操作的授权关系}{Authorization of experimental roles for common operations}
+    \label{tab:role-perm-ch3}
+    \begin{tabular}{@{}P{5.5em}P{4em}P{6em}P{13.5em}@{}}
+        \toprule
+        操作         & 系统管理员 & 普通研究人员    & 对应权限码或角色                                                                    \\ \midrule
+        账号与权限管理    & 可管理   & 无权管理      & 超级管理员（\texttt{SUPER\_ADMIN}）角色检查                                            \\
+        脚本编辑与注册    & 可保存   & 授权后可保存    & \texttt{codeEditor:save}                                                    \\
+        参数模板维护     & 可维护   & 按操作授权     & \texttt{algorithmParam:itemEdit}、\texttt{algorithmParam:setEdit}等           \\
+        历史数据导入与发布  & 可写入   & 授权后可写入    & \texttt{building:write}                                                     \\
+        任务创建、执行与取消 & 可操作   & 创建与运行分别授权 & \texttt{taskList:create}、\texttt{taskList:run}；取消也接受\texttt{codeEditor:run} \\
+        指标对比与轨迹回放  & 可查看   & 授权后可查看    & \texttt{menu:recDashboard}                                                  \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
-浏览器请求受保护的业务接口时，登录拦截器先从已有会话中取登录用户。会话失效时，即使浏览器仍显示此前打开的任务管理页，下一次提交操作也会收到业务码401。身份有效后，权限拦截器读取控制器方法的权限注解，方法未声明时再读取类上的注解。超级管理员直接通过这一步检查。对其他账号，拦截器逐项比对注解中的权限码与会话中的权限集合，命中任意一项即可通过。各项均未命中时，前端收到业务码403和所需权限提示。两个拦截器均用正常的HTTP响应返回业务错误，页面因此需要检查响应体中的业务码。账号与权限管理还有一层角色检查，服务端核实操作者具备超级管理员身份后才允许分配权限。刷新当前用户信息会重新装入权限集合，研究人员无需专门为一次授权变更重新输入密码。
+浏览器请求受保护的业务接口时，登录拦截器先从已有会话中获取登录用户信息。会话失效时，即使浏览器仍显示此前打开的任务管理页，下一次提交操作也会收到业务码401。身份有效后，权限拦截器读取控制器方法的权限注解，方法未声明时再读取类上的注解。超级管理员直接通过这一步检查。对其他账号，拦截器逐项比对注解中的权限码与会话中的权限集合，命中任意一项即可通过。各项均未命中时，前端收到业务码403和所需权限提示。两个拦截器均用正常的HTTP响应返回业务错误，页面因此需要检查响应体中的业务码。账号与权限管理还有一层角色检查，服务端核实操作者具备超级管理员身份后才允许分配权限。刷新当前用户信息时，服务会重新加载权限列表，研究人员无需专门为一次授权变更重新输入密码。
 
-用户口令采用单向哈希加密存储。编码器每次写入口令都会生成随机附加字符（盐值），将盐值与摘要保存在同一哈希编码串中。两个账号即便设置相同口令，数据库中的编码串也不同。登录时，组件按存储的编码串携带的参数校验输入口令。
+在账号认证安全方面，用户口令采用单向哈希加密存储。编码器每次写入口令都会生成随机附加字符（盐值），将盐值与摘要保存在同一哈希编码串中。两个账号即便设置相同口令，数据库中的编码串也不同。登录时，组件按存储的编码串携带的参数校验输入口令。
 
-训练可能持续数十分钟至数小时。浏览器提交配置后，服务端将当次参数快照写入数据库，按任务编号登记所用脚本、随机种子和数据集版本。HTTP请求结束后，Python子进程仍在后台运行，程序输出重定向到任务日志。研究人员重新打开页面时，前端凭任务编号查询进度。若进程异常退出，可根据退出码和最后几行日志区分参数解析错误与环境启动失败。进程正常退出后还需检查结果文件是否齐全，才能判定评估任务完成。
+训练可能持续数十分钟至数小时。浏览器提交配置后，服务端将当次参数快照写入数据库，按任务编号登记所用脚本、随机种子和数据集版本。HTTP请求结束后，Python子进程仍在后台运行，程序输出重定向到任务日志。研究人员重新打开页面时，前端可以直接查询任务进度。若进程异常退出，可根据退出码和最后几行日志区分参数解析错误与环境启动失败。进程正常退出后还需检查结果文件是否齐全，才能判定评估任务完成。
 
-逐时段回放以任务编号作为查询条件，显示名称仅用于帮助研究人员选中记录。接口用起始步号和读取步数表达所选时间段，并支持按建筑筛选记录。多栋楼在某个时间步各有一行记录时，读取服务先以回合和步号确定时间步，再取对应的建筑记录。该分页方式限制单次传输量，文件完整性仍须结合文件清单、内容摘要和实际完成步数核验。全平台各类需求的验收对象汇总见表\ref{tab:req-summary}。
+逐时段回放以任务编号作为查询条件，显示名称仅用于帮助研究人员选中记录。接口用起始步号和读取步数表达所选时间段，并支持按建筑筛选记录。多栋楼在某个时间步各有一行记录时，读取服务先以回合和步号确定时间步，再取对应的建筑记录。不过，分页查询只负责按需返回局部轨迹，结果文件是否完整仍须结合文件清单、内容摘要和实际完成步数单独核验。全平台各类需求的验收对象汇总见表\ref{tab:req-summary}。
 
 \begin{table}[!htbp]
-\centering
-\bicaption{平台需求与可核对的验收对象}{Platform requirements and verifiable acceptance objects}
-\label{tab:req-summary}
-\begin{tabular}{P{5em}P{8em}P{16em}}
-\toprule
-需求类别 & 关键需求 & 验收对象 \\ \midrule
-实验配置 & 区分训练与评估 & 页面配置与任务设置及脚本实际参数一致 \\
-任务管理 & 长任务异步执行 & 创建与执行接口及子任务和进程退出记录 \\
-结果分析 & 同口径比较 & 任务结果文件中的指标范围与分母及起止时间段 \\
-决策诊断 & 动作与状态追溯 & 建筑编号、时间步、设备控制动作与状态记录 \\
-可靠性 & 异常可定位 & 失败状态、输出日志及结果文件完整性 \\
-可用性与安全 & 交互及访问控制 & 实际浏览器用例与权限及非法输入测试记录 \\
-\bottomrule
-\end{tabular}
+    \centering
+    \bicaption{平台需求与可核对的验收对象}{Platform requirements and verifiable acceptance objects}
+    \label{tab:req-summary}
+    \begin{tabular}{P{5em}P{8em}P{16em}}
+        \toprule
+        需求类别   & 关键需求    & 验收对象                  \\ \midrule
+        实验配置   & 区分训练与评估 & 页面配置与任务设置及脚本实际参数一致    \\
+        任务管理   & 长任务异步执行 & 创建与执行接口及子任务和进程退出记录    \\
+        结果分析   & 同口径比较   & 任务结果文件中的指标范围与分母及起止时间段 \\
+        决策诊断   & 动作与状态追溯 & 建筑编号、时间步、设备动作与状态记录    \\
+        可靠性    & 异常可定位   & 失败状态、输出日志及结果文件完整性     \\
+        可用性与安全 & 交互及访问控制 & 实际浏览器用例与权限及非法输入测试记录   \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
 \section{总体架构与技术选择}
 图\ref{系统架构图}给出了平台的B/S（Browser/Server）四层架构。研究人员在Vue页面配置参数、提交任务或查询已有结果。训练和仿真由服务端的Spring Boot调度层启动Python计算进程在后台执行，不占用浏览器资源。业务记录和运行文件分别存入MySQL和文件系统。
 \begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.98\textwidth]{images/platform_20261111/platform_architecture.png}
-\bicaption{平台主要组件及调用关系}{Platform components and invocation relationships}
-\label{系统架构图}
+    \centering
+    \includegraphics[width=0.98\textwidth]{images/platform_20261111/platform_architecture.png}
+    \bicaption{平台主要组件及调用关系}{Platform components and invocation relationships}
+    \label{系统架构图}
 \end{figure}
 
 研究人员在浏览器提交参数后，Vue将表单发送给Spring Boot。后端创建任务、启动Python子进程并在MySQL记录状态。Python加载指定版本的数据集，逐时间步更新环境，结束后写入KPI汇总表和动作状态CSV，后端检查文件并返回指标与轨迹。训练和仿真在独立目录运行，曲线查询只读取请求的时间范围。
 
 各层技术选型与职责见表\ref{tab:tech-stack}。后端使用Java，科学计算使用Python。Web前端以Vue组织页面组件，用Element UI构建参数表单\cite{elementui2024}，用ECharts绘制交互曲线，后端由Spring Boot承接并发请求、权限校验和子进程调度。Python计算层复用CityLearn物理仿真内核、Gymnasium标准接口、PyTorch深度学习框架\cite{paszke2019}以及Ray RLlib分布式采样工具\cite{liang2018rllib}。存储层按体量拆分为MySQL关系表与本地文件夹，高频检索记录存入数据库，大体积CSV、神经网络权重（\texttt{.pth}/\texttt{.pt}）和轨迹文件写入磁盘。两部分数据依靠社区ID、数据集发布编号及任务唯一标识（Universally Unique Identifier，UUID）相互关联。为防两类后缀相同的权重文件混淆，发布阶段生成的LSTM室温预测模型随数据集版本目录存放，作为环境物理组件加载。强化学习训练保存的演员-评论家检查点则存放在各自任务目录中，专供策略评估使用。
 \begin{table}[!htbp]
-\centering
-\bicaption{平台技术栈及职责}{Technology stack and responsibilities}
-\label{tab:tech-stack}
-\begin{tabular}{P{7em}P{10em}P{12em}}
-\toprule
-组件 & 主要职责 & 采用该组件的原因 \\ \midrule
-Vue与Element UI & 参数表单和任务页面 & 复用页面组件与交互方式 \\
-ECharts & 指标对比和运行曲线 & 支持建筑筛选与时间切换 \\
-Spring Boot & 业务接口和Python进程管理 & 统一处理配置与结果读取 \\
-MySQL与文件系统 & 业务记录和实验文件 & 按查询需求选择保存方式 \\
-CityLearn与Python训练库 & 环境模拟和策略训练 & 复用已有模型与训练工具 \\
-\bottomrule
-\end{tabular}
+    \centering
+    \bicaption{平台技术栈及职责}{Technology stack and responsibilities}
+    \label{tab:tech-stack}
+    \begin{tabular}{P{7em}P{10em}P{12em}}
+        \toprule
+        组件                  & 主要职责            & 采用该组件的原因    \\ \midrule
+        Vue与Element UI      & 参数表单和任务页面       & 复用页面组件与交互方式 \\
+        ECharts             & 指标对比和运行曲线       & 支持建筑筛选与时间切换 \\
+        Spring Boot         & 业务接口和Python进程管理 & 统一处理配置与结果读取 \\
+        MySQL与文件系统          & 业务记录和实验文件       & 按查询需求选择保存方式 \\
+        CityLearn与Python训练库 & 环境模拟和策略训练       & 复用已有模型与训练工具 \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
 \section{核心功能模块设计}\label{sec:core-modules}
@@ -81,153 +81,153 @@ CityLearn与Python训练库 & 环境模拟和策略训练 & 复用已有模型�
 
 数据与基准管理模块采用日常接入数据维护与仿真数据集版本发布2层分离设计。日常维护阶段，系统以社区为单位存储共享气象、分时段电价以及碳排放强度序列，以单栋建筑为单位存储刚需用电功率、设备参数以及上传批次记录。用户勾选参与建筑并指定时间范围后，发布服务将社区共享数据与各楼序列按统一时间步长对齐拼接、换算为标准物理单位，并生成符合CityLearn数据格式要求的环境配置文件与各楼CSV表。正式生成发布包前，系统先检查时间序列是否存在断点，并核对设备参数与控制通道是否匹配。校验通过后，后台为每栋建筑训练并导出室温预测模型，再调用CityLearn试运行24个时间步，确认环境能够正常初始化和推进。此后即便日常维护层继续追加或修正记录，已发布版本目录依然保持只读不变，用户还可直接在已发布版本上一键发起无控制基准（NoControl）初步评估，快速建立该数据集场景的性能对比基准。
 
-从数据使用者的角度，发布经历草稿、预检和只读发布三个阶段。草稿由社区运行数据表、建筑运行数据表及设备配置共同构成。研究人员增补某栋楼的历史运行数据后，可以按本次选中的建筑重新查询可用日期。公共区间末端还要为构造预报保留24个时间步，页面可选的评估终点因而早于原始数据的终点。预览服务在临时目录中按请求构造场景，向页面返回可发布状态标识或具体阻断原因，随后清理预览目录。预览通过后，正式发布仍需按当次选定的建筑与区间重新检查。用户在两次操作之间改过设备资料时，正式运行采用提交发布时的输入。
+从数据使用者的角度，发布经历草稿、预检和只读发布三个阶段。草稿由社区运行数据表、建筑运行数据表及设备配置共同构成。研究人员增补某栋楼的历史运行数据后，可以按本次选中的建筑重新查询可用日期。公共区间末端还要为构造预报保留24个时间步，页面可选的评估终点因而早于原始数据的终点。预览服务在临时目录中按请求构造场景，向页面返回是否可发布的状态或未通过检查的具体原因，随后清理预览目录。预览通过后，正式发布仍需按当次选定的建筑与区间重新检查。用户在两次操作之间改过设备资料时，正式运行采用提交发布时的输入。
 
 正式发布为这次输入分配新的版本编号和目录标识，场景文件、室温模型及预检结果写入同一版本。发布服务从文件清单中读取来源记录和内容摘要，随后在数据库事务内同时登记版本、所属社区和可供任务选用的数据集记录。
 
-算法与异步实验管理模块把登记的Python脚本转为网页表单，并按父子任务顺序运行。创建任务时锁定参数快照，执行时再启动Python进程。任务编号同时绑定输出目录，避免结果覆盖。AAC-MADRL在线案例先剔除初始权重，再从各楼不适比例低于$10\%$的候选中选择训练期平均电费最低的权重。
+算法与异步实验管理模块把登记的Python脚本转为网页表单，并按父子任务顺序运行。创建任务时锁定参数快照，执行时再启动Python进程。任务编号同时绑定输出目录，避免结果覆盖。对于需要多轮训练的控制器，模块会按预设规则筛选中间检查点。以AAC-MADRL在线案例为例，系统先剔除尚未收敛的初始权重，再从各楼不适比例均低于$10\%$的候选中选择训练期平均电费最低的权重用于评估。
 
 编排任务在创建后进入待执行状态，研究人员此时仍可通过编辑接口调整参数卡。启动接口核实任务类型和当前状态，再检查各子任务的脚本是否可执行。常规流程将父任务和训练子任务标记为执行中，评估子任务设为等待。训练成功才启动评估。训练失败时，父记录同步写入失败状态，研究人员可以在训练子任务目录查看控制台输出及错误说明。评估需要复用既有训练成果时，参数卡保存已有训练任务编号，仅创建此次评估的子记录。无需训练、直接运行评估的脚本也能从待执行进入评估。这两种情况均不包含训练子任务记录，详情查询只返回实际存在的子记录。
 
-研究人员终止任务时，后台终止相应进程，并把这次操作反映在任务状态中。原先的控制台输出保存在任务目录，后续查看仍能确定取消发生前最后完成的步骤。服务重启后需核对任务状态。后台以任务目录保存的进程号和启动时刻核实进程身份，确认存活便恢复监控。若进程已退出，则读取磁盘上的退出码记录文件判断终态。既无法确认进程又缺少退出码记录文件时，任务记为中断，并写入错误说明。这样，用户终止、程序报错和服务意外中断各自有可查的记录，排查历史任务不必根据日志最后一行猜测运行状态。
+研究人员终止任务时，后台终止相应进程，并把这次操作反映在任务状态中。原先的控制台输出保存在任务目录，后续查看仍能确定取消发生前最后完成的步骤。服务重启后需核对任务状态。后台以任务目录保存的进程号和启动时刻核实进程身份，确认进程仍在运行便恢复监控。若进程已退出，则读取磁盘上的退出码记录文件判断终态。既无法确认进程又缺少退出码记录文件时，任务记为中断，并写入错误说明。这样，用户终止、程序报错和服务意外中断各自有可查的记录，排查历史任务不必根据日志最后一行猜测运行状态。
 
 可视化与过程分析模块服务于实验后的效果对比与异常排查，界面按整体指标对比、异常时段定位和逐时段动作分析3层展开。模型优选与多维指标面板横向比较不同控制器在社区总电费、碳排放量、社区最高用电功率以及室温不适比例上的表现，用于筛出综合表现较好的策略或定位存在不足的任务。社区能源流向分配图与逐时段净用电（电网交互功率）变化曲线展示光伏发电自用率，以及储能充放电在峰谷电价切换前后的响应趋势。逐时段过程诊断面板进一步细化到具体建筑与具体时间步，对照室外气温和分时段电价同屏查看空调供冷功率、电池剩余电量比例以及3通道控制指令的联动变化，查明某次费用激增或温度越界由哪一时间步的何种动作引发。
 
 \section{数据库概念设计}
 为兼顾业务基础信息高效检索与大体积结果文件保存，平台在存储层将关系型数据库表与磁盘结合起来。MySQL中用户与权限通过关联表多对多映射，实验任务通过外键引用Python脚本与数据集发布版本，参数定义模板与任务实际取值分开存储。磁盘中每个发布包与每次任务生成的模型权重、日志和逐时段轨迹均存放在以唯一标识命名的文件夹内。这种拆分方式让SQL支持多条件分页查询，也避免把数十兆字节的模型权重或数万行时序CSV存入数据库字段，减少读写开销。图\ref{数据库E-R图}展示了核心数据库表与磁盘任务文件之间的逻辑关联结构。
 \begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.98\textwidth]{images/architecture_20261104/storage_relations.png}
-\bicaption{关系表与任务文件的业务关联示意}{Logical associations between relational tables and task artifacts}
-\label{数据库E-R图}
+    \centering
+    \includegraphics[width=0.98\textwidth]{images/architecture_20261104/storage_relations.png}
+    \bicaption{关系表与任务文件的业务关联示意}{Logical associations between relational tables and task artifacts}
+    \label{数据库E-R图}
 \end{figure}
 
 为避免同一脚本多次调参时结果相互覆盖，平台将每次任务的完整输出保存在对应任务目录下。同时，社区评估指标表使用评估任务ID、候选控制器名称、统计层级与建筑编号组成组合键，使同栋建筑在不同任务或不同超参数批次下的电费与不适比例独立存储。表\ref{tab:db-entities}与表\ref{tab:community-storage}分别列出了核心业务表、磁盘目录以及社区评估对象的存储职责分工。
 \begin{table}[!htbp]
-\centering
-\bicaption{实际关系表与文件的存储分工}{Storage responsibilities of actual tables and files}
-\label{tab:db-entities}
-\begin{tabular}{P{10em}P{10em}P{9em}}
-\toprule
-表或存储对象 & 核心内容 & 关联依据 \\ \midrule
-\makecell{\texttt{user}\\\texttt{permission}\\\texttt{user\_permission}} & 用户与权限条目 & \texttt{user\_permission}关联 \\
-\texttt{py\_file} & 脚本登记及脚本配置 & 供任务引用 \\
-\texttt{citylearn\_dataset} & 数据集资源目录 & 任务设置选择 \\
-\texttt{py\_task} & 状态与配置及编排信息 & 脚本ID和子任务约定 \\
-\texttt{kpis} & 建筑及社区指标汇总表 & 脚本级最新摘要 \\
-\makecell{\texttt{algorithm\_param\_}\\\texttt{config}\\\texttt{algorithm\_param\_}\\\texttt{config\_set}} & 参数定义、分组和配置值 & 定义与取值分开 \\
-\texttt{outkpis/\{taskId\}/} & 逐时段轨迹、模型、日志和评估指标 & 路径按任务标识推导 \\
-\bottomrule
-\end{tabular}
+    \centering
+    \bicaption{实际关系表与文件的存储分工}{Storage responsibilities of actual tables and files}
+    \label{tab:db-entities}
+    \begin{tabular}{P{10em}P{10em}P{9em}}
+        \toprule
+        表或存储对象                                                                                                     & 核心内容             & 关联依据                        \\ \midrule
+        \makecell{\texttt{user}\\\texttt{permission}\\\texttt{user\_permission}}                                   & 用户与权限条目          & \texttt{user\_permission}关联 \\
+        \texttt{py\_file}                                                                                          & 脚本登记及脚本配置        & 供任务引用                       \\
+        \texttt{citylearn\_dataset}                                                                                & 数据集资源目录          & 任务设置选择                      \\
+        \texttt{py\_task}                                                                                          & 状态与配置及编排信息       & 脚本ID和子任务约定                  \\
+        \texttt{kpis}                                                                                              & 建筑及社区指标汇总表       & 脚本级最新摘要                     \\
+        \makecell{\texttt{algorithm\_param\_}\\\texttt{config}\\\texttt{algorithm\_param\_}\\\texttt{config\_set}} & 参数定义、分组和配置值      & 定义与取值分开                     \\
+        \texttt{outkpis/\{taskId\}/}                                                                               & 逐时段轨迹、模型、日志和评估指标 & 路径按任务标识推导                   \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 \begin{table}[!htbp]
-\centering
-\bicaption{新增社区数据与评估对象的存储关系}{Storage relationships for community data and assessment objects}
-\label{tab:community-storage}
-\begin{tabular}{P{8em}P{11em}P{10em}}
-\toprule
-对象 & 主要记录 & 关联与用途 \\ \midrule
-社区与建筑 & 名称与设备及业务配置 & 归属关系限定共享数据边界 \\
-共享与本地运行数据 & 时间戳、运行数据及来源 & 按社区或建筑与时间索引 \\
-导入批次 & 原始数据内容与摘要及接收统计 & 保留输入并校验重复数据 \\
-数据集发布 & 建筑集合与时间段及来源和摘要 & 通过发布标识引用场景 \\
-社区评估任务 & 配置与状态及结果和错误 & 关联社区和发布版本 \\
-社区评估指标 & 费用与不适及完整指标 & 按任务与候选和建筑保存 \\
-\bottomrule
-\end{tabular}
+    \centering
+    \bicaption{新增社区数据与评估对象的存储关系}{Storage relationships for community data and assessment objects}
+    \label{tab:community-storage}
+    \begin{tabular}{P{8em}P{11em}P{10em}}
+        \toprule
+        对象        & 主要记录           & 关联与用途        \\ \midrule
+        社区与建筑     & 名称与设备及业务配置     & 归属关系限定共享数据边界 \\
+        共享与本地运行数据 & 时间戳、运行数据及来源    & 按社区或建筑与时间索引  \\
+        导入批次      & 原始数据内容与摘要及接收统计 & 保留输入并校验重复数据  \\
+        数据集发布     & 建筑集合与时间段及来源和摘要 & 通过发布标识引用场景   \\
+        社区评估任务    & 配置与状态及结果和错误    & 关联社区和发布版本    \\
+        社区评估指标    & 费用与不适及完整指标     & 按任务与候选和建筑保存  \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
-\texttt{py\_task}表行数据对应创建的具体任务，主要字段见表\ref{tab:task-physical-ch3}。拆分训练和评估参数卡后，父任务只需记录本次编排的名称和整体状态。子任务编号由父任务编号追加训练或评估后缀生成。平台按此前缀关系恢复父任务编号，在详情页按训练、评估的顺序查找子记录。任务类型和子任务标志需要一起读取。直接从代码编辑器运行的脚本与编排子任务共用脚本任务类型，但前者可以单独出现，后者须结合所属父任务解析。脚本编号允许为空，父记录因此可以独立记录整体状态。
+\texttt{py\_task}表的每行记录对应一次具体任务，主要字段见表\ref{tab:task-physical-ch3}。拆分训练和评估参数卡后，由于脚本编号允许为空，父任务只需独立记录本次编排的名称和整体状态，子任务编号则由父任务编号追加训练或评估后缀生成。平台依据此前缀关系还原父任务编号，并在详情页按训练、评估的顺序查找子记录。解析任务时需结合任务类型与子任务标志共同判断，直接从代码编辑器运行的脚本与编排子任务虽然共用脚本任务类型，但前者可以单独存在，后者须结合所属父任务解析。
 
 \begin{table}[!htbp]
-\centering\small
-\bicaption{脚本及编排任务的核心字段}{Core fields of script and pipeline tasks}
-\label{tab:task-physical-ch3}
-\begin{tabular}{@{}P{7em}P{7em}P{6.5em}P{9em}@{}}
-\toprule
-字段名 & 数据类型 & 约束 & 字段说明 \\ \midrule
-\texttt{id} & \texttt{VARCHAR(64)} & 主键，非空 & 父任务或子任务编号 \\
-\texttt{py\_id} & \texttt{VARCHAR(64)} & 可空 & 脚本登记编号 \\
-\texttt{type} & \texttt{TINYINT(1)} & 非空，默认1 & 0为编排，1为脚本 \\
-\texttt{is\_subtask} & \texttt{TINYINT(1)} & 非空，默认0 & 1表示编排子任务 \\
-\texttt{config} & \texttt{TEXT} & 可空 & 数据集及参数卡快照 \\
-\texttt{status} & \texttt{INT} & 可空 & 任务执行状态码 \\
-\texttt{task\_name} & \texttt{VARCHAR(128)} & 可空 & 列表展示的任务名 \\
-\texttt{if\_notified} & \texttt{TINYINT(1)} & 可空，默认0 & 任务提醒已读标记 \\
-\bottomrule
-\end{tabular}
+    \centering\small
+    \bicaption{脚本及编排任务的核心字段}{Core fields of script and pipeline tasks}
+    \label{tab:task-physical-ch3}
+    \begin{tabular}{@{}P{7em}P{7em}P{6.5em}P{9em}@{}}
+        \toprule
+        字段名                   & 数据类型                  & 约束     & 字段说明      \\ \midrule
+        \texttt{id}           & \texttt{VARCHAR(64)}  & 主键，非空  & 父任务或子任务编号 \\
+        \texttt{py\_id}       & \texttt{VARCHAR(64)}  & 可空     & 脚本登记编号    \\
+        \texttt{type}         & \texttt{TINYINT(1)}   & 非空，默认1 & 0为编排，1为脚本 \\
+        \texttt{is\_subtask}  & \texttt{TINYINT(1)}   & 非空，默认0 & 1表示编排子任务  \\
+        \texttt{config}       & \texttt{TEXT}         & 可空     & 数据集及参数卡快照 \\
+        \texttt{status}       & \texttt{INT}          & 可空     & 任务执行状态码   \\
+        \texttt{task\_name}   & \texttt{VARCHAR(128)} & 可空     & 列表展示的任务名  \\
+        \texttt{if\_notified} & \texttt{TINYINT(1)}   & 可空，默认0 & 任务提醒已读标记  \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
-任务参数卡中的数据集编号和场景标识随参数一起打包成文本保存。查阅历史实验时，先定位子记录，再从卡片读出当次使用的数据集与训练轮数。进程信息按任务编号到磁盘读取。\texttt{task.pid}保存进程号与启动时刻，\texttt{exit\_code.txt}记录进程退出码，\texttt{output.log}保存控制台输出。该表以任务编号为主键，父子关联与文件定位由应用层维护，图中的连线表示脚本、版本与任务之间的业务关系。核对一次评估失败时，任务状态说明后台作出的判定，退出记录和子任务日志说明得出该判定的运行过程。
+该表以任务编号为主键，父子关联与文件定位由应用层维护，图中的连线表示脚本、版本与任务之间的业务关系。任务参数卡中的数据集编号和场景标识随参数一起打包成文本保存，查阅历史实验时，先定位子记录，再从卡片读出当次使用的数据集与训练轮数。进程运行信息则按任务编号存放在磁盘目录中，其中\texttt{task.pid}保存进程号与启动时刻，\texttt{exit\_code.txt}记录进程退出码，\texttt{output.log}保存控制台输出。核对一次评估失败时，任务状态反映后台作出的判定，退出记录和子任务日志则用于还原得出该判定的运行过程。
 
 表\ref{tab:param-physical-ch3}分别列出参数定义表和配置组表的字段。主键唯一标识一项参数定义，中文名称用于界面展示，参数名供脚本配置与命令行转换使用。参数类型决定表单如何接受输入。以单选参数为例，定义记录给出可选项，选项中分别保存脚本实际接收的键和供用户辨认的文字。研究人员看到的中文名称可以与传给脚本的字符串不同。查验某项参数对实验的影响时，应从任务配置还原当次取值，再查看相应定义解释其含义。
 
 \begin{table}[!htbp]
-\centering\small
-\bicaption{参数目录与配置组的核心字段}{Core fields of parameter definitions and parameter groups}
-\label{tab:param-physical-ch3}
-\begin{tabular}{@{}P{8em}P{7em}P{6.5em}P{8em}@{}}
-\toprule
-字段名 & 数据类型 & 约束 & 字段说明 \\ \midrule
-\texttt{id} & \texttt{INT} & 自增主键 & 参数定义编号 \\
-\texttt{name} & \texttt{VARCHAR(128)} & 非空 & 参数显示名 \\
-\texttt{param\_name} & \texttt{VARCHAR(128)} & 非空 & 参数调用名 \\
-\texttt{value\_type} & \texttt{VARCHAR(32)} & 可空 & 参数值类型 \\
-\texttt{default\_value} & \texttt{TEXT} & 可空 & 选择型参数的选项 \\
-\texttt{is\_member} & \texttt{TINYINT(1)} & 非空，默认0 & 参数是否属于组 \\
-组表\texttt{id} & \texttt{INT} & 自增主键 & 配置组编号 \\
-组表\texttt{name} & \texttt{VARCHAR(128)} & 非空 & 配置组显示名 \\
-组表\texttt{members} & \texttt{TEXT} & 可空 & 组内参数编号数组 \\
-\bottomrule
-\end{tabular}
+    \centering\small
+    \bicaption{参数目录与配置组的核心字段}{Core fields of parameter definitions and parameter groups}
+    \label{tab:param-physical-ch3}
+    \begin{tabular}{@{}P{8em}P{7em}P{6.5em}P{8em}@{}}
+        \toprule
+        字段名                     & 数据类型                  & 约束     & 字段说明     \\ \midrule
+        \texttt{id}             & \texttt{INT}          & 自增主键   & 参数定义编号   \\
+        \texttt{name}           & \texttt{VARCHAR(128)} & 非空     & 参数显示名    \\
+        \texttt{param\_name}    & \texttt{VARCHAR(128)} & 非空     & 参数调用名    \\
+        \texttt{value\_type}    & \texttt{VARCHAR(32)}  & 可空     & 参数值类型    \\
+        \texttt{default\_value} & \texttt{TEXT}         & 可空     & 选择型参数的选项 \\
+        \texttt{is\_member}     & \texttt{TINYINT(1)}   & 非空，默认0 & 参数是否属于组  \\
+        组表\texttt{id}           & \texttt{INT}          & 自增主键   & 配置组编号    \\
+        组表\texttt{name}         & \texttt{VARCHAR(128)} & 非空     & 配置组显示名   \\
+        组表\texttt{members}      & \texttt{TEXT}         & 可空     & 组内参数编号数组 \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
-组成员字段保存参数定义编号组成的数组。单独参数页面用成员标志筛出组外参数，打开配置组详情后，再按编号读取组内定义。组内成员变动时，服务同步维护数组和成员标志。配置组编号与参数定义编号来自各自的自增主键，两者即使数值相同也指向不同对象。脚本登记记录保存此脚本选用的参数及其预设值，任务参数卡再保存本次实验提交的值。按组调整可选目录时，这三处记录各有用途。通过配置组可查明参数归属的分组，精确复算一次训练则应读取对应的任务参数卡。
+组成员字段保存参数定义编号组成的数组。单独参数页面用成员标志筛出未分组的参数，打开配置组详情后，再按编号读取组内定义。组内成员变动时，服务同步维护数组和成员标志。配置组编号与参数定义编号来自各自的自增主键，两者即使数值相同也指向不同对象。脚本登记记录保存此脚本选用的参数及其预设值，任务参数卡再保存本次实验提交的值。按组调整可选目录时，这三处记录各有用途。通过配置组可查明参数归属的分组，精确复算一次训练则应读取对应的任务参数卡。
 
 社区数据集发布记录按版本组织，字段见表\ref{tab:release-physical-ch3}。发布编号提供业务查询入口，唯一的场景标识同时用于建立磁盘目录与数据集资源记录。两次发布可以选用相同的社区名称、相同的建筑和相同的时间段，每次仍各自分配编号。使用者核对输入时可先比较起止日期与建筑数，再查来源记录确认参与楼栋及其顺序。即使建筑数相同，替换其中一栋也会改变逐楼指标中建筑编号的含义。
 
 \begin{table}[!htbp]
-\centering\small
-\bicaption{社区发布版本与归属记录的核心字段}{Core fields of community releases and their ownership records}
-\label{tab:release-physical-ch3}
-\begin{tabular}{@{}P{9em}P{7em}P{6em}P{8em}@{}}
-\toprule
-字段名 & 数据类型 & 约束 & 字段说明 \\ \midrule
-\texttt{id} & \texttt{VARCHAR(36)} & 主键，非空 & 发布编号 \\
-\texttt{schema\_key} & \texttt{VARCHAR(128)} & 唯一，非空 & 场景及目录标识 \\
-\texttt{start\_time} & \texttt{VARCHAR(40)} & 非空 & 已发布时间段起点 \\
-\texttt{end\_time} & \texttt{VARCHAR(40)} & 非空 & 已发布时间段终点 \\
-\texttt{time\_steps} & \texttt{INT} & 非空 & 发布包时间步数 \\
-\texttt{building\_count} & \texttt{INT} & 非空 & 参与建筑数量 \\
-\texttt{sources\_json} & \texttt{LONGTEXT} & 非空 & 参与建筑的来源列表 \\
-\texttt{content\_hash} & \texttt{VARCHAR(64)} & 非空 & 文件清单摘要 \\
-\texttt{community\_id} & \texttt{BIGINT} & 非空，有索引 & 归属表中的社区编号 \\
-\bottomrule
-\end{tabular}
+    \centering\small
+    \bicaption{社区发布版本与归属记录的核心字段}{Core fields of community releases and their ownership records}
+    \label{tab:release-physical-ch3}
+    \begin{tabular}{@{}P{9em}P{7em}P{6em}P{8em}@{}}
+        \toprule
+        字段名                      & 数据类型                  & 约束     & 字段说明      \\ \midrule
+        \texttt{id}              & \texttt{VARCHAR(36)}  & 主键，非空  & 发布编号      \\
+        \texttt{schema\_key}     & \texttt{VARCHAR(128)} & 唯一，非空  & 场景及目录标识   \\
+        \texttt{start\_time}     & \texttt{VARCHAR(40)}  & 非空     & 已发布时间段起点  \\
+        \texttt{end\_time}       & \texttt{VARCHAR(40)}  & 非空     & 已发布时间段终点  \\
+        \texttt{time\_steps}     & \texttt{INT}          & 非空     & 发布包时间步数   \\
+        \texttt{building\_count} & \texttt{INT}          & 非空     & 参与建筑数量    \\
+        \texttt{sources\_json}   & \texttt{LONGTEXT}     & 非空     & 参与建筑的来源列表 \\
+        \texttt{content\_hash}   & \texttt{VARCHAR(64)}  & 非空     & 文件清单摘要    \\
+        \texttt{community\_id}   & \texttt{BIGINT}       & 非空，有索引 & 归属表中的社区编号 \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
-社区归属表以发布编号为主键，以社区编号建立普通索引，查询版本目录前会核实该发布编号属于当前社区。资源表另存可移植的相对路径，在部署根目录下拼出实际路径。文件清单按相对文件名记录摘要，清单本身不参与逐文件摘要计算。发布记录另存清单所列文件摘要的汇总值。评估前先核对汇总值与登记值，再逐个校验实际文件，两级摘要可帮助后台及时发现被替换或缺失的输入文件。
+社区归属表以发布编号为主键，以社区编号建立普通索引，查询版本目录前会核实该发布编号属于当前社区。资源表另存可移植的相对路径，在部署根目录下拼出实际路径。为保证发布包内容完整，文件清单按相对文件名记录各文件摘要，清单本身不参与逐文件摘要计算，发布记录则另存清单所列文件摘要的汇总值。评估前先核对汇总值与登记值，再逐个校验实际文件，两级摘要可帮助后台及时发现被替换或缺失的输入文件。
 
 社区评估记录分为任务表与指标明细表，核心列见表\ref{tab:assessment-physical-ch3}。任务行记录此次评估所属的社区、发布版本、提交的配置和当前状态，失败说明与成功结果分别记录。社区编号、发布编号、创建时间组成的索引支持在一个社区内按版本查询评估历史。进入某次评估后，以评估编号检索指标明细，每个成功候选都有社区汇总行，若结果提供逐楼指标，则逐栋增写明细行。未成功的候选跳过写入，因此查询缺少某行时还需查看候选执行状态。
 
 \begin{table}[!htbp]
-\centering\small
-\bicaption{社区评估任务与指标明细的核心字段}{Core fields of assessment runs and their metric records}
-\label{tab:assessment-physical-ch3}
-\begin{tabular}{@{}P{10em}P{7.6em}P{5.4em}P{7.5em}@{}}
-\toprule
-字段名 & 数据类型 & 约束 & 字段说明 \\ \midrule
-任务表\texttt{id} & \texttt{VARCHAR(36)} & 主键，非空 & 评估编号 \\
-任务表\texttt{release\_id} & \texttt{VARCHAR(36)} & 非空 & 对应发布版本 \\
-\texttt{run\_id} & \texttt{VARCHAR(36)} & 联合主键 & 所属评估编号 \\
-\texttt{case\_id} & \texttt{VARCHAR(64)} & 联合主键 & 候选控制器标识 \\
-\texttt{level\_name} & \texttt{VARCHAR(32)} & 联合主键 & 社区或单楼层级 \\
-\texttt{building\_name} & \texttt{VARCHAR(120)} & 联合主键 & 楼栋名或社区标识 \\
-\texttt{cost\_total} & \texttt{DECIMAL(20,10)} & 可空 & 电费总额 \\
-\texttt{discomfort\_}\allowbreak\texttt{proportion} & \texttt{DECIMAL(20,10)} & 可空 & 室温不适比例 \\
-\texttt{metrics\_json} & \texttt{LONGTEXT} & 非空 & 同层级完整指标 \\
-\bottomrule
-\end{tabular}
+    \centering\small
+    \bicaption{社区评估任务与指标明细的核心字段}{Core fields of assessment runs and their metric records}
+    \label{tab:assessment-physical-ch3}
+    \begin{tabular}{@{}P{10em}P{7.6em}P{5.4em}P{7.5em}@{}}
+        \toprule
+        字段名                                                 & 数据类型                    & 约束    & 字段说明     \\ \midrule
+        任务表\texttt{id}                                      & \texttt{VARCHAR(36)}    & 主键，非空 & 评估编号     \\
+        任务表\texttt{release\_id}                             & \texttt{VARCHAR(36)}    & 非空    & 对应发布版本   \\
+        \texttt{run\_id}                                    & \texttt{VARCHAR(36)}    & 联合主键  & 所属评估编号   \\
+        \texttt{case\_id}                                   & \texttt{VARCHAR(64)}    & 联合主键  & 候选控制器标识  \\
+        \texttt{level\_name}                                & \texttt{VARCHAR(32)}    & 联合主键  & 社区或单楼层级  \\
+        \texttt{building\_name}                             & \texttt{VARCHAR(120)}   & 联合主键  & 楼栋名或社区标识 \\
+        \texttt{cost\_total}                                & \texttt{DECIMAL(20,10)} & 可空    & 电费总额     \\
+        \texttt{discomfort\_}\allowbreak\texttt{proportion} & \texttt{DECIMAL(20,10)} & 可空    & 室温不适比例   \\
+        \texttt{metrics\_json}                              & \texttt{LONGTEXT}       & 非空    & 同层级完整指标  \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
 明细表的四列联合主键共同定位一条指标记录。社区行使用社区层级和固定名称，单楼行使用建筑层级和结果中的建筑名。该名称是场景内的标识，引用原始建筑档案时还需结合发布来源。评估服务按本次评估编号清理并重写其指标行，另一次运行因编号不同而保留。同一候选在同一版本上重复评估两次，仍可分别取出各栋楼的电费与不适比例。单项指标字段允许为空，未提供数值时保留为空以表示缺失。任务的完整指标保存在相应层级的结构化文本中，研究人员还可以对照汇总行与单楼行，判断某个结论适用于整个社区还是只适用于个别建筑。
@@ -235,4 +235,4 @@ CityLearn与Python训练库 & 环境模拟和策略训练 & 复用已有模型�
 表\ref{tab:db-entities}至表\ref{tab:assessment-physical-ch3}中的发布编号和任务编号用于定位输入版本、结果目录和建筑曲线。任务同时检查退出码和结果文件，缺少KPI汇总表或完成步数不足时仍判为执行失败。
 
 \section{本章小结}
-本章完成平台需求、权限、B/S四层架构和核心数据表设计，并用发布版本与父子任务编号关联运行数据、模型权重和逐时段轨迹。
+本章完成了平台需求分析、角色权限控制、B/S四层架构与核心数据表设计，构建了覆盖数据发布校验、异步任务生命周期管理与多维结果追溯的整体方案。

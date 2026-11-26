@@ -1,0 +1,222 @@
+{
+  "date": "2026-11-26",
+  "files": 43,
+  "bytes": 10868704,
+  "entries": [
+    {
+      "path": "README.md",
+      "bytes": 2855,
+      "sha256": "745e97472fd621c7667a14640e65a04cb141067b9ea115589c424b3a9af7fb4f"
+    },
+    {
+      "path": "build.bat",
+      "bytes": 103,
+      "sha256": "70d9cc77338ad80996a8aa0aaa2f3fe1540573096d4d02b18733a9ad7ff3c850"
+    },
+    {
+      "path": "build.ps1",
+      "bytes": 2098,
+      "sha256": "cf6c42df3332bff34c8e61918e4ef8d5a3c659e595d7d46e91e307e39682f0d7"
+    },
+    {
+      "path": "contents/abstract.tex",
+      "bytes": 6299,
+      "sha256": "f002644dcfa0cb6e32aea3d10825f51a79d15f40a0d83999d8baeedbefbb8d3e"
+    },
+    {
+      "path": "contents/chap1.tex",
+      "bytes": 19370,
+      "sha256": "10356f3c23b023426acaea3c7989590eb239d3eebec43713723e5822469e6edb"
+    },
+    {
+      "path": "contents/chap2.tex",
+      "bytes": 38054,
+      "sha256": "e825bb18011adff080af70abc4b529d9053fa61d1453f0169ad013ac8e1a81b2"
+    },
+    {
+      "path": "contents/chap3.tex",
+      "bytes": 30748,
+      "sha256": "edc25a419f65a49de68c4b8398b91a194573de065a1adbbddeb21cc724822d78"
+    },
+    {
+      "path": "contents/chap4.tex",
+      "bytes": 26903,
+      "sha256": "5657a0158cdfcff0b6c6f272bf8c251fc2f15e18de3fc50d114324865040f97f"
+    },
+    {
+      "path": "contents/chap5.tex",
+      "bytes": 26977,
+      "sha256": "fec79d7e66b2dbed0788d8f9b3898abb01a88b9761bbebc8a6699bccf6bcc63a"
+    },
+    {
+      "path": "contents/chap6.tex",
+      "bytes": 5261,
+      "sha256": "51d6e94e23ee6f4514bbda988bb34e16d13e6a035c76483684c651641f1b2d74"
+    },
+    {
+      "path": "contents/dataset.tex",
+      "bytes": 2501,
+      "sha256": "4847d392a35c671f2e5b71d01434a0d36f97eaeab19854f9b0dc0c6455b1c96b"
+    },
+    {
+      "path": "contents/mresume.tex",
+      "bytes": 1443,
+      "sha256": "372f1c285e9201de9c63050fdda30331321cf65727eb8323865310c968c7a2d0"
+    },
+    {
+      "path": "contents/thanks.tex",
+      "bytes": 954,
+      "sha256": "bcd6f04febd86473423ff1465cc8b8ce2eb132648d3918b84c44a71e3a3888a9"
+    },
+    {
+      "path": "gb7714-2015-gbk.def",
+      "bytes": 1018,
+      "sha256": "22121166b6ef7ce1b73e54a62f50a2702a6eefafe90da0de79650f3761698440"
+    },
+    {
+      "path": "gb7714-2015.bbx",
+      "bytes": 178497,
+      "sha256": "e3e881858243983c9ca67641ae1cf68d82daa23d5951f026671662ee210a26bf"
+    },
+    {
+      "path": "gb7714-2015.cbx",
+      "bytes": 20259,
+      "sha256": "d859bd5fd039f1e1e6484bc4814c5e44f3412b82d523b25381288bb9a785a59c"
+    },
+    {
+      "path": "images/algorithm_evidence_20261104/dhw_repair_tradeoff.png",
+      "bytes": 136058,
+      "sha256": "c4f2d7da8d58d5bcb16ceb9aa8a564757c08e5fe79f8a4373e3631b94b38ef30"
+    },
+    {
+      "path": "images/algorithm_evidence_20261114/nocontrol_temperature_window.png",
+      "bytes": 333683,
+      "sha256": "26699175895f18fa11cbe6b3f0ba71bfacfc03c89d03d27e7dce4388e73561be"
+    },
+    {
+      "path": "images/architecture_20261104/artifact_flow.png",
+      "bytes": 144791,
+      "sha256": "abd2e53edf9bfc9ece337ac1eb3aa714bd0020c241188b8ec1852fca6e0d07ca"
+    },
+    {
+      "path": "images/architecture_20261104/storage_relations.png",
+      "bytes": 240579,
+      "sha256": "4e9fcab3249408f32c8088dcc1127c934514bb99d941ea8341df6b03fb790920"
+    },
+    {
+      "path": "images/architecture_20261104/task_sequence.png",
+      "bytes": 178526,
+      "sha256": "c57ec918aeee13ab6f872d0dfbb95099c27e6ec7119f8d0570f424340c05fbb7"
+    },
+    {
+      "path": "images/evidence_20261104/11_parameters_desktop.png",
+      "bytes": 75321,
+      "sha256": "d079ecc0ca61b90f8ceaa31267c52f1270a5eb7c6f1d35401017805d7f1714cd"
+    },
+    {
+      "path": "images/evidence_20261104/12_task_creation_desktop.png",
+      "bytes": 62385,
+      "sha256": "2d2cc07ebacee7de4a47c552ff099b3b29ecb776c29dc6c8ff311c5067c80a28"
+    },
+    {
+      "path": "images/evidence_20261104/13_home_desktop.png",
+      "bytes": 65553,
+      "sha256": "9cc2d307407613911bcc4663789cdb8219c6b472302c6900c3c2bb20db7a32db"
+    },
+    {
+      "path": "images/intro_20261118/background.png",
+      "bytes": 402912,
+      "sha256": "8e8a67fc98fbf7a906684ff8eb2ee34105494fa225b954851bc098cff67fbae2"
+    },
+    {
+      "path": "images/intro_20261118/chesca_flow.png",
+      "bytes": 117629,
+      "sha256": "32903052d3902cbc222aae74793f631b0a635ae4e3cf6b1d2c29209d4ea305da"
+    },
+    {
+      "path": "images/intro_20261118/peak_window.png",
+      "bytes": 438577,
+      "sha256": "2decce3b9cc80f30195faa215bcd65a4bfbea370f09bfa37b255315e50558a27"
+    },
+    {
+      "path": "images/intro_20261118/problems.png",
+      "bytes": 629993,
+      "sha256": "856f76d95b95983d29a293023c19960c9ad67bb6ea86d5bb3c4742aa0392c8bc"
+    },
+    {
+      "path": "images/intro_20261118/workflow.png",
+      "bytes": 450563,
+      "sha256": "697bf7f06695e42f74461ef3d205dbabfb51c71c643d2338b29e480021963560"
+    },
+    {
+      "path": "images/pictures/任务列表与脚本编辑界面.png",
+      "bytes": 242990,
+      "sha256": "71d91519286a2c27154c159c115bdc8797e19da062bf9e588d4bc4e22d3c258a"
+    },
+    {
+      "path": "images/pictures/模型优选-电网详情弹窗.jpg",
+      "bytes": 140437,
+      "sha256": "63582267e9cb52ba688e01ffdaa4003d2aa4277110f7a0f8a0d8e680e506cb80"
+    },
+    {
+      "path": "images/platform_20261111/platform_architecture.png",
+      "bytes": 434104,
+      "sha256": "391b87a59fec988e85a8d37b4bdd6c5a9f5f020446aa096bd9be8f87f552d307"
+    },
+    {
+      "path": "images/platform_20261114/community_data.png",
+      "bytes": 139610,
+      "sha256": "97a90ffd7319ecc5c41ccd6a238722f9b4c3d1ffaac4b93814516c779e929eff"
+    },
+    {
+      "path": "images/platform_20261114/model_selection.png",
+      "bytes": 44353,
+      "sha256": "7ca04ab221150aa1fde66800e9c5ad2b3caa3ca1a1fa21215cb3d79b3c4beb83"
+    },
+    {
+      "path": "images/review_20261115/actions_overview_crop.png",
+      "bytes": 352539,
+      "sha256": "84e9bebab67fa990e680bb60ac0550563c66d25cda5c62bd95bf4f6f718e95de"
+    },
+    {
+      "path": "images/review_20261115/kpi_comparison_crop.png",
+      "bytes": 226213,
+      "sha256": "d1f05bed3bbe88fd9445e0bb723aaa0f11c62327ec378842228714728f0cb357"
+    },
+    {
+      "path": "images/review_20261115/task_children_crop.png",
+      "bytes": 67716,
+      "sha256": "92a7feef59163822020d4eea795f32ee06a27f2dbb2dccd3d563bd550774a0ba"
+    },
+    {
+      "path": "images/ustb.png",
+      "bytes": 78693,
+      "sha256": "a4b68f9b2d55a7f618283f459fa5b814f06b0751d9168fe548e36f1fcb39cfb4"
+    },
+    {
+      "path": "main.pdf",
+      "bytes": 5439208,
+      "sha256": "59e3af1837f29817b8cdc1ade847dbc3f060925409f48f48e510815f6c1f556f"
+    },
+    {
+      "path": "main.tex",
+      "bytes": 6066,
+      "sha256": "75139fe1012b3997a1e5312111af8405b8fcbca199a200b746bed40d61a486c9"
+    },
+    {
+      "path": "myrefs.bib",
+      "bytes": 32120,
+      "sha256": "b48aef96f31198177b0fe3ce8b680c971abe41b13a35b0dd4b3d28b0bcb076af"
+    },
+    {
+      "path": "scripts/check_manuscript.py",
+      "bytes": 1975,
+      "sha256": "f1d667d0b068238ab6740da1e17f9e7c8d22847fd868cbc68d453c3609930abf"
+    },
+    {
+      "path": "ustbthesis.cls",
+      "bytes": 22770,
+      "sha256": "5d3339cacce99714951f81db45b6676dbc8f67c89cae4884b65ab4673313b70b"
+    }
+  ]
+}
